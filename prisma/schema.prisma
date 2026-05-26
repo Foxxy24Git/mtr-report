@@ -1,0 +1,231 @@
+// mtr-Report — Skema database (PRD §10)
+// PostgreSQL + Prisma 6.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ----------------------------- Enums -----------------------------
+
+enum Role {
+  superadmin
+  user
+  supervisi
+}
+
+enum LeaderJabatan {
+  infrastruktur
+  divisi
+}
+
+enum LookupTipe {
+  jenis_gangguan
+  sumber_penyebab
+  jenis_penanganan
+}
+
+enum TicketKategori {
+  atm
+  jaringan
+}
+
+enum CpTipe {
+  pic
+  wag
+}
+
+enum TicketStatus {
+  proses
+  selesai
+}
+
+enum StatusSupervisi {
+  belum
+  approved
+}
+
+enum ShiftKode {
+  A
+  B
+  C
+  D
+  E
+}
+
+enum ServerFase {
+  awal
+  akhir
+}
+
+// ----------------------------- Models -----------------------------
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  nama         String
+  role         Role     @default(user)
+  passwordHash String   @map("password_hash")
+  fotoProfilUrl String? @map("foto_profil_url")
+  ttdUrl       String?  @map("ttd_url")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  ticketsOwned     Ticket[]          @relation("TicketOwner")
+  ticketsApproved  Ticket[]          @relation("TicketApprover")
+  activities       TicketActivity[]
+  handoversFrom    ShiftHandover[]   @relation("HandoverFrom")
+  handoversTo      ShiftHandover[]   @relation("HandoverTo")
+  acTempLogs       AcTempLog[]
+  serverLogs       ServerLog[]
+
+  @@map("users")
+}
+
+model Leader {
+  id      String        @id @default(cuid())
+  nama    String
+  jabatan LeaderJabatan
+  isPjs   Boolean       @default(false) @map("is_pjs")
+  aktif   Boolean       @default(true)
+
+  ticketsInfra   Ticket[] @relation("TicketPimpinanInfra")
+  ticketsDivisi  Ticket[] @relation("TicketPimpinanDivisi")
+
+  @@map("leaders")
+}
+
+model AtmMaster {
+  id             String  @id @default(cuid())
+  kodeAtm        String  @unique @map("kode_atm")
+  namaAtm        String  @map("nama_atm")
+  cabang         String?
+  alamat         String?
+  vendorAtm      String? @map("vendor_atm")
+  vendorJaringan String? @map("vendor_jaringan")
+
+  tickets Ticket[]
+
+  @@map("atm_master")
+}
+
+model MasterLookup {
+  id    String     @id @default(cuid())
+  tipe  LookupTipe
+  nilai String
+
+  @@unique([tipe, nilai])
+  @@map("master_lookup")
+}
+
+model Ticket {
+  id                  String          @id @default(cuid())
+  noTiket             String          @unique @map("no_tiket")
+  kategori            TicketKategori
+  atmId               String?         @map("atm_id")
+  waktuOpen           DateTime        @default(now()) @map("waktu_open")
+  waktuResponInternal DateTime?       @map("waktu_respon_internal")
+  cpTipe              CpTipe?         @map("cp_tipe")
+  cpNama              String?         @map("cp_nama")
+  cpTelp              String?         @map("cp_telp")
+  jenisGangguan       String?         @map("jenis_gangguan")
+  sumberPenyebab      String?         @map("sumber_penyebab")
+  metodePenanganan    String?         @map("metode_penanganan")
+  vendor              String?
+  noTiketVendor       String?         @map("no_tiket_vendor")
+  status              TicketStatus    @default(proses)
+  waktuSelesai        DateTime?       @map("waktu_selesai")
+  statusSupervisi     StatusSupervisi @default(belum) @map("status_supervisi")
+  approvedById        String?         @map("approved_by")
+  approvedAt          DateTime?       @map("approved_at")
+  pimpinanInfraId     String?         @map("pimpinan_infra_id")
+  pimpinanDivisiId    String?         @map("pimpinan_divisi_id")
+  shiftKode           ShiftKode       @map("shift_kode")
+  ownerUserId         String          @map("owner_user_id")
+  keterangan          String?
+  createdAt           DateTime        @default(now()) @map("created_at")
+
+  atm            AtmMaster?       @relation(fields: [atmId], references: [id])
+  owner          User             @relation("TicketOwner", fields: [ownerUserId], references: [id])
+  approver       User?            @relation("TicketApprover", fields: [approvedById], references: [id])
+  pimpinanInfra  Leader?          @relation("TicketPimpinanInfra", fields: [pimpinanInfraId], references: [id])
+  pimpinanDivisi Leader?          @relation("TicketPimpinanDivisi", fields: [pimpinanDivisiId], references: [id])
+  activities     TicketActivity[]
+  handovers      ShiftHandover[]
+
+  @@index([status])
+  @@index([kategori])
+  @@map("tickets")
+}
+
+model TicketActivity {
+  id               String    @id @default(cuid())
+  ticketId         String    @map("ticket_id")
+  userId           String    @map("user_id")
+  shiftKode        ShiftKode @map("shift_kode")
+  waktu            DateTime  @default(now())
+  teks             String
+  isTindakLanjutFlag Boolean @default(false) @map("is_tindak_lanjut_flag")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@index([ticketId])
+  @@map("ticket_activities")
+}
+
+model ShiftHandover {
+  id        String    @id @default(cuid())
+  ticketId  String    @map("ticket_id")
+  fromUserId String   @map("from_user")
+  toUserId   String?  @map("to_user")
+  fromShift ShiftKode @map("from_shift")
+  toShift   ShiftKode @map("to_shift")
+  at        DateTime  @default(now())
+
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  fromUser User   @relation("HandoverFrom", fields: [fromUserId], references: [id])
+  toUser   User?  @relation("HandoverTo", fields: [toUserId], references: [id])
+
+  @@map("shift_handovers")
+}
+
+model AcTempLog {
+  id              String    @id @default(cuid())
+  tanggal         DateTime  @db.Date
+  shiftKode       ShiftKode @map("shift_kode")
+  userId          String    @map("user_id")
+  urutan          Int // 1 | 2 | 3
+  waktuPantau     DateTime  @map("waktu_pantau")
+  suhuRoomServer  String?   @map("suhu_room_server")
+  suhuPanel       String?   @map("suhu_panel")
+  statusAktifKiri  Boolean  @default(true) @map("status_aktif_kiri")
+  statusAktifKanan Boolean  @default(true) @map("status_aktif_kanan")
+  pantau12jamKiri  String?  @map("pantau_12jam_kiri")
+  pantau12jamKanan String?  @map("pantau_12jam_kanan")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("ac_temp_logs")
+}
+
+model ServerLog {
+  id        String     @id @default(cuid())
+  tanggal   DateTime   @db.Date
+  shiftKode ShiftKode  @map("shift_kode")
+  userId    String     @map("user_id")
+  fase      ServerFase
+  npay      String?
+  ajAtmb    String?    @map("aj_atmb")
+  bifast    String?
+  prima     String?
+  cipHost   String?    @map("cip_host")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("server_logs")
+}

@@ -1,27 +1,46 @@
 {
-  "name": "mtrapp",
+  "name": "mtr-report",
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
-    "build": "next build --turbopack",
+    "dev": "next dev",
+    "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "vitest run",
+    "db:migrate": "prisma migrate dev",
+    "db:seed": "prisma db seed",
+    "db:reset": "prisma migrate reset --force"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@prisma/client": "^6.19.3",
+    "bcryptjs": "^3.0.3",
+    "clsx": "^2.1.1",
+    "framer-motion": "^12.40.0",
+    "jose": "^6.2.3",
+    "lucide-react": "^1.16.0",
+    "next": "15.5.18",
+    "prisma": "^6.19.3",
     "react": "19.1.0",
     "react-dom": "19.1.0",
-    "next": "15.5.18"
+    "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
-    "typescript": "^5",
+    "@eslint/eslintrc": "^3",
+    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@tailwindcss/postcss": "^4",
-    "tailwindcss": "^4",
+    "autoprefixer": "^10.5.0",
     "eslint": "^9",
     "eslint-config-next": "15.5.18",
-    "@eslint/eslintrc": "^3"
+    "postcss": "^8.5.15",
+    "tailwindcss": "^3.4.19",
+    "tsx": "^4.22.3",
+    "typescript": "^5",
+    "vitest": "^4.1.7"
   }
 }

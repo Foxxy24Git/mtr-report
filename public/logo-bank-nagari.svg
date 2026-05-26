@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="48" viewBox="0 0 160 48">
+  <rect width="160" height="48" rx="6" fill="#003580"/>
+  <text x="12" y="20" font-family="Arial, sans-serif" font-size="10" font-weight="700" fill="#C8A84B" letter-spacing="1">BANK</text>
+  <text x="12" y="36" font-family="Arial, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF" letter-spacing="0.5">NAGARI</text>
+  <rect x="100" y="8" width="48" height="32" rx="4" fill="#C8A84B" opacity="0.2"/>
+  <text x="124" y="29" font-family="Arial, sans-serif" font-size="22" font-weight="900" fill="#C8A84B" text-anchor="middle">N</text>
+</svg>

@@ -1,0 +1,39 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: mtr_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mtr_user
+      POSTGRES_PASSWORD: mtr_pass
+      POSTGRES_DB: mtr_report_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mtr_user -d mtr_report_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mtr_app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgresql://mtr_user:mtr_pass@db:5432/mtr_report_db?schema=public"
+      AUTH_SECRET: "change-this-secret-in-production"
+      NODE_ENV: "production"
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./public:/app/public
+
+volumes:
+  postgres_data:
