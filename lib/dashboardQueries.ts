@@ -1,0 +1,120 @@
+import "server-only";
+import { prisma } from "@/lib/prisma";
+import { ShiftKode, TicketKategori, TicketStatus } from "@prisma/client";
+import { ALL_SHIFTS } from "@/lib/shift";
+
+export interface KategoriCount {
+  /** Total tiket open kategori ini (seluruh sistem). */
+  total: number;
+  /** Tiket open yang di-open oleh user yang sedang login. */
+  mine: number;
+  /** Tiket open yang dilanjutkan (diterima dari shift sebelumnya) ke user ini. */
+  lanjutan: number;
+}
+
+export interface DashboardOpenTicket {
+  id: string;
+  noTiket: string;
+  kategori: TicketKategori;
+  kodeAtm: string;
+  namaAtm: string;
+  shiftKode: ShiftKode;
+  waktuOpen: Date;
+  ownerNama: string;
+  lanjutan: boolean;
+}
+
+export interface DashboardData {
+  counts: {
+    atm: KategoriCount;
+    jaringan: KategoriCount;
+  };
+  /** Jumlah tiket open per shift A–E. */
+  perShift: Record<ShiftKode, number>;
+  /** Semua tiket open (untuk kalender & alert). */
+  openTickets: DashboardOpenTicket[];
+  generatedAt: string;
+}
+
+const OPEN = { status: TicketStatus.proses } as const;
+
+/** Data agregat dashboard (PRD §4.A): kartu, kalender, indikator shift, alert. */
+export async function getDashboardData(
+  currentUserId: string
+): Promise<DashboardData> {
+  const [byKategori, byShift, mineByKategori, lanjutanByKategori, openRows] =
+    await Promise.all([
+      prisma.ticket.groupBy({
+        by: ["kategori"],
+        where: OPEN,
+        _count: { _all: true },
+      }),
+      prisma.ticket.groupBy({
+        by: ["shiftKode"],
+        where: OPEN,
+        _count: { _all: true },
+      }),
+      prisma.ticket.groupBy({
+        by: ["kategori"],
+        where: { ...OPEN, ownerUserId: currentUserId },
+        _count: { _all: true },
+      }),
+      prisma.ticket.groupBy({
+        by: ["kategori"],
+        where: { ...OPEN, handovers: { some: { toUserId: currentUserId } } },
+        _count: { _all: true },
+      }),
+      prisma.ticket.findMany({
+        where: OPEN,
+        orderBy: { waktuOpen: "desc" },
+        select: {
+          id: true,
+          noTiket: true,
+          kategori: true,
+          shiftKode: true,
+          waktuOpen: true,
+          owner: { select: { nama: true } },
+          atm: { select: { kodeAtm: true, namaAtm: true } },
+          _count: { select: { handovers: true } },
+        },
+      }),
+    ]);
+
+  const total = (
+    rows: { kategori: TicketKategori; _count: { _all: number } }[],
+    k: TicketKategori
+  ) => rows.find((r) => r.kategori === k)?._count._all ?? 0;
+
+  const perShift = Object.fromEntries(
+    ALL_SHIFTS.map((s) => [s, 0])
+  ) as Record<ShiftKode, number>;
+  for (const row of byShift) perShift[row.shiftKode] = row._count._all;
+
+  return {
+    counts: {
+      atm: {
+        total: total(byKategori, TicketKategori.atm),
+        mine: total(mineByKategori, TicketKategori.atm),
+        lanjutan: total(lanjutanByKategori, TicketKategori.atm),
+      },
+      jaringan: {
+        total: total(byKategori, TicketKategori.jaringan),
+        mine: total(mineByKategori, TicketKategori.jaringan),
+        lanjutan: total(lanjutanByKategori, TicketKategori.jaringan),
+      },
+    },
+    perShift,
+    openTickets: openRows.map((t) => ({
+      id: t.id,
+      noTiket: t.noTiket,
+      kategori: t.kategori,
+      kodeAtm: t.atm?.kodeAtm ?? "—",
+      namaAtm: t.atm?.namaAtm ?? "—",
+      shiftKode: t.shiftKode,
+      waktuOpen: t.waktuOpen,
+      ownerNama: t.owner.nama,
+      lanjutan: t._count.handovers > 0,
+    })),
+    generatedAt: new Date().toISOString(),
+  };
+}

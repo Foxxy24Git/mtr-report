@@ -27,3 +27,14 @@ export function fmtTime(d: Date | string): string {
     timeZone: TZ,
   }).format(toDate(d));
 }
+
+/** Kunci tanggal YYYY-MM-DD di zona WIB (untuk pengelompokan kalender). */
+export function fmtDateKey(d: Date | string): string {
+  // en-CA menghasilkan format YYYY-MM-DD.
+  return new Intl.DateTimeFormat("en-CA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone: TZ,
+  }).format(toDate(d));
+}
