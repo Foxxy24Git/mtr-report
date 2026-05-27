@@ -25,7 +25,8 @@ RUN adduser --system --uid 1001 nextjs
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-# Prisma schema + migrations untuk menjalankan migrate deploy saat startup
+# Skema + migrasi Prisma disertakan untuk referensi. Migrasi & seed dijalankan
+# sekali via perintah terpisah saat deploy (lihat README — "Deploy Proxmox").
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 
 USER nextjs

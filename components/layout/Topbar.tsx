@@ -56,13 +56,23 @@ export function Topbar({ user }: { user: SessionUser }) {
 
       {/* Kanan: shift + notif + profil */}
       <div className="flex items-center gap-3">
-        {SHIFT_LABELS[user.shift] && (
+        {SHIFT_LABELS[user.shift] ? (
           <Badge variant="primary" className="text-xs font-semibold">
             {SHIFT_LABELS[user.shift]}
           </Badge>
+        ) : (
+          <a
+            href="/dashboard"
+            className="text-xs font-semibold rounded-full border border-amber-300 bg-amber-50 text-amber-700 px-2.5 py-1 hover:bg-amber-100 transition-colors"
+          >
+            Pilih shift
+          </a>
         )}
 
-        <button className="relative p-2 rounded-lg text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors">
+        <button
+          aria-label="Notifikasi"
+          className="relative p-2 rounded-lg text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+        >
           <Bell className="w-5 h-5" />
           <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white" />
         </button>
@@ -70,10 +80,21 @@ export function Topbar({ user }: { user: SessionUser }) {
         <div className="relative">
           <button
             onClick={() => setDropdownOpen((v) => !v)}
+            aria-label="Menu akun"
+            aria-expanded={dropdownOpen}
             className="flex items-center gap-2.5 pl-2 pr-3 py-1.5 rounded-lg hover:bg-gray-100 transition-colors"
           >
             <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center shrink-0 overflow-hidden">
-              <User2 className="w-4 h-4 text-white" />
+              {user.fotoProfilUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={user.fotoProfilUrl}
+                  alt={user.nama}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <User2 className="w-4 h-4 text-white" />
+              )}
             </div>
             <div className="text-left hidden sm:block">
               <p className="text-sm font-medium text-gray-800 leading-tight">

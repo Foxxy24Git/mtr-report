@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { fmtDateKey, fmtTime } from "@/lib/format";
 import type { DashboardData } from "@/lib/dashboardQueries";
 import { MetricCards } from "./MetricCards";
+import { ShiftSelector } from "./ShiftSelector";
 import { ShiftIndicator } from "./ShiftIndicator";
 import { MiniCalendar } from "./MiniCalendar";
 import { DayTicketList } from "./DayTicketList";
@@ -55,6 +56,8 @@ export function DashboardClient({ initialData, currentShift }: Props) {
 
   return (
     <div className="space-y-5">
+      <ShiftSelector currentShift={currentShift} />
+
       {/* Toolbar refresh */}
       <div className="flex items-center justify-end gap-3 text-sm">
         <span className="text-gray-400">

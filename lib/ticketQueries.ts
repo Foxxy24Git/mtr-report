@@ -94,6 +94,8 @@ export interface TicketDetail {
   kategori: TicketKategori;
   status: TicketStatus;
   statusSupervisi: string;
+  approverNama: string | null;
+  approvedAt: Date | null;
   waktuOpen: Date;
   waktuSelesai: Date | null;
   cpTipe: string | null;
@@ -130,6 +132,7 @@ export async function getTicketDetail(id: string): Promise<TicketDetail | null> 
     include: {
       atm: true,
       owner: { select: { id: true, nama: true } },
+      approver: { select: { nama: true } },
       pimpinanInfra: { select: { nama: true } },
       pimpinanDivisi: { select: { nama: true } },
       activities: {
@@ -146,6 +149,8 @@ export async function getTicketDetail(id: string): Promise<TicketDetail | null> 
     kategori: t.kategori,
     status: t.status,
     statusSupervisi: t.statusSupervisi,
+    approverNama: t.approver?.nama ?? null,
+    approvedAt: t.approvedAt,
     waktuOpen: t.waktuOpen,
     waktuSelesai: t.waktuSelesai,
     cpTipe: t.cpTipe,

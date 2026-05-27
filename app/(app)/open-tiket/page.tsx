@@ -1,12 +1,28 @@
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/session";
 import { OpenTiketForm } from "@/components/open-tiket/OpenTiketForm";
+import { ShiftRequiredNotice } from "@/components/ShiftRequiredNotice";
 import { SHIFT_LABELS } from "@/lib/constants";
+import { ALL_SHIFTS, type ShiftCode } from "@/lib/shift";
 
 export const dynamic = "force-dynamic";
 
 export default async function OpenTiketPage() {
   const session = await requireSession();
+
+  if (!ALL_SHIFTS.includes(session.shift as ShiftCode)) {
+    return (
+      <div>
+        <div className="mb-6">
+          <h1 className="page-title">Open Tiket</h1>
+          <p className="page-subtitle">
+            Buka tiket gangguan ATM / jaringan.
+          </p>
+        </div>
+        <ShiftRequiredNotice />
+      </div>
+    );
+  }
 
   const lookups = await prisma.masterLookup.findMany({
     orderBy: { nilai: "asc" },

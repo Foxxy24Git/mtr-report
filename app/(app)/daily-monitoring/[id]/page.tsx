@@ -17,7 +17,7 @@ export default async function TicketDetailPage({ params }: Params) {
   const ticket = await getTicketDetail(id);
   if (!ticket) notFound();
 
-  const [lookups, leaders, petugas] = await Promise.all([
+  const [lookups, leaders, petugas, me] = await Promise.all([
     prisma.masterLookup.findMany({
       orderBy: { nilai: "asc" },
       select: { tipe: true, nilai: true },
@@ -28,6 +28,12 @@ export default async function TicketDetailPage({ params }: Params) {
       orderBy: { nama: "asc" },
       select: { id: true, nama: true, username: true },
     }),
+    session.role === "supervisi"
+      ? prisma.user.findUnique({
+          where: { id: session.sub },
+          select: { ttdUrl: true },
+        })
+      : Promise.resolve(null),
   ]);
 
   const opsi = {
@@ -53,6 +59,7 @@ export default async function TicketDetailPage({ params }: Params) {
       role={session.role}
       currentUserId={session.sub}
       currentShift={session.shift}
+      supervisiHasTtd={Boolean(me?.ttdUrl)}
     />
   );
 }

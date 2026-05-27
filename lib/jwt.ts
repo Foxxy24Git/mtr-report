@@ -11,6 +11,7 @@ export interface SessionPayload {
   username: string;
   nama: string;
   role: Role;
+  /** Shift aktif. Kosong ("") bila petugas belum memilih shift di Dashboard. */
   shift: string;
 }
 
@@ -38,7 +39,7 @@ export async function verifySession(
       username: String(payload.username),
       nama: String(payload.nama),
       role: payload.role as Role,
-      shift: String(payload.shift),
+      shift: typeof payload.shift === "string" ? payload.shift : "",
     };
   } catch {
     return null;

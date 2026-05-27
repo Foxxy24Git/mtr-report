@@ -7,20 +7,15 @@ import Image from "next/image";
 import { Lock, User2, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { cn } from "@/lib/cn";
-import { SHIFT_LABELS } from "@/lib/constants";
-import { validShiftsForDate, type ShiftCode } from "@/lib/shift";
 
 export default function LoginPage() {
   const router = useRouter();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [shift, setShift] = useState<ShiftCode | "">("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const today = useMemo(() => new Date(), []);
-  const validShifts = useMemo(() => validShiftsForDate(today), [today]);
   const hariIni = useMemo(
     () =>
       new Intl.DateTimeFormat("id-ID", {
@@ -36,17 +31,12 @@ export default function LoginPage() {
     e.preventDefault();
     setError(null);
 
-    if (!shift) {
-      setError("Pilih shift terlebih dahulu.");
-      return;
-    }
-
     setLoading(true);
     try {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password, shift }),
+        body: JSON.stringify({ username, password }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -123,43 +113,6 @@ export default function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 className="pl-9"
               />
-            </div>
-
-            {/* Pemilihan shift */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium text-gray-700">
-                Shift <span className="text-red-500">*</span>
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                {validShifts.map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => setShift(s)}
-                    className={cn(
-                      "flex flex-col items-center justify-center rounded-lg border py-2.5 px-1 transition-all",
-                      shift === s
-                        ? "border-primary bg-primary-50 ring-2 ring-primary/30"
-                        : "border-gray-300 hover:border-primary/50 hover:bg-surface-subtle"
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        "text-base font-bold",
-                        shift === s ? "text-primary" : "text-gray-700"
-                      )}
-                    >
-                      {s}
-                    </span>
-                    <span className="text-[10px] text-gray-500 leading-tight mt-0.5">
-                      {SHIFT_LABELS[s].match(/\(([^)]+)\)/)?.[1]}
-                    </span>
-                  </button>
-                ))}
-              </div>
-              <p className="text-xs text-gray-400">
-                Shift yang berlaku hari ini: {validShifts.join(", ")}.
-              </p>
             </div>
 
             {error && (

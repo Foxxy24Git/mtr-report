@@ -8,11 +8,16 @@ import {
   type AcLog,
   type ServerLog,
 } from "@/components/suhu-server/SuhuServerClient";
+import { ShiftRequiredNotice } from "@/components/ShiftRequiredNotice";
 
 export const dynamic = "force-dynamic";
 
 export default async function SuhuServerPage() {
   const session = await requireSession();
+
+  if (!(Object.values(ShiftKode) as string[]).includes(session.shift)) {
+    return <ShiftRequiredNotice />;
+  }
 
   const tanggalKey = todayKeyWIB();
   const tanggal = parseTanggal(tanggalKey)!;

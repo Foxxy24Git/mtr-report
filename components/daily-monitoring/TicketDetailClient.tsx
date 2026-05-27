@@ -15,6 +15,7 @@ import {
   Send,
   Gauge,
   AlertTriangle,
+  ShieldCheck,
 } from "lucide-react";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -52,6 +53,7 @@ interface Props {
   role: "superadmin" | "user" | "supervisi";
   currentUserId: string;
   currentShift: string;
+  supervisiHasTtd?: boolean;
 }
 
 /** Tambahkan `value` ke daftar opsi bila belum ada (agar nilai lama tetap muncul). */
@@ -69,6 +71,7 @@ export function TicketDetailClient({
   shifts,
   role,
   currentUserId,
+  supervisiHasTtd = false,
 }: Props) {
   const router = useRouter();
   const [ticket, setTicket] = useState<TicketDetail>(initialTicket);
@@ -77,6 +80,7 @@ export function TicketDetailClient({
     role !== "supervisi" &&
     (role === "superadmin" || ticket.ownerId === currentUserId);
   const isSelesai = ticket.status === "selesai";
+  const isApproved = ticket.statusSupervisi === "approved";
 
   // --- Kegiatan baru ---
   const [kegiatan, setKegiatan] = useState("");
@@ -111,6 +115,11 @@ export function TicketDetailClient({
   const [delOpen, setDelOpen] = useState(false);
   const [delBusy, setDelBusy] = useState(false);
   const [actionErr, setActionErr] = useState("");
+
+  // --- Modal approve (supervisi) ---
+  const [approveOpen, setApproveOpen] = useState(false);
+  const [approveBusy, setApproveBusy] = useState(false);
+  const [approveErr, setApproveErr] = useState("");
 
   async function reload() {
     const res = await fetch(`/api/tickets/${ticket.id}`);
@@ -243,6 +252,25 @@ export function TicketDetailClient({
     }
   }
 
+  async function confirmApprove() {
+    setApproveErr("");
+    setApproveBusy(true);
+    try {
+      const res = await fetch(`/api/tickets/${ticket.id}/approve`, {
+        method: "POST",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setApproveErr(data.error ?? "Gagal menyetujui tiket.");
+        return;
+      }
+      setApproveOpen(false);
+      await reload();
+    } finally {
+      setApproveBusy(false);
+    }
+  }
+
   const sla = computeSla(
     new Date(ticket.waktuOpen),
     ticket.waktuSelesai ? new Date(ticket.waktuSelesai) : null
@@ -362,10 +390,46 @@ export function TicketDetailClient({
             </Button>
           </div>
         )}
-        {!canMutate && role === "supervisi" && (
-          <p className="mt-4 pt-4 border-t border-gray-100 text-xs text-gray-500">
-            Mode tinjauan supervisi — hanya dapat melihat kronologi.
-          </p>
+        {role === "supervisi" && (
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            {isApproved ? (
+              <div className="flex items-center gap-2 text-sm text-green-700">
+                <ShieldCheck className="w-4 h-4 shrink-0" />
+                <span>
+                  Disetujui oleh{" "}
+                  <span className="font-semibold">
+                    {ticket.approverNama ?? "Supervisi"}
+                  </span>
+                  {ticket.approvedAt && ` · ${fmtDateTime(ticket.approvedAt)}`}.
+                  Tanda tangan digital otomatis terpasang di laporan.
+                </span>
+              </div>
+            ) : isSelesai ? (
+              <div className="flex flex-wrap items-center gap-3">
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setApproveErr("");
+                    setApproveOpen(true);
+                  }}
+                >
+                  <ShieldCheck className="w-4 h-4" /> Setujui &amp; Bubuhkan TTD
+                </Button>
+                {!supervisiHasTtd && (
+                  <span className="flex items-center gap-1.5 text-xs text-amber-700">
+                    <AlertTriangle className="w-3.5 h-3.5" />
+                    Anda belum mengunggah tanda tangan digital — unggah di menu
+                    Setting agar TTD muncul di laporan.
+                  </span>
+                )}
+              </div>
+            ) : (
+              <p className="text-xs text-gray-500">
+                Mode tinjauan supervisi — persetujuan tersedia setelah tiket
+                ditutup (Selesai).
+              </p>
+            )}
+          </div>
         )}
       </Card>
 
@@ -758,6 +822,41 @@ export function TicketDetailClient({
           </Button>
           <Button variant="danger" loading={delBusy} onClick={confirmDelete}>
             <Trash2 className="w-4 h-4" /> Hapus
+          </Button>
+        </div>
+      </Modal>
+
+      {/* ---- Modal approve (supervisi) ---- */}
+      <Modal
+        open={approveOpen}
+        onClose={() => setApproveOpen(false)}
+        title="Setujui Tiket?"
+        size="sm"
+      >
+        <div className="flex items-start gap-2 text-sm text-gray-600">
+          <ShieldCheck className="w-5 h-5 text-green-600 shrink-0 mt-0.5" />
+          <p>
+            Tiket{" "}
+            <span className="font-mono font-semibold text-gray-900">
+              {ticket.noTiket}
+            </span>{" "}
+            akan ditandai <span className="font-semibold">Disetujui</span>.
+            {supervisiHasTtd
+              ? " Tanda tangan digital Anda akan otomatis terpasang di laporan."
+              : " Catatan: Anda belum mengunggah TTD, sehingga hanya nama yang tampil di laporan."}
+          </p>
+        </div>
+        {approveErr && (
+          <p className="mt-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+            {approveErr}
+          </p>
+        )}
+        <div className="flex justify-end gap-2 pt-4">
+          <Button variant="secondary" onClick={() => setApproveOpen(false)}>
+            Batal
+          </Button>
+          <Button loading={approveBusy} onClick={confirmApprove}>
+            <ShieldCheck className="w-4 h-4" /> Ya, Setujui
           </Button>
         </div>
       </Modal>
