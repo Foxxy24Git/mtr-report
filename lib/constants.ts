@@ -6,6 +6,7 @@ import {
   Server,
   Thermometer,
   Settings,
+  ShieldCheck,
   type LucideIcon,
 } from "lucide-react";
 import type { Role } from "@/lib/roles";
@@ -33,6 +34,13 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/daily-monitoring",
     icon: Activity,
     description: "Semua tiket ATM & jaringan aktif",
+  },
+  {
+    label: "Supervisi",
+    href: "/supervisi",
+    icon: ShieldCheck,
+    description: "Tinjau & setujui tiket gangguan",
+    roles: ["superadmin", "supervisi"],
   },
   {
     label: "Open Tiket",

@@ -34,6 +34,7 @@ export async function GET(req: Request) {
     shift: sp.get("shift"),
     scope: sp.get("scope"),
     status: sp.get("status"),
+    statusSupervisi: sp.get("statusSupervisi"),
     currentUserId: session.sub,
   });
 

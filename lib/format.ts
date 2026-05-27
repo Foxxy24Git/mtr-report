@@ -38,3 +38,23 @@ export function fmtDateKey(d: Date | string): string {
     timeZone: TZ,
   }).format(toDate(d));
 }
+
+/** Nilai untuk <input type="datetime-local"> ("YYYY-MM-DDTHH:mm") dalam jam dinding WIB. */
+export function toWibInputValue(d: Date | string): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(toDate(d));
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  return `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}`;
+}
+
+/** Ubah nilai datetime-local (dianggap WIB / UTC+7) menjadi ISO instant. */
+export function wibInputToISO(v: string): string {
+  return new Date(`${v}:00+07:00`).toISOString();
+}

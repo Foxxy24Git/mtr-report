@@ -5,6 +5,7 @@ const RESTRICTED: { prefix: string; roles: Role[] }[] = [
   { prefix: "/open-tiket", roles: ["superadmin", "user"] },
   { prefix: "/data-atm", roles: ["superadmin", "user"] },
   { prefix: "/suhu-server", roles: ["superadmin", "user"] },
+  { prefix: "/supervisi", roles: ["superadmin", "supervisi"] },
 ];
 
 /**

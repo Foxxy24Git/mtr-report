@@ -86,7 +86,9 @@ Saat klik tiket → buka detail tiket. Di detail tiket user dapat:
 2. **Ubah** jenis gangguan, sumber penyebab gangguan, metode penanganan gangguan, vendor jaringan/ATM.
 3. **Fitur Kegiatan Penanganan Gangguan (PENTING — selalu di-update):**
    - Setiap entri kegiatan dicatat **timestamp otomatis** (jam saat user submit).
-   - Bersifat append/log — semua entri tersimpan permanen & berurutan (seperti kolom "Uraian Kegiatan" di Excel).
+   - Bersifat log berurutan (seperti kolom "Uraian Kegiatan" di Excel).
+   - **Editable dengan jejak**: tiap entri punya tombol **Edit** untuk memperbaiki teks (typo) maupun mengoreksi waktu/jam entri. Perubahan disimpan ke entri yang sama (bukan entri baru) dan mencatat `edited_at` + `edited_by` plus snapshot revisi, sehingga rekam jejak tetap terjaga. Entri yang pernah diubah diberi penanda kecil **"diedit"**.
+   - **Hak edit**: hanya **pembuat entri** atau **Super Admin** (Supervisi hanya melihat). Penanda serah terima shift tidak dapat diedit.
    - Saat pindah shift, sistem menambahkan penanda **"TINDAK LANJUT MONITORING SELANJUTNYA"** sebelum entri shift baru.
 4. **Close tiket** (set status Selesai + Waktu Selesai Gangguan otomatis).
 5. **Hapus tiket** (use-case: ATM hanya error sesaat, tidak perlu tiket). → aksi destruktif, perlu konfirmasi.
@@ -260,7 +262,9 @@ tickets(id, no_tiket[BN-xxxxxxxx], kategori[atm|jaringan], atm_id,
         shift_kode, owner_user_id, created_at, keterangan)
 
 ticket_activities(id, ticket_id, user_id, shift_kode, waktu(ts), teks,
-                  is_tindak_lanjut_flag, created_at)
+                  is_tindak_lanjut_flag, created_at, edited_at, edited_by)
+
+ticket_activity_revisions(id, activity_id, teks, waktu, edited_by, edited_at)  -- snapshot nilai sebelum tiap edit
 
 shift_handovers(id, ticket_id, from_user, to_user, from_shift, to_shift, at)
 
@@ -277,7 +281,7 @@ server_logs(id, tanggal, shift_kode, user_id, fase[awal|akhir],
 ## 11. Acceptance Criteria (kunci)
 
 1. User dapat open tiket dengan no auto `BN-` + 8 alfanumerik unik.
-2. Setiap entri kegiatan tersimpan dengan timestamp & tidak bisa terhapus (append-only).
+2. Setiap entri kegiatan tersimpan dengan timestamp. Entri dapat diedit (teks & waktu) oleh pembuatnya atau Super Admin, dengan jejak audit (`edited_at` + `edited_by` + snapshot revisi) dan penanda "diedit".
 3. Pindah shift menyisipkan penanda "TINDAK LANJUT MONITORING SELANJUTNYA".
 4. Dashboard menampilkan jumlah open tiket ATM vs jaringan, terpisah owner vs lanjutan, + kalender bertanda + alert kanan-bawah + refresh status 1 jam.
 5. SLA dihitung otomatis sesuai §7.

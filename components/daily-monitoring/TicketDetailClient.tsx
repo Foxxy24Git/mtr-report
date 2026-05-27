@@ -24,7 +24,7 @@ import { Select } from "@/components/ui/Select";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { cn } from "@/lib/cn";
-import { fmtDateTime, fmtTime } from "@/lib/format";
+import { fmtDateTime, fmtTime, toWibInputValue, wibInputToISO } from "@/lib/format";
 import { computeSla, formatSlaPersen } from "@/lib/sla";
 import type { TicketDetail } from "@/lib/ticketQueries";
 
@@ -46,6 +46,9 @@ interface Props {
   role: "superadmin" | "user" | "supervisi";
   currentUserId: string;
   supervisiHasTtd?: boolean;
+  /** Tujuan tombol "Kembali" & redirect setelah hapus. */
+  backHref?: string;
+  backLabel?: string;
 }
 
 /** Tambahkan `value` ke daftar opsi bila belum ada (agar nilai lama tetap muncul). */
@@ -62,6 +65,8 @@ export function TicketDetailClient({
   role,
   currentUserId,
   supervisiHasTtd = false,
+  backHref = "/daily-monitoring",
+  backLabel = "Kembali ke Daily Monitoring",
 }: Props) {
   const router = useRouter();
   const [ticket, setTicket] = useState<TicketDetail>(initialTicket);
@@ -76,6 +81,61 @@ export function TicketDetailClient({
   const [kegiatan, setKegiatan] = useState("");
   const [savingKegiatan, setSavingKegiatan] = useState(false);
   const [kegiatanErr, setKegiatanErr] = useState("");
+
+  // --- Edit entri kegiatan ---
+  type Activity = TicketDetail["activities"][number];
+  const [editAct, setEditAct] = useState<Activity | null>(null);
+  const [editActTeks, setEditActTeks] = useState("");
+  const [editActWaktu, setEditActWaktu] = useState("");
+  const [savingAct, setSavingAct] = useState(false);
+  const [editActErr, setEditActErr] = useState("");
+
+  /** Boleh edit entri: pembuat entri atau superadmin (PRD §4.B.3 poin 5). */
+  function canEditActivity(a: Activity) {
+    return (
+      role !== "supervisi" &&
+      !a.isTindakLanjutFlag &&
+      (role === "superadmin" || a.userId === currentUserId)
+    );
+  }
+
+  function openEditActivity(a: Activity) {
+    setEditAct(a);
+    setEditActTeks(a.teks);
+    setEditActWaktu(toWibInputValue(a.waktu));
+    setEditActErr("");
+  }
+
+  async function submitEditActivity(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editAct) return;
+    setEditActErr("");
+    if (!editActTeks.trim()) return setEditActErr("Teks kegiatan wajib diisi.");
+    if (!editActWaktu) return setEditActErr("Waktu entri wajib diisi.");
+    setSavingAct(true);
+    try {
+      const res = await fetch(
+        `/api/tickets/${ticket.id}/activities/${editAct.id}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            teks: editActTeks,
+            waktu: wibInputToISO(editActWaktu),
+          }),
+        }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setEditActErr(data.error ?? "Gagal menyimpan perubahan.");
+        return;
+      }
+      setEditAct(null);
+      await reload();
+    } finally {
+      setSavingAct(false);
+    }
+  }
 
   // --- Modal edit ---
   const [editOpen, setEditOpen] = useState(false);
@@ -202,7 +262,7 @@ export function TicketDetailClient({
         setDelBusy(false);
         return;
       }
-      router.push("/daily-monitoring");
+      router.push(backHref);
     } catch {
       setActionErr("Terjadi kesalahan jaringan.");
       setDelBusy(false);
@@ -236,10 +296,10 @@ export function TicketDetailClient({
   return (
     <div className="space-y-5">
       <Link
-        href="/daily-monitoring"
+        href={backHref}
         className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-primary transition-colors"
       >
-        <ArrowLeft className="w-4 h-4" /> Kembali ke Daily Monitoring
+        <ArrowLeft className="w-4 h-4" /> {backLabel}
       </Link>
 
       {/* Header */}
@@ -448,8 +508,9 @@ export function TicketDetailClient({
         <Card className="lg:col-span-2">
           <CardTitle className="mb-1">Kegiatan Penanganan Gangguan</CardTitle>
           <p className="text-xs text-gray-500 mb-4">
-            Log append-only — setiap entri tersimpan permanen dengan timestamp,
-            tidak dapat diedit/dihapus.
+            Log kronologis — setiap entri tersimpan dengan timestamp. Pembuat
+            entri atau Super Admin dapat memperbaiki teks/waktu; perubahan tetap
+            meninggalkan jejak (penanda &ldquo;diedit&rdquo;).
           </p>
 
           {canMutate && !isSelesai && (
@@ -497,7 +558,7 @@ export function TicketDetailClient({
                     key={a.id}
                     initial={{ opacity: 0, y: 6 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="ml-4"
+                    className="ml-4 group"
                   >
                     <span className="absolute -left-[7px] mt-1.5 w-3 h-3 rounded-full bg-primary border-2 border-white" />
                     <div className="flex items-center gap-2 text-xs text-gray-500">
@@ -506,6 +567,23 @@ export function TicketDetailClient({
                       </span>
                       <span>· {a.userNama}</span>
                       <Badge variant="neutral">Shift {a.shiftKode}</Badge>
+                      {a.editedAt && (
+                        <span
+                          className="inline-flex items-center gap-1 text-[11px] text-amber-700"
+                          title={`Diedit oleh ${a.editedByNama ?? "—"} · ${fmtDateTime(a.editedAt)}`}
+                        >
+                          <Pencil className="w-3 h-3" /> diedit
+                        </span>
+                      )}
+                      {canEditActivity(a) && (
+                        <button
+                          type="button"
+                          onClick={() => openEditActivity(a)}
+                          className="ml-auto inline-flex items-center gap-1 text-gray-400 hover:text-primary transition-colors sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100"
+                        >
+                          <Pencil className="w-3.5 h-3.5" /> Edit
+                        </button>
+                      )}
                     </div>
                     <p className="mt-1 text-sm text-gray-800 whitespace-pre-wrap">
                       {a.teks}
@@ -650,6 +728,52 @@ export function TicketDetailClient({
               Batal
             </Button>
             <Button type="submit" loading={savingEdit}>
+              Simpan Perubahan
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* ---- Modal edit entri kegiatan ---- */}
+      <Modal
+        open={!!editAct}
+        onClose={() => setEditAct(null)}
+        title="Edit Entri Kegiatan"
+        description="Perbaiki teks kegiatan atau koreksi waktu entri. Perubahan tetap meninggalkan jejak audit."
+        size="md"
+      >
+        <form onSubmit={submitEditActivity} className="space-y-4">
+          <div className="flex flex-col gap-1">
+            <label className="text-sm font-medium text-gray-700">
+              Teks Kegiatan
+            </label>
+            <textarea
+              rows={3}
+              value={editActTeks}
+              onChange={(e) => setEditActTeks(e.target.value)}
+              className="w-full px-3 py-2 text-sm rounded-md border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+            />
+          </div>
+          <Input
+            label="Waktu Entri"
+            type="datetime-local"
+            value={editActWaktu}
+            onChange={(e) => setEditActWaktu(e.target.value)}
+          />
+          {editActErr && (
+            <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+              {editActErr}
+            </p>
+          )}
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setEditAct(null)}
+            >
+              Batal
+            </Button>
+            <Button type="submit" loading={savingAct}>
               Simpan Perubahan
             </Button>
           </div>

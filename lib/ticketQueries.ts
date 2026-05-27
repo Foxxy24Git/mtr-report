@@ -12,6 +12,8 @@ export interface TicketListFilter {
   scope?: string | null;
   /** proses | selesai | all */
   status?: string | null;
+  /** belum | approved | all */
+  statusSupervisi?: string | null;
   currentUserId: string;
 }
 
@@ -40,6 +42,8 @@ export async function listTickets(
   if (f.kategori && KATEGORI.includes(f.kategori)) where.kategori = f.kategori;
   if (f.shift && SHIFTS.includes(f.shift)) where.shiftKode = f.shift;
   if (f.status === "proses" || f.status === "selesai") where.status = f.status;
+  if (f.statusSupervisi === "belum" || f.statusSupervisi === "approved")
+    where.statusSupervisi = f.statusSupervisi;
   if (f.scope === "mine") where.ownerUserId = f.currentUserId;
   else if (f.scope === "lanjutan")
     where.activities = { some: { isTindakLanjutFlag: true } };
@@ -88,7 +92,10 @@ export interface TicketActivityItem {
   teks: string;
   isTindakLanjutFlag: boolean;
   shiftKode: ShiftKode;
+  userId: string;
   userNama: string;
+  editedAt: Date | null;
+  editedByNama: string | null;
 }
 
 export interface TicketDetail {
@@ -140,7 +147,10 @@ export async function getTicketDetail(id: string): Promise<TicketDetail | null> 
       pimpinanDivisi: { select: { nama: true } },
       activities: {
         orderBy: { waktu: "asc" },
-        include: { user: { select: { nama: true } } },
+        include: {
+          user: { select: { nama: true } },
+          editor: { select: { nama: true } },
+        },
       },
     },
   });
@@ -188,7 +198,10 @@ export async function getTicketDetail(id: string): Promise<TicketDetail | null> 
       teks: a.teks,
       isTindakLanjutFlag: a.isTindakLanjutFlag,
       shiftKode: a.shiftKode,
+      userId: a.userId,
       userNama: a.user.nama,
+      editedAt: a.editedAt,
+      editedByNama: a.editor?.nama ?? null,
     })),
   };
 }

@@ -77,6 +77,7 @@ model User {
   ticketsOwned     Ticket[]          @relation("TicketOwner")
   ticketsApproved  Ticket[]          @relation("TicketApprover")
   activities       TicketActivity[]
+  activitiesEdited TicketActivity[]  @relation("ActivityEditor")
   handoversFrom    ShiftHandover[]   @relation("HandoverFrom")
   handoversTo      ShiftHandover[]   @relation("HandoverTo")
   acTempLogs       AcTempLog[]
@@ -170,12 +171,32 @@ model TicketActivity {
   teks             String
   isTindakLanjutFlag Boolean @default(false) @map("is_tindak_lanjut_flag")
   createdAt        DateTime  @default(now()) @map("created_at")
+  // Audit edit: entri kini editable (pembuat/superadmin) dengan jejak revisi.
+  editedAt         DateTime? @map("edited_at")
+  editedById       String?   @map("edited_by")
 
-  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  user   User   @relation(fields: [userId], references: [id])
+  ticket    Ticket                   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user      User                     @relation(fields: [userId], references: [id])
+  editor    User?                    @relation("ActivityEditor", fields: [editedById], references: [id])
+  revisions TicketActivityRevision[]
 
   @@index([ticketId])
   @@map("ticket_activities")
+}
+
+// Snapshot nilai sebelum tiap edit (jejak revisi sederhana untuk audit).
+model TicketActivityRevision {
+  id         String   @id @default(cuid())
+  activityId String   @map("activity_id")
+  teks       String
+  waktu      DateTime
+  editedById String   @map("edited_by")
+  editedAt   DateTime @default(now()) @map("edited_at")
+
+  activity TicketActivity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+
+  @@index([activityId])
+  @@map("ticket_activity_revisions")
 }
 
 // Serah terima shift bersifat batch (level global), bukan per-tiket.
