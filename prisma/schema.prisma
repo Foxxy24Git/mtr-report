@@ -178,18 +178,21 @@ model TicketActivity {
   @@map("ticket_activities")
 }
 
+// Serah terima shift bersifat batch (level global), bukan per-tiket.
+// Satu baris dicatat sekali per aksi serah terima: from_shift → to_shift.
+// ticketId & toUserId nullable (tidak ada pemilihan tiket/petugas manual).
 model ShiftHandover {
   id        String    @id @default(cuid())
-  ticketId  String    @map("ticket_id")
+  ticketId  String?   @map("ticket_id")
   fromUserId String   @map("from_user")
   toUserId   String?  @map("to_user")
   fromShift ShiftKode @map("from_shift")
   toShift   ShiftKode @map("to_shift")
   at        DateTime  @default(now())
 
-  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  fromUser User   @relation("HandoverFrom", fields: [fromUserId], references: [id])
-  toUser   User?  @relation("HandoverTo", fields: [toUserId], references: [id])
+  ticket   Ticket? @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  fromUser User    @relation("HandoverFrom", fields: [fromUserId], references: [id])
+  toUser   User?   @relation("HandoverTo", fields: [toUserId], references: [id])
 
   @@map("shift_handovers")
 }

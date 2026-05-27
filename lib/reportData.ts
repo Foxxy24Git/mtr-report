@@ -89,7 +89,6 @@ export async function gatherReportData(p: GatherParams): Promise<GatherResult> {
       pimpinanInfra: { select: { nama: true } },
       pimpinanDivisi: { select: { nama: true } },
       activities: { orderBy: { waktu: "asc" }, include: { user: { select: { nama: true } } } },
-      handovers: { include: { toUser: { select: { nama: true } } } },
     },
   });
 
@@ -167,9 +166,9 @@ export async function gatherReportData(p: GatherParams): Promise<GatherResult> {
 
   const signatures: ReportSignatures = {
     penyerah: uniqueJoin(ticketRows.map((t) => t.owner.nama)),
-    penerima: uniqueJoin(
-      ticketRows.flatMap((t) => t.handovers.map((h) => h.toUser?.nama ?? null))
-    ),
+    // Serah terima kini batch otomatis tanpa pemilihan petugas penerima —
+    // kolom penerima ditandatangani manual pada form.
+    penerima: "",
     supervisi: uniqueJoin(
       ticketRows.filter((t) => t.statusSupervisi === "approved").map((t) => t.approver?.nama ?? null)
     ),

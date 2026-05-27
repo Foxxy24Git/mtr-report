@@ -8,9 +8,10 @@ export type GuardResult =
   | { ok: false; status: number; error: string };
 
 /**
- * Izin mutasi tiket (update kegiatan, edit, handover, close, hapus).
+ * Izin mutasi tiket (update kegiatan, edit, close, hapus).
  * Supervisi hanya boleh melihat — tidak boleh mengubah (PRD §2).
- * Selain superadmin, hanya pemilik tiket shift saat ini yang boleh.
+ * Selain superadmin, boleh bila pemilik tiket ATAU petugas pada shift aktif
+ * yang kini memegang tiket (mendukung serah terima shift batch otomatis).
  */
 export async function guardTicketMutation(
   session: SessionPayload,
@@ -23,11 +24,14 @@ export async function guardTicketMutation(
   if (!ticket) {
     return { ok: false, status: 404, error: "Tiket tidak ditemukan." };
   }
-  if (session.role !== "superadmin" && ticket.ownerUserId !== session.sub) {
+  const isOwner = ticket.ownerUserId === session.sub;
+  const isShiftHolder = !!session.shift && ticket.shiftKode === session.shift;
+  if (session.role !== "superadmin" && !isOwner && !isShiftHolder) {
     return {
       ok: false,
       status: 403,
-      error: "Hanya pemilik tiket (shift saat ini) atau Super Admin yang dapat mengubah tiket ini.",
+      error:
+        "Hanya pemilik tiket, petugas shift yang memegang tiket, atau Super Admin yang dapat mengubah tiket ini.",
     };
   }
   return { ok: true, ticket };

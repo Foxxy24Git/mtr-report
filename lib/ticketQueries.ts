@@ -41,7 +41,8 @@ export async function listTickets(
   if (f.shift && SHIFTS.includes(f.shift)) where.shiftKode = f.shift;
   if (f.status === "proses" || f.status === "selesai") where.status = f.status;
   if (f.scope === "mine") where.ownerUserId = f.currentUserId;
-  else if (f.scope === "lanjutan") where.handovers = { some: {} };
+  else if (f.scope === "lanjutan")
+    where.activities = { some: { isTindakLanjutFlag: true } };
 
   const tickets = await prisma.ticket.findMany({
     where,
@@ -49,7 +50,9 @@ export async function listTickets(
     include: {
       atm: { select: { kodeAtm: true, namaAtm: true } },
       owner: { select: { nama: true } },
-      _count: { select: { handovers: true } },
+      _count: {
+        select: { activities: { where: { isTindakLanjutFlag: true } } },
+      },
       activities: {
         orderBy: { waktu: "desc" },
         take: 1,
@@ -71,7 +74,7 @@ export async function listTickets(
       kodeAtm: t.atm?.kodeAtm ?? "—",
       namaAtm: t.atm?.namaAtm ?? "—",
       ownerNama: t.owner.nama,
-      lanjutan: t._count.handovers > 0,
+      lanjutan: t._count.activities > 0,
       lastTeks: last?.teks ?? null,
       lastWaktu: last?.waktu ?? null,
       lastPic: last?.user.nama ?? null,

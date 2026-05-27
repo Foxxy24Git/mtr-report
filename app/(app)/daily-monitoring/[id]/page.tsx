@@ -1,9 +1,8 @@
 import { notFound } from "next/navigation";
-import { LeaderJabatan, Role } from "@prisma/client";
+import { LeaderJabatan } from "@prisma/client";
 import { requireSession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { getTicketDetail } from "@/lib/ticketQueries";
-import { ALL_SHIFTS } from "@/lib/shift";
 import { TicketDetailClient } from "@/components/daily-monitoring/TicketDetailClient";
 
 export const dynamic = "force-dynamic";
@@ -17,17 +16,12 @@ export default async function TicketDetailPage({ params }: Params) {
   const ticket = await getTicketDetail(id);
   if (!ticket) notFound();
 
-  const [lookups, leaders, petugas, me] = await Promise.all([
+  const [lookups, leaders, me] = await Promise.all([
     prisma.masterLookup.findMany({
       orderBy: { nilai: "asc" },
       select: { tipe: true, nilai: true },
     }),
     prisma.leader.findMany({ where: { aktif: true }, orderBy: { nama: "asc" } }),
-    prisma.user.findMany({
-      where: { role: { in: [Role.user, Role.superadmin] } },
-      orderBy: { nama: "asc" },
-      select: { id: true, nama: true, username: true },
-    }),
     session.role === "supervisi"
       ? prisma.user.findUnique({
           where: { id: session.sub },
@@ -54,11 +48,8 @@ export default async function TicketDetailPage({ params }: Params) {
       opsi={opsi}
       leadersInfra={mapLeader(LeaderJabatan.infrastruktur)}
       leadersDivisi={mapLeader(LeaderJabatan.divisi)}
-      petugas={petugas}
-      shifts={ALL_SHIFTS}
       role={session.role}
       currentUserId={session.sub}
-      currentShift={session.shift}
       supervisiHasTtd={Boolean(me?.ttdUrl)}
     />
   );

@@ -3,6 +3,7 @@ import {
   isWeekend,
   validShiftsForDate,
   isShiftValidForDate,
+  nextShift,
   WEEKDAY_SHIFTS,
   WEEKEND_SHIFTS,
 } from "../shift";
@@ -55,5 +56,17 @@ describe("isShiftValidForDate", () => {
   it("menolak kode shift tak dikenal", () => {
     expect(isShiftValidForDate("Z", TUESDAY)).toBe(false);
     expect(isShiftValidForDate("", SATURDAY)).toBe(false);
+  });
+});
+
+describe("nextShift", () => {
+  it("siklus hari kerja A→B→C→A", () => {
+    expect(nextShift("A")).toBe("B");
+    expect(nextShift("B")).toBe("C");
+    expect(nextShift("C")).toBe("A");
+  });
+  it("siklus akhir pekan D→E→D", () => {
+    expect(nextShift("D")).toBe("E");
+    expect(nextShift("E")).toBe("D");
   });
 });

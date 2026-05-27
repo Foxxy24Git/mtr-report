@@ -18,7 +18,12 @@ export default async function DailyMonitoringPage() {
           membuka detail &amp; mencatat kegiatan penanganan.
         </p>
       </div>
-      <DailyMonitoringClient initialItems={items} shifts={ALL_SHIFTS} />
+      <DailyMonitoringClient
+        initialItems={items}
+        shifts={ALL_SHIFTS}
+        role={session.role}
+        currentShift={session.shift}
+      />
     </div>
   );
 }

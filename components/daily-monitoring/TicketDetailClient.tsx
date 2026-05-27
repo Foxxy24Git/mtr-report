@@ -33,11 +33,6 @@ interface LeaderOpt {
   nama: string;
   isPjs: boolean;
 }
-interface PetugasOpt {
-  id: string;
-  nama: string;
-  username: string;
-}
 
 interface Props {
   initialTicket: TicketDetail;
@@ -48,11 +43,8 @@ interface Props {
   };
   leadersInfra: LeaderOpt[];
   leadersDivisi: LeaderOpt[];
-  petugas: PetugasOpt[];
-  shifts: string[];
   role: "superadmin" | "user" | "supervisi";
   currentUserId: string;
-  currentShift: string;
   supervisiHasTtd?: boolean;
 }
 
@@ -67,8 +59,6 @@ export function TicketDetailClient({
   opsi,
   leadersInfra,
   leadersDivisi,
-  petugas,
-  shifts,
   role,
   currentUserId,
   supervisiHasTtd = false,
@@ -101,13 +91,6 @@ export function TicketDetailClient({
   });
   const [savingEdit, setSavingEdit] = useState(false);
   const [editErr, setEditErr] = useState("");
-
-  // --- Modal handover ---
-  const [hoOpen, setHoOpen] = useState(false);
-  const [hoUser, setHoUser] = useState("");
-  const [hoShift, setHoShift] = useState("");
-  const [hoBusy, setHoBusy] = useState(false);
-  const [hoErr, setHoErr] = useState("");
 
   // --- Modal close & delete ---
   const [closeOpen, setCloseOpen] = useState(false);
@@ -189,32 +172,6 @@ export function TicketDetailClient({
     }
   }
 
-  async function submitHandover(e: React.FormEvent) {
-    e.preventDefault();
-    setHoErr("");
-    if (!hoUser) return setHoErr("Pilih petugas shift berikutnya.");
-    if (!hoShift) return setHoErr("Pilih shift tujuan.");
-    setHoBusy(true);
-    try {
-      const res = await fetch(`/api/tickets/${ticket.id}/handover`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ toUserId: hoUser, toShift: hoShift }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setHoErr(data.error ?? "Gagal melakukan serah terima.");
-        return;
-      }
-      setHoOpen(false);
-      setHoUser("");
-      setHoShift("");
-      await reload();
-    } finally {
-      setHoBusy(false);
-    }
-  }
-
   async function confirmClose() {
     setActionErr("");
     setCloseBusy(true);
@@ -275,8 +232,6 @@ export function TicketDetailClient({
     new Date(ticket.waktuOpen),
     ticket.waktuSelesai ? new Date(ticket.waktuSelesai) : null
   );
-
-  const otherPetugas = petugas.filter((p) => p.id !== ticket.ownerId);
 
   return (
     <div className="space-y-5">
@@ -355,27 +310,15 @@ export function TicketDetailClient({
               <Pencil className="w-4 h-4" /> Ubah Detail
             </Button>
             {!isSelesai && (
-              <>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    setHoErr("");
-                    setHoOpen(true);
-                  }}
-                >
-                  <ArrowRightLeft className="w-4 h-4" /> Serah Terima Shift
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    setActionErr("");
-                    setCloseOpen(true);
-                  }}
-                >
-                  <CheckCircle2 className="w-4 h-4" /> Close Tiket
-                </Button>
-              </>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setActionErr("");
+                  setCloseOpen(true);
+                }}
+              >
+                <CheckCircle2 className="w-4 h-4" /> Close Tiket
+              </Button>
             )}
             <Button
               variant="danger"
@@ -708,60 +651,6 @@ export function TicketDetailClient({
             </Button>
             <Button type="submit" loading={savingEdit}>
               Simpan Perubahan
-            </Button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* ---- Modal serah terima ---- */}
-      <Modal
-        open={hoOpen}
-        onClose={() => setHoOpen(false)}
-        title="Serah Terima Shift"
-        description="Tiket diteruskan ke shift berikutnya. Penanda TINDAK LANJUT MONITORING SELANJUTNYA otomatis ditambahkan."
-      >
-        <form onSubmit={submitHandover} className="space-y-4">
-          <Select
-            label="Petugas Shift Berikutnya"
-            required
-            value={hoUser}
-            onChange={(e) => setHoUser(e.target.value)}
-          >
-            <option value="">— Pilih petugas —</option>
-            {otherPetugas.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.nama} ({p.username})
-              </option>
-            ))}
-          </Select>
-          <Select
-            label="Shift Tujuan"
-            required
-            value={hoShift}
-            onChange={(e) => setHoShift(e.target.value)}
-          >
-            <option value="">— Pilih shift —</option>
-            {shifts.map((s) => (
-              <option key={s} value={s}>
-                Shift {s}
-              </option>
-            ))}
-          </Select>
-          {hoErr && (
-            <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
-              {hoErr}
-            </p>
-          )}
-          <div className="flex justify-end gap-2 pt-2">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => setHoOpen(false)}
-            >
-              Batal
-            </Button>
-            <Button type="submit" loading={hoBusy}>
-              <ArrowRightLeft className="w-4 h-4" /> Serahkan
             </Button>
           </div>
         </form>

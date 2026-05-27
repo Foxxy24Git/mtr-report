@@ -8,7 +8,7 @@ export interface KategoriCount {
   total: number;
   /** Tiket open yang di-open oleh user yang sedang login. */
   mine: number;
-  /** Tiket open yang dilanjutkan (diterima dari shift sebelumnya) ke user ini. */
+  /** Tiket open yang dilanjutkan dari shift sebelumnya (punya penanda tindak lanjut). */
   lanjutan: number;
 }
 
@@ -61,7 +61,10 @@ export async function getDashboardData(
       }),
       prisma.ticket.groupBy({
         by: ["kategori"],
-        where: { ...OPEN, handovers: { some: { toUserId: currentUserId } } },
+        where: {
+          ...OPEN,
+          activities: { some: { isTindakLanjutFlag: true } },
+        },
         _count: { _all: true },
       }),
       prisma.ticket.findMany({
@@ -75,7 +78,9 @@ export async function getDashboardData(
           waktuOpen: true,
           owner: { select: { nama: true } },
           atm: { select: { kodeAtm: true, namaAtm: true } },
-          _count: { select: { handovers: true } },
+          _count: {
+            select: { activities: { where: { isTindakLanjutFlag: true } } },
+          },
         },
       }),
     ]);
@@ -113,7 +118,7 @@ export async function getDashboardData(
       shiftKode: t.shiftKode,
       waktuOpen: t.waktuOpen,
       ownerNama: t.owner.nama,
-      lanjutan: t._count.handovers > 0,
+      lanjutan: t._count.activities > 0,
     })),
     generatedAt: new Date().toISOString(),
   };

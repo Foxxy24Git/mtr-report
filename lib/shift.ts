@@ -23,3 +23,21 @@ export function validShiftsForDate(date: Date): ShiftCode[] {
 export function isShiftValidForDate(shift: string, date: Date): boolean {
   return (validShiftsForDate(date) as string[]).includes(shift);
 }
+
+/**
+ * Aturan transisi shift otomatis (PRD §3).
+ * Hari kerja siklus A→B→C→A (C berlanjut ke shift A hari berikutnya).
+ * Akhir pekan siklus D→E→D (E berlanjut ke shift D hari berikutnya).
+ */
+export const NEXT_SHIFT: Record<ShiftCode, ShiftCode> = {
+  A: "B",
+  B: "C",
+  C: "A",
+  D: "E",
+  E: "D",
+};
+
+/** Shift berikutnya dari shift aktif saat ini. */
+export function nextShift(shift: ShiftCode): ShiftCode {
+  return NEXT_SHIFT[shift];
+}
