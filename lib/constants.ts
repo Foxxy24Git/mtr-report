@@ -1,6 +1,7 @@
 import {
   LayoutDashboard,
   Activity,
+  CalendarRange,
   TicketPlus,
   FileBarChart2,
   Server,
@@ -34,6 +35,12 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/daily-monitoring",
     icon: Activity,
     description: "Semua tiket ATM & jaringan aktif",
+  },
+  {
+    label: "Weekly Monitoring",
+    href: "/weekly-monitoring",
+    icon: CalendarRange,
+    description: "Riwayat tiket 7 hari terakhir (read-only)",
   },
   {
     label: "Supervisi",

@@ -44,6 +44,11 @@ interface Props {
   /** Tujuan tombol "Kembali" & redirect setelah hapus. */
   backHref?: string;
   backLabel?: string;
+  /**
+   * Mode read-only (mis. Weekly Monitoring): sembunyikan semua aksi
+   * edit/hapus/close/approve/tambah & edit kegiatan. Murni lihat riwayat.
+   */
+  readOnly?: boolean;
 }
 
 /** Tambahkan `value` ke daftar opsi bila belum ada (agar nilai lama tetap muncul). */
@@ -61,6 +66,7 @@ export function TicketDetailClient({
   supervisiHasTtd = false,
   backHref = "/daily-monitoring",
   backLabel = "Kembali ke Daily Monitoring",
+  readOnly = false,
 }: Props) {
   const router = useRouter();
   const [ticket, setTicket] = useState<TicketDetail>(initialTicket);
@@ -74,6 +80,7 @@ export function TicketDetailClient({
   const isShiftAktifPemegang =
     !!currentSessionShift && currentSessionShift === ticket.shiftKode;
   const canMutate =
+    !readOnly &&
     role !== "supervisi" &&
     (role === "superadmin" ||
       ticket.ownerId === currentUserId ||
@@ -86,7 +93,7 @@ export function TicketDetailClient({
    * Owner shift sebelumnya tetap bisa lihat tiket, tetapi tidak menambah entri.
    */
   const canAddActivity =
-    role === "superadmin" || (canMutate && isShiftAktifPemegang);
+    !readOnly && (role === "superadmin" || (canMutate && isShiftAktifPemegang));
 
   // --- Kegiatan baru ---
   const [kegiatan, setKegiatan] = useState("");
@@ -104,6 +111,7 @@ export function TicketDetailClient({
   /** Boleh edit entri: pembuat entri atau superadmin (PRD §4.B.3 poin 5). */
   function canEditActivity(a: Activity) {
     return (
+      !readOnly &&
       role !== "supervisi" &&
       !a.isTindakLanjutFlag &&
       (role === "superadmin" || a.userId === currentUserId)
@@ -400,7 +408,7 @@ export function TicketDetailClient({
             </Button>
           </div>
         )}
-        {role === "supervisi" && (
+        {!readOnly && role === "supervisi" && (
           <div className="mt-4 pt-4 border-t border-gray-100">
             {isApproved ? (
               <div className="flex items-center gap-2 text-sm text-green-700">

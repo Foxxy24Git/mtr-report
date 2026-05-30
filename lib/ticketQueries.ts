@@ -127,6 +127,84 @@ export async function listTickets(
   });
 }
 
+export interface WeeklyTicketFilter {
+  /** Batas awal rentang (ISO instant). Default 7 hari ke belakang dipakai route. */
+  from: Date;
+  /** Batas akhir rentang (ISO instant). */
+  to: Date;
+  kategori?: string | null;
+  /** proses | selesai | all */
+  status?: string | null;
+  shift?: string | null;
+  /** Filter owner/PIC berdasar id user. */
+  ownerUserId?: string | null;
+  /** Cari berdasar no tiket atau kode/lokasi ATM. */
+  search?: string | null;
+}
+
+export interface WeeklyTicketItem {
+  id: string;
+  noTiket: string;
+  kategori: TicketKategori;
+  waktuOpen: Date;
+  waktuSelesai: Date | null;
+  status: TicketStatus;
+  statusSupervisi: string;
+  shiftKode: ShiftKode;
+  kodeAtm: string;
+  namaAtm: string;
+  ownerNama: string;
+}
+
+/**
+ * Query Weekly Monitoring (menu baru): SELURUH tiket dalam rentang tanggal
+ * (default 7 hari rolling) lintas user & shift, status proses maupun selesai,
+ * urut terbaru di atas (waktuOpen DESC). Murni baca — tanpa mutasi.
+ */
+export async function listWeeklyTickets(
+  f: WeeklyTicketFilter
+): Promise<WeeklyTicketItem[]> {
+  const where: Record<string, unknown> = {
+    waktuOpen: { gte: f.from, lte: f.to },
+  };
+  if (f.kategori && KATEGORI.includes(f.kategori)) where.kategori = f.kategori;
+  if (f.status === "proses" || f.status === "selesai") where.status = f.status;
+  if (f.shift && SHIFTS.includes(f.shift)) where.shiftKode = f.shift;
+  if (f.ownerUserId) where.ownerUserId = f.ownerUserId;
+
+  const search = f.search?.trim();
+  if (search) {
+    where.OR = [
+      { noTiket: { contains: search, mode: "insensitive" } },
+      { atm: { kodeAtm: { contains: search, mode: "insensitive" } } },
+      { atm: { namaAtm: { contains: search, mode: "insensitive" } } },
+    ];
+  }
+
+  const tickets = await prisma.ticket.findMany({
+    where,
+    orderBy: { waktuOpen: "desc" },
+    include: {
+      atm: { select: { kodeAtm: true, namaAtm: true } },
+      owner: { select: { nama: true } },
+    },
+  });
+
+  return tickets.map((t) => ({
+    id: t.id,
+    noTiket: t.noTiket,
+    kategori: t.kategori,
+    waktuOpen: t.waktuOpen,
+    waktuSelesai: t.waktuSelesai,
+    status: t.status,
+    statusSupervisi: t.statusSupervisi,
+    shiftKode: t.shiftKode,
+    kodeAtm: t.atm?.kodeAtm ?? "—",
+    namaAtm: t.atm?.namaAtm ?? "—",
+    ownerNama: t.owner.nama,
+  }));
+}
+
 export interface TicketActivityItem {
   id: string;
   waktu: Date;
