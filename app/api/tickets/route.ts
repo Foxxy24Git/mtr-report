@@ -40,6 +40,7 @@ export async function GET(req: Request) {
     currentUserId: session.sub,
     dailyMonitoring,
     currentShift: dailyMonitoring ? session.shift : null,
+    shiftStartedAt: dailyMonitoring ? session.shiftStartedAt : null,
   });
 
   return NextResponse.json({ items });

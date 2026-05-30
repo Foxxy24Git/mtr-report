@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { LeaderJabatan, Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { guardTicketMutation } from "@/lib/ticketGuard";
@@ -44,28 +44,6 @@ export async function PATCH(req: Request, { params }: Params) {
 
   const body = await req.json().catch(() => null);
 
-  // Validasi pimpinan: harus ada di master & jabatan sesuai.
-  const pimpinanInfraId = optStr(body?.pimpinanInfraId);
-  const pimpinanDivisiId = optStr(body?.pimpinanDivisiId);
-  if (pimpinanInfraId) {
-    const l = await prisma.leader.findUnique({ where: { id: pimpinanInfraId } });
-    if (!l || l.jabatan !== LeaderJabatan.infrastruktur) {
-      return NextResponse.json(
-        { error: "Pimpinan Bag. Infrastruktur tidak valid." },
-        { status: 400 }
-      );
-    }
-  }
-  if (pimpinanDivisiId) {
-    const l = await prisma.leader.findUnique({ where: { id: pimpinanDivisiId } });
-    if (!l || l.jabatan !== LeaderJabatan.divisi) {
-      return NextResponse.json(
-        { error: "Pimpinan Divisi tidak valid." },
-        { status: 400 }
-      );
-    }
-  }
-
   const updated = await prisma.ticket.update({
     where: { id },
     data: {
@@ -75,8 +53,6 @@ export async function PATCH(req: Request, { params }: Params) {
       vendor: optStr(body?.vendor),
       noTiketVendor: optStr(body?.noTiketVendor),
       keterangan: optStr(body?.keterangan),
-      pimpinanInfraId,
-      pimpinanDivisiId,
     },
   });
 

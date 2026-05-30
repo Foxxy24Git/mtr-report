@@ -24,6 +24,8 @@ export async function POST(req: Request) {
     nama: session.nama,
     role: session.role,
     shift,
+    // Mulai shift session — penanda batas tiket Daily Monitoring (PRD revisi §4.B).
+    shiftStartedAt: new Date().toISOString(),
   });
 
   const store = await cookies();

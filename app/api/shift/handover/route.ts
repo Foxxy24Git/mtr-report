@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { ShiftKode, TicketStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
+import { signSession, COOKIE_NAME, SESSION_MAX_AGE } from "@/lib/jwt";
 import { ALL_SHIFTS, nextShift, type ShiftCode } from "@/lib/shift";
 
 const TINDAK_LANJUT_TEKS = "TINDAK LANJUT MONITORING SELANJUTNYA";
@@ -15,7 +17,7 @@ const TINDAK_LANJUT_TEKS = "TINDAK LANJUT MONITORING SELANJUTNYA";
  * - tiap tiket open mendapat penanda "TINDAK LANJUT MONITORING SELANJUTNYA".
  * - satu baris shift_handovers dicatat untuk seluruh batch.
  */
-export async function POST() {
+export async function POST(req: Request) {
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: "Tidak terautentikasi." }, { status: 401 });
@@ -24,6 +26,33 @@ export async function POST() {
     return NextResponse.json(
       { error: "Supervisi tidak dapat melakukan serah terima." },
       { status: 403 }
+    );
+  }
+
+  // Penanda tangan laporan dipilih pada modal serah terima (PRD revisi §2).
+  let body: Record<string, unknown> = {};
+  try {
+    body = (await req.json()) ?? {};
+  } catch {
+    body = {};
+  }
+  const pimpinanInfraId =
+    typeof body.pimpinanInfraId === "string" ? body.pimpinanInfraId : "";
+  const pimpinanDivisiId =
+    typeof body.pimpinanDivisiId === "string" ? body.pimpinanDivisiId : "";
+  const supervisiId =
+    typeof body.supervisiId === "string" ? body.supervisiId : "";
+  const supervisiNextId =
+    typeof body.supervisiNextId === "string" && body.supervisiNextId
+      ? body.supervisiNextId
+      : null;
+  if (!pimpinanInfraId || !pimpinanDivisiId || !supervisiId) {
+    return NextResponse.json(
+      {
+        error:
+          "Pilih Pimpinan Bag. Infrastruktur, Pimpinan Divisi, dan Supervisi terlebih dahulu.",
+      },
+      { status: 400 }
     );
   }
 
@@ -47,6 +76,10 @@ export async function POST() {
         fromUserId: session.sub,
         fromShift: fromShift as ShiftKode,
         toShift,
+        pimpinanInfraId,
+        pimpinanDivisiId,
+        supervisiId,
+        supervisiNextId,
       },
     });
 
@@ -66,6 +99,25 @@ export async function POST() {
         data: { shiftKode: toShift },
       });
     }
+  });
+
+  // Shift session berakhir: kosongkan shift sesi user agar Daily Monitoring
+  // kembali kosong & siap untuk shift berikutnya (PRD revisi §4.B).
+  const token = await signSession({
+    sub: session.sub,
+    username: session.username,
+    nama: session.nama,
+    role: session.role,
+    shift: "",
+    shiftStartedAt: "",
+  });
+  const store = await cookies();
+  store.set(COOKIE_NAME, token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: SESSION_MAX_AGE,
   });
 
   return NextResponse.json({

@@ -29,12 +29,6 @@ import { computeSla, formatSlaPersen } from "@/lib/sla";
 import { SHIFT_NAMES } from "@/lib/constants";
 import type { TicketDetail } from "@/lib/ticketQueries";
 
-interface LeaderOpt {
-  id: string;
-  nama: string;
-  isPjs: boolean;
-}
-
 interface Props {
   initialTicket: TicketDetail;
   opsi: {
@@ -42,8 +36,6 @@ interface Props {
     sumber_penyebab: string[];
     jenis_penanganan: string[];
   };
-  leadersInfra: LeaderOpt[];
-  leadersDivisi: LeaderOpt[];
   role: "superadmin" | "user" | "supervisi";
   currentUserId: string;
   /** Shift aktif pada sesi user saat ini (untuk gating kegiatan setelah handover). */
@@ -63,8 +55,6 @@ function withCurrent(opsi: string[], value: string | null): string[] {
 export function TicketDetailClient({
   initialTicket,
   opsi,
-  leadersInfra,
-  leadersDivisi,
   role,
   currentUserId,
   currentSessionShift,
@@ -167,8 +157,6 @@ export function TicketDetailClient({
     vendor: "",
     noTiketVendor: "",
     keterangan: "",
-    pimpinanInfraId: "",
-    pimpinanDivisiId: "",
   });
   const [savingEdit, setSavingEdit] = useState(false);
   const [editErr, setEditErr] = useState("");
@@ -224,8 +212,6 @@ export function TicketDetailClient({
       vendor: ticket.vendor ?? "",
       noTiketVendor: ticket.noTiketVendor ?? "",
       keterangan: ticket.keterangan ?? "",
-      pimpinanInfraId: ticket.pimpinanInfraId ?? "",
-      pimpinanDivisiId: ticket.pimpinanDivisiId ?? "",
     });
     setEditErr("");
     setEditOpen(true);
@@ -478,11 +464,6 @@ export function TicketDetailClient({
               />
               <Field label="Vendor" value={ticket.vendor} />
               <Field label="No Tiket Vendor" value={ticket.noTiketVendor} />
-              <Field
-                label="Pimpinan Bag. Infrastruktur"
-                value={ticket.pimpinanInfraNama}
-              />
-              <Field label="Pimpinan Divisi" value={ticket.pimpinanDivisiNama} />
               <Field label="Keterangan" value={ticket.keterangan} />
             </dl>
           </Card>
@@ -637,7 +618,7 @@ export function TicketDetailClient({
         open={editOpen}
         onClose={() => setEditOpen(false)}
         title="Ubah Detail Gangguan"
-        description="Perbarui klasifikasi gangguan, vendor, & pimpinan penanggung jawab."
+        description="Perbarui klasifikasi gangguan & vendor."
         size="lg"
       >
         <form onSubmit={submitEdit} className="space-y-4">
@@ -700,38 +681,6 @@ export function TicketDetailClient({
                 setEditForm({ ...editForm, noTiketVendor: e.target.value })
               }
             />
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Select
-              label="Pimpinan Bag. Infrastruktur"
-              value={editForm.pimpinanInfraId}
-              onChange={(e) =>
-                setEditForm({ ...editForm, pimpinanInfraId: e.target.value })
-              }
-            >
-              <option value="">— Pilih —</option>
-              {leadersInfra.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.nama}
-                  {l.isPjs ? " (PJS)" : ""}
-                </option>
-              ))}
-            </Select>
-            <Select
-              label="Pimpinan Divisi"
-              value={editForm.pimpinanDivisiId}
-              onChange={(e) =>
-                setEditForm({ ...editForm, pimpinanDivisiId: e.target.value })
-              }
-            >
-              <option value="">— Pilih —</option>
-              {leadersDivisi.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.nama}
-                  {l.isPjs ? " (PJS)" : ""}
-                </option>
-              ))}
-            </Select>
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-sm font-medium text-gray-700">

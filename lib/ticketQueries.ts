@@ -16,14 +16,20 @@ export interface TicketListFilter {
   statusSupervisi?: string | null;
   currentUserId: string;
   /**
-   * Mode Daily Monitoring (PRD §4.B).
-   * Bila true, hanya tampilkan tiket yang relevan dengan shift aktif user:
-   * status = proses DAN shiftKode = currentShift, DAN
-   * (ownerUserId = currentUserId  ATAU  tiket masuk via tindak lanjut/handover).
+   * Mode Daily Monitoring (PRD revisi §4.B).
+   * Bila true, tampilkan SEMUA tiket (proses & selesai) yang menjadi tanggung
+   * jawab user pada shift session yang sedang berjalan:
+   * shiftKode = currentShift DAN
+   * (ownerUserId = currentUserId pada shift session ini  ATAU
+   *  tiket diteruskan ke shift ini via tindak lanjut/handover).
+   * Tiket hilang hanya saat shift berakhir (serah terima) atau user logout —
+   * keduanya mengosongkan shift sesi sehingga query mengembalikan [].
    */
   dailyMonitoring?: boolean;
   /** Shift aktif sesi user (A–E). Wajib bila dailyMonitoring=true. */
   currentShift?: string | null;
+  /** Awal shift session (ISO). Membatasi tiket milik user pada sesi ini. */
+  shiftStartedAt?: string | null;
 }
 
 export interface TicketListItem {
@@ -50,14 +56,26 @@ export async function listTickets(
   const where: Record<string, unknown> = {};
   if (f.kategori && KATEGORI.includes(f.kategori)) where.kategori = f.kategori;
 
-  if (f.dailyMonitoring && f.currentShift && SHIFTS.includes(f.currentShift)) {
-    // PRD §4.B: hanya tampilkan tiket "proses" di shift aktif yang menjadi
-    // tanggung jawab user — tiket sendiri ATAU tiket tindak lanjut dari shift
-    // sebelumnya. Tiket selesai & tiket shift lain tidak ditampilkan.
-    where.status = TicketStatus.proses;
+  if (f.dailyMonitoring) {
+    // Tanpa shift session aktif (belum pilih shift / sudah serah terima /
+    // logout) Daily Monitoring kosong (PRD revisi §4.B).
+    if (!f.currentShift || !SHIFTS.includes(f.currentShift)) return [];
+
+    // Tiket sendiri pada shift session ini dibatasi sejak shift dimulai,
+    // agar tiket lama dari shift bernama sama (sesi sebelumnya) tidak muncul.
+    const startedAt = f.shiftStartedAt ? new Date(f.shiftStartedAt) : null;
+    const mineWhere: Record<string, unknown> = { ownerUserId: f.currentUserId };
+    if (startedAt && !Number.isNaN(startedAt.getTime())) {
+      mineWhere.waktuOpen = { gte: startedAt };
+    }
+
+    // Tampilkan tiket (proses & selesai) di shift aktif yang menjadi tanggung
+    // jawab user — tiket sendiri pada sesi ini ATAU tiket tindak lanjut dari
+    // shift sebelumnya. Tidak ada filter status: tiket close tetap tampil
+    // selama shift masih berjalan.
     where.shiftKode = f.currentShift;
     where.OR = [
-      { ownerUserId: f.currentUserId },
+      mineWhere,
       { activities: { some: { isTindakLanjutFlag: true } } },
     ];
   } else {

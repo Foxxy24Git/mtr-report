@@ -6,6 +6,7 @@ import { Loader2, ArrowRightLeft } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
+import { Select } from "@/components/ui/Select";
 import {
   Table,
   TableHead,
@@ -19,11 +20,24 @@ import { nextShift, type ShiftCode } from "@/lib/shift";
 import { SHIFT_LABELS, SHIFT_NAMES } from "@/lib/constants";
 import type { TicketListItem } from "@/lib/ticketQueries";
 
+interface LeaderOption {
+  id: string;
+  nama: string;
+  jabatan: string;
+}
+
+interface SupervisiOption {
+  id: string;
+  nama: string;
+}
+
 interface Props {
   initialItems: TicketListItem[];
   shifts: string[];
   role: "superadmin" | "user" | "supervisi";
   currentShift: string;
+  leaders: LeaderOption[];
+  supervisiUsers: SupervisiOption[];
 }
 
 const SELECT_CLS =
@@ -34,6 +48,8 @@ export function DailyMonitoringClient({
   shifts,
   role,
   currentShift,
+  leaders,
+  supervisiUsers,
 }: Props) {
   const router = useRouter();
   const [items, setItems] = useState<TicketListItem[]>(initialItems);
@@ -47,6 +63,22 @@ export function DailyMonitoringClient({
   const [hoOpen, setHoOpen] = useState(false);
   const [hoBusy, setHoBusy] = useState(false);
   const [hoErr, setHoErr] = useState("");
+  // Penanda tangan laporan dipilih saat serah terima (PRD revisi §2).
+  const [hoInfra, setHoInfra] = useState("");
+  const [hoDivisi, setHoDivisi] = useState("");
+  const [hoSupervisi, setHoSupervisi] = useState("");
+  const [hoSupervisiNext, setHoSupervisiNext] = useState("");
+
+  const leadersInfra = leaders.filter((l) => l.jabatan === "infrastruktur");
+  const leadersDivisi = leaders.filter((l) => l.jabatan === "divisi");
+  const canHandover = Boolean(hoInfra && hoDivisi && hoSupervisi);
+
+  function resetHandoverPick() {
+    setHoInfra("");
+    setHoDivisi("");
+    setHoSupervisi("");
+    setHoSupervisiNext("");
+  }
 
   const loadTickets = useCallback(async () => {
     setLoading(true);
@@ -84,13 +116,23 @@ export function DailyMonitoringClient({
     setHoErr("");
     setHoBusy(true);
     try {
-      const res = await fetch("/api/shift/handover", { method: "POST" });
+      const res = await fetch("/api/shift/handover", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pimpinanInfraId: hoInfra,
+          pimpinanDivisiId: hoDivisi,
+          supervisiId: hoSupervisi,
+          supervisiNextId: hoSupervisiNext || null,
+        }),
+      });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setHoErr(data.error ?? "Gagal melakukan serah terima.");
         return;
       }
       setHoOpen(false);
+      resetHandoverPick();
       await loadTickets();
       router.refresh();
     } finally {
@@ -128,6 +170,7 @@ export function DailyMonitoringClient({
             disabled={!hasShift}
             onClick={() => {
               setHoErr("");
+              resetHandoverPick();
               setHoOpen(true);
             }}
           >
@@ -154,7 +197,7 @@ export function DailyMonitoringClient({
           <Loader2 className="w-4 h-4 text-gray-400 animate-spin" />
         )}
         <span className="text-xs text-gray-500 ml-auto">
-          {items.length} tiket aktif
+          {items.length} tiket pada shift ini
         </span>
       </div>
 
@@ -166,7 +209,7 @@ export function DailyMonitoringClient({
         <div className="space-y-6">
           <TicketSection
             title="Tiket Saya"
-            subtitle="Tiket yang Anda buka pada shift aktif ini."
+            subtitle="Tiket yang Anda buka pada shift ini (proses & selesai) — tetap tampil sampai serah terima shift."
             tickets={mine}
             emptyText="Belum ada tiket yang Anda buka pada shift ini."
             tone="mine"
@@ -209,6 +252,66 @@ export function DailyMonitoringClient({
             otomatis ditambahkan pada tiap tiket dengan timestamp saat ini.
           </p>
         </div>
+
+        <div className="mt-4 space-y-3">
+          <Select
+            label="Pimpinan Bag. Infrastruktur"
+            required
+            value={hoInfra}
+            onChange={(e) => setHoInfra(e.target.value)}
+          >
+            <option value="">— Pilih pimpinan —</option>
+            {leadersInfra.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.nama}
+              </option>
+            ))}
+          </Select>
+          <Select
+            label="Pimpinan Divisi"
+            required
+            value={hoDivisi}
+            onChange={(e) => setHoDivisi(e.target.value)}
+          >
+            <option value="">— Pilih pimpinan —</option>
+            {leadersDivisi.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.nama}
+              </option>
+            ))}
+          </Select>
+          <Select
+            label="Supervisi"
+            required
+            value={hoSupervisi}
+            onChange={(e) => setHoSupervisi(e.target.value)}
+          >
+            <option value="">— Pilih supervisi —</option>
+            {supervisiUsers.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.nama}
+              </option>
+            ))}
+          </Select>
+          <div>
+            <Select
+              label="Supervisi Selanjutnya"
+              value={hoSupervisiNext}
+              onChange={(e) => setHoSupervisiNext(e.target.value)}
+            >
+              <option value="">— Tidak ada —</option>
+              {supervisiUsers.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.nama}
+                </option>
+              ))}
+            </Select>
+            <p className="mt-1 text-xs text-gray-500">
+              (opsional — hanya jika ada pergantian supervisi)
+            </p>
+          </div>
+        </div>
+
         {hoErr && (
           <p className="mt-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
             {hoErr}
@@ -218,8 +321,12 @@ export function DailyMonitoringClient({
           <Button variant="secondary" onClick={() => setHoOpen(false)}>
             Batal
           </Button>
-          <Button loading={hoBusy} onClick={confirmHandover}>
-            <ArrowRightLeft className="w-4 h-4" /> Ya, Serahkan
+          <Button
+            loading={hoBusy}
+            disabled={!canHandover}
+            onClick={confirmHandover}
+          >
+            <ArrowRightLeft className="w-4 h-4" /> Serahkan Shift
           </Button>
         </div>
       </Modal>
@@ -284,7 +391,9 @@ function TicketSection({
             {tickets.map((t) => (
               <TableRow
                 key={t.id}
-                className="cursor-pointer"
+                className={`cursor-pointer ${
+                  t.status === "selesai" ? "opacity-60" : ""
+                }`}
                 onClick={() => onOpen(t.id)}
               >
                 <Td className="font-mono font-medium text-gray-900">
@@ -303,7 +412,7 @@ function TicketSection({
                     </Badge>
                     {tone === "lanjutan" && (
                       <Badge
-                        variant="warning"
+                        variant="info"
                         title="Tindak lanjut dari shift sebelumnya"
                       >
                         <ArrowRightLeft className="w-3 h-3 mr-0.5" /> Tindak
@@ -332,7 +441,7 @@ function TicketSection({
                   <Badge
                     variant={t.status === "selesai" ? "success" : "warning"}
                   >
-                    {t.status === "selesai" ? "Selesai" : "Proses"}
+                    {t.status === "selesai" ? "Selesai" : "Dalam Proses"}
                   </Badge>
                 </Td>
                 <Td>

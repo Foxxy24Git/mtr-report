@@ -164,19 +164,42 @@ export async function gatherReportData(p: GatherParams): Promise<GatherResult> {
 
   const approver = ticketRows.find((t) => t.statusSupervisi === "approved" && t.approver);
 
+  // Pimpinan & supervisi penanda tangan dipilih saat serah terima shift
+  // (PRD revisi §2): ambil handover terbaru shift ini pada tanggal laporan.
+  const handover = shift
+    ? await prisma.shiftHandover.findFirst({
+        where: { fromShift: shift, at: { gte: startWib, lt: endWib } },
+        orderBy: { at: "desc" },
+        include: {
+          pimpinanInfra: { select: { nama: true } },
+          pimpinanDivisi: { select: { nama: true } },
+          supervisi: { select: { nama: true, ttdUrl: true } },
+        },
+      })
+    : null;
+
   const signatures: ReportSignatures = {
     penyerah: uniqueJoin(ticketRows.map((t) => t.owner.nama)),
     // Serah terima kini batch otomatis tanpa pemilihan petugas penerima —
     // kolom penerima ditandatangani manual pada form.
     penerima: "",
-    supervisi: uniqueJoin(
-      ticketRows.filter((t) => t.statusSupervisi === "approved").map((t) => t.approver?.nama ?? null)
-    ),
-    supervisiTtdPath: approver?.approver?.ttdUrl ?? null,
+    supervisi:
+      handover?.supervisi?.nama ||
+      uniqueJoin(
+        ticketRows
+          .filter((t) => t.statusSupervisi === "approved")
+          .map((t) => t.approver?.nama ?? null)
+      ),
+    supervisiTtdPath:
+      handover?.supervisi?.ttdUrl ?? approver?.approver?.ttdUrl ?? null,
     pimpinanInfra:
-      uniqueJoin(ticketRows.map((t) => t.pimpinanInfra?.nama ?? null)) || defInfra,
+      handover?.pimpinanInfra?.nama ||
+      uniqueJoin(ticketRows.map((t) => t.pimpinanInfra?.nama ?? null)) ||
+      defInfra,
     pimpinanDivisi:
-      uniqueJoin(ticketRows.map((t) => t.pimpinanDivisi?.nama ?? null)) || defDivisi,
+      handover?.pimpinanDivisi?.nama ||
+      uniqueJoin(ticketRows.map((t) => t.pimpinanDivisi?.nama ?? null)) ||
+      defDivisi,
   };
 
   // ----------------------- Meta & nama file -----------------------

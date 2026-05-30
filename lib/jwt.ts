@@ -13,6 +13,12 @@ export interface SessionPayload {
   role: Role;
   /** Shift aktif. Kosong ("") bila petugas belum memilih shift di Dashboard. */
   shift: string;
+  /**
+   * Awal sesi shift (ISO 8601). Diisi saat user memilih shift, dikosongkan
+   * saat login & saat serah terima shift. Dipakai Daily Monitoring untuk
+   * membatasi tiket pada shift session yang sedang berjalan (PRD revisi §4.B).
+   */
+  shiftStartedAt: string;
 }
 
 function secret(): Uint8Array {
@@ -40,6 +46,8 @@ export async function verifySession(
       nama: String(payload.nama),
       role: payload.role as Role,
       shift: typeof payload.shift === "string" ? payload.shift : "",
+      shiftStartedAt:
+        typeof payload.shiftStartedAt === "string" ? payload.shiftStartedAt : "",
     };
   } catch {
     return null;

@@ -32,6 +32,7 @@ export async function POST(req: Request) {
     nama: user.nama,
     role: user.role as Role,
     shift: "",
+    shiftStartedAt: "",
   });
 
   const store = await cookies();

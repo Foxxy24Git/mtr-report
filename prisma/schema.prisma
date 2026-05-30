@@ -80,6 +80,8 @@ model User {
   activitiesEdited TicketActivity[]  @relation("ActivityEditor")
   handoversFrom    ShiftHandover[]   @relation("HandoverFrom")
   handoversTo      ShiftHandover[]   @relation("HandoverTo")
+  handoversSupervisi     ShiftHandover[] @relation("HandoverSupervisi")
+  handoversSupervisiNext ShiftHandover[] @relation("HandoverSupervisiNext")
   acTempLogs       AcTempLog[]
   serverLogs       ServerLog[]
 
@@ -95,6 +97,8 @@ model Leader {
 
   ticketsInfra   Ticket[] @relation("TicketPimpinanInfra")
   ticketsDivisi  Ticket[] @relation("TicketPimpinanDivisi")
+  handoversInfra  ShiftHandover[] @relation("HandoverPimpinanInfra")
+  handoversDivisi ShiftHandover[] @relation("HandoverPimpinanDivisi")
 
   @@map("leaders")
 }
@@ -210,10 +214,19 @@ model ShiftHandover {
   fromShift ShiftKode @map("from_shift")
   toShift   ShiftKode @map("to_shift")
   at        DateTime  @default(now())
+  // Penanda tangan dipilih saat serah terima shift (PRD revisi §2/§4).
+  pimpinanInfraId  String? @map("pimpinan_infra_id")
+  pimpinanDivisiId String? @map("pimpinan_divisi_id")
+  supervisiId      String? @map("supervisi_id")
+  supervisiNextId  String? @map("supervisi_next_id")
 
   ticket   Ticket? @relation(fields: [ticketId], references: [id], onDelete: Cascade)
   fromUser User    @relation("HandoverFrom", fields: [fromUserId], references: [id])
   toUser   User?   @relation("HandoverTo", fields: [toUserId], references: [id])
+  pimpinanInfra  Leader? @relation("HandoverPimpinanInfra", fields: [pimpinanInfraId], references: [id])
+  pimpinanDivisi Leader? @relation("HandoverPimpinanDivisi", fields: [pimpinanDivisiId], references: [id])
+  supervisi      User?   @relation("HandoverSupervisi", fields: [supervisiId], references: [id])
+  supervisiNext  User?   @relation("HandoverSupervisiNext", fields: [supervisiNextId], references: [id])
 
   @@map("shift_handovers")
 }
