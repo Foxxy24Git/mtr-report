@@ -50,6 +50,7 @@ export default async function TicketDetailPage({ params }: Params) {
       leadersDivisi={mapLeader(LeaderJabatan.divisi)}
       role={session.role}
       currentUserId={session.sub}
+      currentSessionShift={session.shift}
       supervisiHasTtd={Boolean(me?.ttdUrl)}
     />
   );

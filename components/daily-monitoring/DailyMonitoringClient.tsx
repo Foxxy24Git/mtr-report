@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, ArrowRightLeft } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/Table";
 import { fmtDateTime } from "@/lib/format";
 import { nextShift, type ShiftCode } from "@/lib/shift";
-import { SHIFT_LABELS } from "@/lib/constants";
+import { SHIFT_LABELS, SHIFT_NAMES } from "@/lib/constants";
 import type { TicketListItem } from "@/lib/ticketQueries";
 
 interface Props {
@@ -25,8 +25,6 @@ interface Props {
   role: "superadmin" | "user" | "supervisi";
   currentShift: string;
 }
-
-type Scope = "all" | "mine" | "lanjutan";
 
 const SELECT_CLS =
   "px-3 py-1.5 text-sm rounded-md border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary";
@@ -42,9 +40,6 @@ export function DailyMonitoringClient({
   const [loading, setLoading] = useState(false);
 
   const [kategori, setKategori] = useState("");
-  const [shift, setShift] = useState("");
-  const [scope, setScope] = useState<Scope>("all");
-  const [status, setStatus] = useState("");
 
   // --- Serah terima shift (batch, global) ---
   const hasShift = shifts.includes(currentShift);
@@ -57,17 +52,15 @@ export function DailyMonitoringClient({
     setLoading(true);
     try {
       const qs = new URLSearchParams();
+      qs.set("dailyMonitoring", "1");
       if (kategori) qs.set("kategori", kategori);
-      if (shift) qs.set("shift", shift);
-      if (scope !== "all") qs.set("scope", scope);
-      if (status) qs.set("status", status);
       const res = await fetch(`/api/tickets?${qs.toString()}`);
       const data = await res.json();
       setItems(data.items ?? []);
     } finally {
       setLoading(false);
     }
-  }, [kategori, shift, scope, status]);
+  }, [kategori]);
 
   const firstRender = useRef(true);
   useEffect(() => {
@@ -78,6 +71,14 @@ export function DailyMonitoringClient({
     const handle = setTimeout(loadTickets, 150);
     return () => clearTimeout(handle);
   }, [loadTickets]);
+
+  // Pisahkan tiket sesuai PRD §4.B: milik shift aktif (saya) vs tindak lanjut.
+  const { mine, lanjutan } = useMemo(() => {
+    const m: TicketListItem[] = [];
+    const l: TicketListItem[] = [];
+    for (const t of items) (t.lanjutan ? l : m).push(t);
+    return { mine: m, lanjutan: l };
+  }, [items]);
 
   async function confirmHandover() {
     setHoErr("");
@@ -107,11 +108,13 @@ export function DailyMonitoringClient({
               <>
                 Shift aktif Anda:{" "}
                 <span className="font-semibold text-gray-900">
-                  Shift {currentShift}
+                  {SHIFT_NAMES[currentShift] ?? `Shift ${currentShift}`}
                 </span>
                 . Serah terima akan meneruskan semua tiket open ke{" "}
                 <span className="font-semibold text-gray-900">
-                  Shift {toShift}
+                  {toShift
+                    ? SHIFT_NAMES[toShift] ?? `Shift ${toShift}`
+                    : "—"}
                 </span>
                 .
               </>
@@ -147,136 +150,38 @@ export function DailyMonitoringClient({
           <option value="jaringan">Jaringan Kantor</option>
         </select>
 
-        <select
-          value={shift}
-          onChange={(e) => setShift(e.target.value)}
-          className={SELECT_CLS}
-          aria-label="Filter shift"
-        >
-          <option value="">Semua Shift</option>
-          {shifts.map((s) => (
-            <option key={s} value={s}>
-              Shift {s}
-            </option>
-          ))}
-        </select>
-
-        <select
-          value={scope}
-          onChange={(e) => setScope(e.target.value as Scope)}
-          className={SELECT_CLS}
-          aria-label="Filter kepemilikan"
-        >
-          <option value="all">Semua Tiket</option>
-          <option value="mine">Milik Saya (shift ini)</option>
-          <option value="lanjutan">Dilanjutkan (lintas shift)</option>
-        </select>
-
-        <select
-          value={status}
-          onChange={(e) => setStatus(e.target.value)}
-          className={SELECT_CLS}
-          aria-label="Filter status"
-        >
-          <option value="">Semua Status</option>
-          <option value="proses">Proses</option>
-          <option value="selesai">Selesai</option>
-        </select>
-
         {loading && (
           <Loader2 className="w-4 h-4 text-gray-400 animate-spin" />
         )}
         <span className="text-xs text-gray-500 ml-auto">
-          {items.length} tiket
+          {items.length} tiket aktif
         </span>
       </div>
 
-      <Table>
-        <TableHead>
-          <TableRow>
-            <Th>Kode ATM</Th>
-            <Th>No Tiket</Th>
-            <Th>Tgl Open</Th>
-            <Th>PIC</Th>
-            <Th>Update Status Terkini</Th>
-            <Th>PIC Update</Th>
-            <Th>Status</Th>
-            <Th>Supervisi</Th>
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {items.length === 0 ? (
-            <TableRow>
-              <Td colSpan={8} className="text-center text-gray-400 py-8">
-                Tidak ada tiket sesuai filter.
-              </Td>
-            </TableRow>
-          ) : (
-            items.map((t) => (
-              <TableRow
-                key={t.id}
-                className="cursor-pointer"
-                onClick={() => router.push(`/daily-monitoring/${t.id}`)}
-              >
-                <Td className="font-mono font-medium text-gray-900">
-                  {t.kodeAtm}
-                  <div className="text-xs font-sans font-normal text-gray-500 max-w-[12rem] truncate">
-                    {t.namaAtm}
-                  </div>
-                </Td>
-                <Td className="whitespace-nowrap">
-                  <span className="font-mono font-semibold text-primary">
-                    {t.noTiket}
-                  </span>
-                  <div className="mt-0.5 flex items-center gap-1">
-                    <Badge variant={t.kategori === "atm" ? "info" : "neutral"}>
-                      {t.kategori === "atm" ? "ATM" : "Jaringan"}
-                    </Badge>
-                    <Badge variant="neutral">Shift {t.shiftKode}</Badge>
-                    {t.lanjutan && (
-                      <Badge variant="warning" title="Dilanjutkan dari shift sebelumnya">
-                        <ArrowRightLeft className="w-3 h-3 mr-0.5" /> Lanjutan
-                      </Badge>
-                    )}
-                  </div>
-                </Td>
-                <Td className="whitespace-nowrap text-xs">
-                  {fmtDateTime(t.waktuOpen)}
-                </Td>
-                <Td className="whitespace-nowrap">{t.ownerNama}</Td>
-                <Td className="max-w-[16rem]">
-                  {t.lastTeks ? (
-                    <span className="line-clamp-2 text-gray-700">
-                      {t.lastTeks}
-                    </span>
-                  ) : (
-                    <span className="text-gray-400">—</span>
-                  )}
-                </Td>
-                <Td className="whitespace-nowrap text-xs text-gray-500">
-                  {t.lastPic ?? "—"}
-                </Td>
-                <Td>
-                  <Badge variant={t.status === "selesai" ? "success" : "warning"}>
-                    {t.status === "selesai" ? "Selesai" : "Proses"}
-                  </Badge>
-                </Td>
-                <Td>
-                  <Badge
-                    variant={
-                      t.statusSupervisi === "approved" ? "success" : "neutral"
-                    }
-                  >
-                    {t.statusSupervisi === "approved"
-                      ? "Sudah Approve"
-                      : "Belum Approve"}
-                  </Badge>
-                </Td>
-              </TableRow>
-            ))
-          )}
-        </TableBody>
-      </Table>
+      {items.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-gray-200 bg-surface-subtle/40 py-10 text-center text-sm text-gray-500">
+          Tidak ada tiket aktif pada shift ini.
+        </div>
+      ) : (
+        <div className="space-y-6">
+          <TicketSection
+            title="Tiket Saya"
+            subtitle="Tiket yang Anda buka pada shift aktif ini."
+            tickets={mine}
+            emptyText="Belum ada tiket yang Anda buka pada shift ini."
+            tone="mine"
+            onOpen={(id) => router.push(`/daily-monitoring/${id}`)}
+          />
+          <TicketSection
+            title="Tindak Lanjut Shift Sebelumnya"
+            subtitle="Tiket yang diteruskan ke shift Anda dari shift sebelumnya."
+            tickets={lanjutan}
+            emptyText="Tidak ada tiket tindak lanjut dari shift sebelumnya."
+            tone="lanjutan"
+            onOpen={(id) => router.push(`/daily-monitoring/${id}`)}
+          />
+        </div>
+      )}
 
       {/* ---- Modal serah terima shift (batch) ---- */}
       <Modal
@@ -319,5 +224,133 @@ export function DailyMonitoringClient({
         </div>
       </Modal>
     </div>
+  );
+}
+
+interface TicketSectionProps {
+  title: string;
+  subtitle: string;
+  tickets: TicketListItem[];
+  emptyText: string;
+  tone: "mine" | "lanjutan";
+  onOpen: (id: string) => void;
+}
+
+function TicketSection({
+  title,
+  subtitle,
+  tickets,
+  emptyText,
+  tone,
+  onOpen,
+}: TicketSectionProps) {
+  const toneCls =
+    tone === "lanjutan"
+      ? "border-amber-200 bg-amber-50/40"
+      : "border-gray-100 bg-surface-subtle/40";
+  return (
+    <section className={`rounded-lg border ${toneCls} p-3`}>
+      <header className="mb-2 flex items-baseline justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold text-gray-900">
+            {title}{" "}
+            <span className="ml-1 text-xs font-normal text-gray-500">
+              ({tickets.length})
+            </span>
+          </h2>
+          <p className="text-xs text-gray-500">{subtitle}</p>
+        </div>
+      </header>
+
+      {tickets.length === 0 ? (
+        <p className="px-2 py-4 text-center text-xs text-gray-400">
+          {emptyText}
+        </p>
+      ) : (
+        <Table>
+          <TableHead>
+            <TableRow>
+              <Th>Kode ATM</Th>
+              <Th>No Tiket</Th>
+              <Th>Tgl Open</Th>
+              <Th>PIC</Th>
+              <Th>Update Status Terkini</Th>
+              <Th>PIC Update</Th>
+              <Th>Status</Th>
+              <Th>Supervisi</Th>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {tickets.map((t) => (
+              <TableRow
+                key={t.id}
+                className="cursor-pointer"
+                onClick={() => onOpen(t.id)}
+              >
+                <Td className="font-mono font-medium text-gray-900">
+                  {t.kodeAtm}
+                  <div className="text-xs font-sans font-normal text-gray-500 max-w-[12rem] truncate">
+                    {t.namaAtm}
+                  </div>
+                </Td>
+                <Td className="whitespace-nowrap">
+                  <span className="font-mono font-semibold text-primary">
+                    {t.noTiket}
+                  </span>
+                  <div className="mt-0.5 flex items-center gap-1">
+                    <Badge variant={t.kategori === "atm" ? "info" : "neutral"}>
+                      {t.kategori === "atm" ? "ATM" : "Jaringan"}
+                    </Badge>
+                    {tone === "lanjutan" && (
+                      <Badge
+                        variant="warning"
+                        title="Tindak lanjut dari shift sebelumnya"
+                      >
+                        <ArrowRightLeft className="w-3 h-3 mr-0.5" /> Tindak
+                        Lanjut
+                      </Badge>
+                    )}
+                  </div>
+                </Td>
+                <Td className="whitespace-nowrap text-xs">
+                  {fmtDateTime(t.waktuOpen)}
+                </Td>
+                <Td className="whitespace-nowrap">{t.ownerNama}</Td>
+                <Td className="max-w-[16rem]">
+                  {t.lastTeks ? (
+                    <span className="line-clamp-2 text-gray-700">
+                      {t.lastTeks}
+                    </span>
+                  ) : (
+                    <span className="text-gray-400">—</span>
+                  )}
+                </Td>
+                <Td className="whitespace-nowrap text-xs text-gray-500">
+                  {t.lastPic ?? "—"}
+                </Td>
+                <Td>
+                  <Badge
+                    variant={t.status === "selesai" ? "success" : "warning"}
+                  >
+                    {t.status === "selesai" ? "Selesai" : "Proses"}
+                  </Badge>
+                </Td>
+                <Td>
+                  <Badge
+                    variant={
+                      t.statusSupervisi === "approved" ? "success" : "neutral"
+                    }
+                  >
+                    {t.statusSupervisi === "approved"
+                      ? "Sudah Approve"
+                      : "Belum Approve"}
+                  </Badge>
+                </Td>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+    </section>
   );
 }

@@ -15,6 +15,15 @@ export interface TicketListFilter {
   /** belum | approved | all */
   statusSupervisi?: string | null;
   currentUserId: string;
+  /**
+   * Mode Daily Monitoring (PRD §4.B).
+   * Bila true, hanya tampilkan tiket yang relevan dengan shift aktif user:
+   * status = proses DAN shiftKode = currentShift, DAN
+   * (ownerUserId = currentUserId  ATAU  tiket masuk via tindak lanjut/handover).
+   */
+  dailyMonitoring?: boolean;
+  /** Shift aktif sesi user (A–E). Wajib bila dailyMonitoring=true. */
+  currentShift?: string | null;
 }
 
 export interface TicketListItem {
@@ -40,13 +49,27 @@ export async function listTickets(
 ): Promise<TicketListItem[]> {
   const where: Record<string, unknown> = {};
   if (f.kategori && KATEGORI.includes(f.kategori)) where.kategori = f.kategori;
-  if (f.shift && SHIFTS.includes(f.shift)) where.shiftKode = f.shift;
-  if (f.status === "proses" || f.status === "selesai") where.status = f.status;
+
+  if (f.dailyMonitoring && f.currentShift && SHIFTS.includes(f.currentShift)) {
+    // PRD §4.B: hanya tampilkan tiket "proses" di shift aktif yang menjadi
+    // tanggung jawab user — tiket sendiri ATAU tiket tindak lanjut dari shift
+    // sebelumnya. Tiket selesai & tiket shift lain tidak ditampilkan.
+    where.status = TicketStatus.proses;
+    where.shiftKode = f.currentShift;
+    where.OR = [
+      { ownerUserId: f.currentUserId },
+      { activities: { some: { isTindakLanjutFlag: true } } },
+    ];
+  } else {
+    if (f.shift && SHIFTS.includes(f.shift)) where.shiftKode = f.shift;
+    if (f.status === "proses" || f.status === "selesai") where.status = f.status;
+    if (f.scope === "mine") where.ownerUserId = f.currentUserId;
+    else if (f.scope === "lanjutan")
+      where.activities = { some: { isTindakLanjutFlag: true } };
+  }
+
   if (f.statusSupervisi === "belum" || f.statusSupervisi === "approved")
     where.statusSupervisi = f.statusSupervisi;
-  if (f.scope === "mine") where.ownerUserId = f.currentUserId;
-  else if (f.scope === "lanjutan")
-    where.activities = { some: { isTindakLanjutFlag: true } };
 
   const tickets = await prisma.ticket.findMany({
     where,

@@ -70,7 +70,7 @@ export interface ReportData {
   hariTgl: string; // "Selasa, 27 Mei 2026"
   tanggalLabel: string; // "27 Mei 2026" (untuk "Padang, …")
   namaPetugas: string;
-  shiftLabel: string; // "Shift A (07:00–15:00)"
+  shiftLabel: string; // "Shift Pagi (07:00–15:00)"
   jumlahHari: number; // hari dalam bulan (untuk Total Menit)
   tickets: ReportTicket[];
   acChecks: ReportAcCheck[];

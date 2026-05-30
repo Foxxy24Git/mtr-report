@@ -35,6 +35,17 @@ export async function POST(req: Request, { params }: Params) {
       { status: 409 }
     );
   }
+  // Setelah serah terima, ticket.shiftKode berpindah ke shift berikutnya.
+  // Hanya petugas shift aktif (atau Super Admin) yang boleh menambah kegiatan.
+  if (session.role !== "superadmin" && guard.ticket.shiftKode !== session.shift) {
+    return NextResponse.json(
+      {
+        error:
+          "Tiket ini sudah diserahkan ke shift berikutnya. Kegiatan hanya bisa ditambahkan oleh petugas shift aktif.",
+      },
+      { status: 403 }
+    );
+  }
 
   const body = await req.json().catch(() => null);
   const teks = typeof body?.teks === "string" ? body.teks.trim() : "";

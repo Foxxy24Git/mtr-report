@@ -26,6 +26,7 @@ import { Modal } from "@/components/ui/Modal";
 import { cn } from "@/lib/cn";
 import { fmtDateTime, fmtTime, toWibInputValue, wibInputToISO } from "@/lib/format";
 import { computeSla, formatSlaPersen } from "@/lib/sla";
+import { SHIFT_NAMES } from "@/lib/constants";
 import type { TicketDetail } from "@/lib/ticketQueries";
 
 interface LeaderOpt {
@@ -45,6 +46,8 @@ interface Props {
   leadersDivisi: LeaderOpt[];
   role: "superadmin" | "user" | "supervisi";
   currentUserId: string;
+  /** Shift aktif pada sesi user saat ini (untuk gating kegiatan setelah handover). */
+  currentSessionShift: string;
   supervisiHasTtd?: boolean;
   /** Tujuan tombol "Kembali" & redirect setelah hapus. */
   backHref?: string;
@@ -64,6 +67,7 @@ export function TicketDetailClient({
   leadersDivisi,
   role,
   currentUserId,
+  currentSessionShift,
   supervisiHasTtd = false,
   backHref = "/daily-monitoring",
   backLabel = "Kembali ke Daily Monitoring",
@@ -71,11 +75,28 @@ export function TicketDetailClient({
   const router = useRouter();
   const [ticket, setTicket] = useState<TicketDetail>(initialTicket);
 
+  /**
+   * Setelah serah terima shift, tiket berpindah ke shift berikutnya
+   * (ticket.shiftKode). Petugas shift aktif penerima ikut berhak melakukan
+   * mutasi (ubah detail, close, hapus) — sejalan dengan guardTicketMutation
+   * di backend yang juga mengizinkan shift holder.
+   */
+  const isShiftAktifPemegang =
+    !!currentSessionShift && currentSessionShift === ticket.shiftKode;
   const canMutate =
     role !== "supervisi" &&
-    (role === "superadmin" || ticket.ownerId === currentUserId);
+    (role === "superadmin" ||
+      ticket.ownerId === currentUserId ||
+      isShiftAktifPemegang);
   const isSelesai = ticket.status === "selesai";
   const isApproved = ticket.statusSupervisi === "approved";
+
+  /**
+   * Hanya petugas shift aktif (atau Super Admin) yang boleh menambah kegiatan.
+   * Owner shift sebelumnya tetap bisa lihat tiket, tetapi tidak menambah entri.
+   */
+  const canAddActivity =
+    role === "superadmin" || (canMutate && isShiftAktifPemegang);
 
   // --- Kegiatan baru ---
   const [kegiatan, setKegiatan] = useState("");
@@ -350,7 +371,7 @@ export function TicketDetailClient({
                 {ticket.ownerNama}
               </span>
             </div>
-            <div>Shift {ticket.shiftKode}</div>
+            <div>{SHIFT_NAMES[ticket.shiftKode] ?? `Shift ${ticket.shiftKode}`}</div>
             <div className="flex items-center gap-1 sm:justify-end">
               <Clock className="w-3.5 h-3.5" /> Open: {fmtDateTime(ticket.waktuOpen)}
             </div>
@@ -513,7 +534,7 @@ export function TicketDetailClient({
             meninggalkan jejak (penanda &ldquo;diedit&rdquo;).
           </p>
 
-          {canMutate && !isSelesai && (
+          {canMutate && !isSelesai && canAddActivity && (
             <form onSubmit={submitKegiatan} className="mb-5">
               <textarea
                 rows={2}
@@ -532,6 +553,16 @@ export function TicketDetailClient({
               </div>
             </form>
           )}
+          {canMutate && !isSelesai && !canAddActivity && (
+            <div className="mb-5 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>
+                Tiket ini sudah diserahkan ke shift berikutnya. Kegiatan hanya
+                bisa ditambahkan oleh petugas shift aktif (
+                {SHIFT_NAMES[ticket.shiftKode] ?? `Shift ${ticket.shiftKode}`}).
+              </span>
+            </div>
+          )}
 
           <ol className="relative border-l-2 border-gray-100 ml-2 space-y-4">
             <AnimatePresence initial={false}>
@@ -549,7 +580,7 @@ export function TicketDetailClient({
                         {a.teks}
                       </span>
                       <span className="ml-auto text-[11px] text-gray-500">
-                        {fmtTime(a.waktu)} · Shift {a.shiftKode}
+                        {fmtTime(a.waktu)} · {SHIFT_NAMES[a.shiftKode] ?? `Shift ${a.shiftKode}`}
                       </span>
                     </div>
                   </motion.li>
@@ -566,7 +597,9 @@ export function TicketDetailClient({
                         {fmtDateTime(a.waktu)}
                       </span>
                       <span>· {a.userNama}</span>
-                      <Badge variant="neutral">Shift {a.shiftKode}</Badge>
+                      <Badge variant="neutral">
+                        {SHIFT_NAMES[a.shiftKode] ?? `Shift ${a.shiftKode}`}
+                      </Badge>
                       {a.editedAt && (
                         <span
                           className="inline-flex items-center gap-1 text-[11px] text-amber-700"

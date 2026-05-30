@@ -53,6 +53,7 @@ export default async function SupervisiTicketDetailPage({ params }: Params) {
       leadersDivisi={mapLeader(LeaderJabatan.divisi)}
       role={session.role}
       currentUserId={session.sub}
+      currentSessionShift={session.shift}
       supervisiHasTtd={Boolean(me?.ttdUrl)}
       backHref="/supervisi"
       backLabel="Kembali ke Supervisi"

@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import { cn } from "@/lib/cn";
+import { SHIFT_NAMES } from "@/lib/constants";
 import { ALL_SHIFTS, type ShiftCode } from "@/lib/shift";
 
 const SHIFT_JAM: Record<ShiftCode, string> = {
@@ -39,11 +40,11 @@ export function ShiftIndicator({ perShift, currentShift }: Props) {
           >
             <div
               className={cn(
-                "text-xs font-semibold",
+                "text-[11px] font-semibold leading-tight",
                 active ? "text-accent-dark" : "text-gray-500"
               )}
             >
-              Shift {s}
+              {SHIFT_NAMES[s] ?? `Shift ${s}`}
             </div>
             <div className="text-[10px] text-gray-400">{SHIFT_JAM[s]}</div>
             <div

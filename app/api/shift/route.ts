@@ -2,10 +2,9 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getSession } from "@/lib/session";
 import { signSession, COOKIE_NAME, SESSION_MAX_AGE } from "@/lib/jwt";
-import { isShiftValidForDate, ALL_SHIFTS, type ShiftCode } from "@/lib/shift";
-import { SHIFT_LABELS } from "@/lib/constants";
+import { ALL_SHIFTS, type ShiftCode } from "@/lib/shift";
 
-/** POST /api/shift — set shift aktif sesi (dipilih dari Dashboard, PRD §3). */
+/** POST /api/shift — set shift aktif sesi (dipilih dari Dashboard). */
 export async function POST(req: Request) {
   const session = await getSession();
   if (!session) {
@@ -17,15 +16,6 @@ export async function POST(req: Request) {
 
   if (!ALL_SHIFTS.includes(shift as ShiftCode)) {
     return NextResponse.json({ error: "Shift tidak dikenal." }, { status: 400 });
-  }
-
-  if (!isShiftValidForDate(shift, new Date())) {
-    return NextResponse.json(
-      {
-        error: `${SHIFT_LABELS[shift] ?? "Shift " + shift} tidak berlaku untuk hari ini.`,
-      },
-      { status: 400 }
-    );
   }
 
   const token = await signSession({

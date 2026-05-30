@@ -78,11 +78,20 @@ export const NAV_ITEMS: NavItem[] = [
 ];
 
 export const SHIFT_LABELS: Record<string, string> = {
-  A: "Shift A (07:00–15:00)",
-  B: "Shift B (15:00–23:00)",
-  C: "Shift C (23:00–07:00)",
-  D: "Shift D (07:00–19:00)",
-  E: "Shift E (19:00–07:00)",
+  A: "Shift Pagi (07:00–15:00)",
+  B: "Shift Sore (15:00–23:00)",
+  C: "Shift Malam (23:00–07:00)",
+  D: "Shift Lembur Pagi (07:00–19:00)",
+  E: "Shift Lembur Malam (19:00–07:00)",
+};
+
+/** Label pendek tanpa jam — untuk badge/tabel ringkas. */
+export const SHIFT_NAMES: Record<string, string> = {
+  A: "Shift Pagi",
+  B: "Shift Sore",
+  C: "Shift Malam",
+  D: "Shift Lembur Pagi",
+  E: "Shift Lembur Malam",
 };
 
 export const APP_NAME = "mtr-Report";

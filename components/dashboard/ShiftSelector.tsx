@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { CalendarClock, Check, AlertCircle } from "lucide-react";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { cn } from "@/lib/cn";
-import { SHIFT_LABELS } from "@/lib/constants";
-import { ALL_SHIFTS, validShiftsForDate, type ShiftCode } from "@/lib/shift";
+import { SHIFT_LABELS, SHIFT_NAMES } from "@/lib/constants";
+import { ALL_SHIFTS, type ShiftCode } from "@/lib/shift";
 
 interface Props {
   currentShift?: string;
@@ -18,7 +18,6 @@ export function ShiftSelector({ currentShift }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   const today = useMemo(() => new Date(), []);
-  const validShifts = useMemo(() => validShiftsForDate(today), [today]);
   const hariIni = useMemo(
     () =>
       new Intl.DateTimeFormat("id-ID", {
@@ -65,27 +64,20 @@ export function ShiftSelector({ currentShift }: Props) {
 
       <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
         {ALL_SHIFTS.map((s) => {
-          const valid = validShifts.includes(s);
           const active = s === currentShift;
           return (
             <button
               key={s}
               type="button"
-              disabled={!valid || saving !== null}
+              disabled={saving !== null}
               onClick={() => pick(s)}
               aria-pressed={active}
-              title={
-                valid
-                  ? SHIFT_LABELS[s]
-                  : `${SHIFT_LABELS[s]} — tidak berlaku hari ini`
-              }
+              title={SHIFT_LABELS[s]}
               className={cn(
                 "relative flex flex-col items-center justify-center rounded-lg border py-3 px-1 transition-all",
                 active
                   ? "border-primary bg-primary-50 ring-2 ring-primary/30"
-                  : valid
-                    ? "border-gray-300 hover:border-primary/50 hover:bg-surface-subtle"
-                    : "border-gray-200 bg-gray-50 opacity-50 cursor-not-allowed"
+                  : "border-gray-300 hover:border-primary/50 hover:bg-surface-subtle"
               )}
             >
               {active && (
@@ -93,11 +85,11 @@ export function ShiftSelector({ currentShift }: Props) {
               )}
               <span
                 className={cn(
-                  "text-lg font-bold",
+                  "text-sm font-bold leading-tight text-center",
                   active ? "text-primary" : "text-gray-700"
                 )}
               >
-                {s}
+                {SHIFT_NAMES[s]}
               </span>
               <span className="text-[10px] text-gray-500 leading-tight mt-0.5">
                 {SHIFT_LABELS[s].match(/\(([^)]+)\)/)?.[1]}
@@ -117,10 +109,7 @@ export function ShiftSelector({ currentShift }: Props) {
             . Dipakai untuk open tiket, daily monitoring, dan suhu/log server.
           </>
         ) : (
-          <>
-            Belum memilih shift. Shift yang berlaku hari ini:{" "}
-            {validShifts.join(", ")}.
-          </>
+          <>Belum memilih shift. Semua shift dapat dipilih kapan saja.</>
         )}
       </p>
 

@@ -7,14 +7,19 @@ export const dynamic = "force-dynamic";
 
 export default async function DailyMonitoringPage() {
   const session = await requireSession();
-  const items = await listTickets({ currentUserId: session.sub });
+  const items = await listTickets({
+    currentUserId: session.sub,
+    dailyMonitoring: true,
+    currentShift: session.shift,
+  });
 
   return (
     <div>
       <div className="mb-6">
         <h1 className="page-title">Daily Monitoring</h1>
         <p className="page-subtitle">
-          Tracking seluruh tiket gangguan ATM &amp; jaringan. Klik baris untuk
+          Tiket aktif pada shift Anda saat ini — tiket yang Anda buka sendiri
+          dan tiket tindak lanjut dari shift sebelumnya. Klik baris untuk
           membuka detail &amp; mencatat kegiatan penanganan.
         </p>
       </div>

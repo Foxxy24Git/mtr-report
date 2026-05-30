@@ -20,7 +20,8 @@ function optStr(v: unknown): string | null {
 /**
  * GET /api/tickets — daftar tiket untuk Daily Monitoring (PRD §4.B).
  * Filter query: kategori (atm|jaringan), shift (A–E),
- * scope (mine|lanjutan|all), status (proses|selesai|all).
+ * scope (mine|lanjutan|all), status (proses|selesai|all),
+ * dailyMonitoring=1 (aktifkan filter ketat shift aktif sesuai PRD §4.B).
  */
 export async function GET(req: Request) {
   const session = await getSession();
@@ -29,6 +30,7 @@ export async function GET(req: Request) {
   }
 
   const sp = new URL(req.url).searchParams;
+  const dailyMonitoring = sp.get("dailyMonitoring") === "1";
   const items = await listTickets({
     kategori: sp.get("kategori"),
     shift: sp.get("shift"),
@@ -36,6 +38,8 @@ export async function GET(req: Request) {
     status: sp.get("status"),
     statusSupervisi: sp.get("statusSupervisi"),
     currentUserId: session.sub,
+    dailyMonitoring,
+    currentShift: dailyMonitoring ? session.shift : null,
   });
 
   return NextResponse.json({ items });

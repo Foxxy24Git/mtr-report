@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { motion } from "framer-motion";
 import { Download, CalendarDays, User as UserIcon, FileSpreadsheet } from "lucide-react";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { SHIFT_LABELS } from "@/lib/constants";
-import { validShiftsForDate } from "@/lib/shift";
+import { ALL_SHIFTS } from "@/lib/shift";
 
 interface UserOpt {
   id: string;
@@ -55,24 +55,16 @@ export function RekapLaporanClient({ today, isSuperadmin, currentUser, users }: 
   const [loadingHarian, setLoadingHarian] = useState(false);
   const [errHarian, setErrHarian] = useState("");
 
-  const shiftOptions = useMemo(() => {
-    const d = new Date(`${tglHarian}T00:00:00`);
-    return validShiftsForDate(d);
-  }, [tglHarian]);
-
-  // Reset shift bila tak lagi valid untuk tanggal terpilih.
-  const shiftValid = shiftOptions.includes(shiftHarian as never) ? shiftHarian : "";
-
   async function unduhHarian() {
     setErrHarian("");
-    if (!shiftValid) {
+    if (!shiftHarian) {
       setErrHarian("Pilih shift terlebih dahulu.");
       return;
     }
     setLoadingHarian(true);
     const res = await downloadFile(
-      `/api/rekap?mode=harian&tanggal=${tglHarian}&shift=${shiftValid}`,
-      `Laporan-Harian-${tglHarian}-Shift${shiftValid}.xlsx`
+      `/api/rekap?mode=harian&tanggal=${tglHarian}&shift=${shiftHarian}`,
+      `Laporan-Harian-${tglHarian}-Shift${shiftHarian}.xlsx`
     );
     if (!res.ok) setErrHarian(res.error);
     setLoadingHarian(false);
@@ -127,11 +119,11 @@ export function RekapLaporanClient({ today, isSuperadmin, currentUser, users }: 
             <Select
               label="Shift"
               required
-              value={shiftValid}
+              value={shiftHarian}
               onChange={(e) => setShiftHarian(e.target.value)}
             >
               <option value="">— Pilih shift —</option>
-              {shiftOptions.map((s) => (
+              {ALL_SHIFTS.map((s) => (
                 <option key={s} value={s}>
                   {SHIFT_LABELS[s] ?? `Shift ${s}`}
                 </option>
@@ -193,9 +185,9 @@ export function RekapLaporanClient({ today, isSuperadmin, currentUser, users }: 
               onChange={(e) => setShiftUser(e.target.value)}
             >
               <option value="">Semua shift</option>
-              {(["A", "B", "C", "D", "E"] as const).map((s) => (
+              {ALL_SHIFTS.map((s) => (
                 <option key={s} value={s}>
-                  Shift {s}
+                  {SHIFT_LABELS[s] ?? `Shift ${s}`}
                 </option>
               ))}
             </Select>
