@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { SHIFT_LABELS } from "@/lib/constants";
 import { SERVERS } from "@/lib/suhuServer";
 import { buildReportTicketWhere } from "@/lib/reportQuery";
+import { resolveSender, resolveAcknowledger } from "@/lib/reportSignatures";
 import type {
   ReportData,
   ReportTicket,
@@ -88,7 +89,7 @@ export async function gatherReportData(p: GatherParams): Promise<GatherResult> {
     orderBy: { waktuOpen: "asc" },
     include: {
       atm: { select: { kodeAtm: true, namaAtm: true } },
-      owner: { select: { nama: true } },
+      owner: { select: { nama: true, ttdUrl: true } },
       approver: { select: { nama: true, ttdUrl: true } },
       pimpinanInfra: { select: { nama: true } },
       pimpinanDivisi: { select: { nama: true } },
@@ -168,13 +169,6 @@ export async function gatherReportData(p: GatherParams): Promise<GatherResult> {
   }
 
   // ----------------------- Tanda tangan -----------------------
-  const defaultLeaders = await prisma.leader.findMany({
-    where: { aktif: true, isPjs: false },
-    orderBy: { nama: "asc" },
-  });
-  const defInfra = defaultLeaders.find((l) => l.jabatan === "infrastruktur")?.nama ?? "";
-  const defDivisi = defaultLeaders.find((l) => l.jabatan === "divisi")?.nama ?? "";
-
   const approver = ticketRows.find((t) => t.statusSupervisi === "approved" && t.approver);
 
   // Pimpinan & supervisi penanda tangan dipilih saat serah terima shift
@@ -196,11 +190,18 @@ export async function gatherReportData(p: GatherParams): Promise<GatherResult> {
   // Supervisi sudah approve jika ada tiket approved pada laporan (PRD revisi §4).
   const supervisiApproved = Boolean(approver);
 
+  // Penyerah (C26): owner tiket PERTAMA shift (owner awal) — TTD selalu ikut
+  // walau laporan diunduh sebelum serah terima. Fallback: fromUser handover →
+  // gabungan nama owner. ticketRows sudah orderBy waktuOpen asc → [0] = paling awal.
+  const sender = resolveSender(
+    ticketRows[0]?.owner,
+    handover?.fromUser,
+    uniqueJoin(ticketRows.map((t) => t.owner.nama))
+  );
+
   const signatures: ReportSignatures = {
-    // Penyerah: petugas yang melakukan handover; fallback ke owner tiket.
-    penyerah:
-      handover?.fromUser?.nama || uniqueJoin(ticketRows.map((t) => t.owner.nama)),
-    penyerahTtdPath: handover?.fromUser?.ttdUrl ?? null,
+    penyerah: sender.nama,
+    penyerahTtdPath: sender.ttdPath,
     // Penerima: petugas yang dipilih saat serah terima (to_user / receiver).
     penerima: handover?.toUser?.nama ?? "",
     penerimaTtdPath: handover?.toUser?.ttdUrl ?? null,
@@ -216,14 +217,16 @@ export async function gatherReportData(p: GatherParams): Promise<GatherResult> {
     supervisiTtdPath: supervisiApproved
       ? handover?.supervisi?.ttdUrl ?? approver?.approver?.ttdUrl ?? null
       : null,
-    pimpinanInfra:
-      handover?.pimpinanInfra?.nama ||
-      uniqueJoin(ticketRows.map((t) => t.pimpinanInfra?.nama ?? null)) ||
-      defInfra,
-    pimpinanDivisi:
-      handover?.pimpinanDivisi?.nama ||
-      uniqueJoin(ticketRows.map((t) => t.pimpinanDivisi?.nama ?? null)) ||
-      defDivisi,
+    // O26/R26: pimpinan pilihan handover → fallback pimpinan tingkat tiket.
+    // Tanpa default — kosong sampai dipilih saat serah terima (PART 4).
+    pimpinanInfra: resolveAcknowledger(
+      handover?.pimpinanInfra?.nama,
+      uniqueJoin(ticketRows.map((t) => t.pimpinanInfra?.nama ?? null))
+    ),
+    pimpinanDivisi: resolveAcknowledger(
+      handover?.pimpinanDivisi?.nama,
+      uniqueJoin(ticketRows.map((t) => t.pimpinanDivisi?.nama ?? null))
+    ),
   };
 
   // ----------------------- Meta & nama file -----------------------
