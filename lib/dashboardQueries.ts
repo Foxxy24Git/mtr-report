@@ -1,6 +1,11 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
-import { ShiftKode, TicketKategori, TicketStatus } from "@prisma/client";
+import {
+  ShiftKode,
+  StatusSupervisi,
+  TicketKategori,
+  TicketStatus,
+} from "@prisma/client";
 import { ALL_SHIFTS } from "@/lib/shift";
 
 export interface KategoriCount {
@@ -119,6 +124,85 @@ export async function getDashboardData(
       waktuOpen: t.waktuOpen,
       ownerNama: t.owner.nama,
       lanjutan: t._count.activities > 0,
+    })),
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+// ----------------------------- Dashboard Supervisi -----------------------------
+
+export interface SupervisiPendingTicket {
+  id: string;
+  noTiket: string;
+  kategori: TicketKategori;
+  kodeAtm: string;
+  namaAtm: string;
+  shiftKode: ShiftKode;
+  status: TicketStatus;
+  waktuOpen: Date;
+  ownerNama: string;
+}
+
+export interface SupervisiDashboardData {
+  /** Jumlah tiket belum approve milik supervisi ini, dipisah per kategori. */
+  pending: { atm: number; jaringan: number; total: number };
+  /** Daftar tiket belum approve (untuk kalender & daftar per tanggal). */
+  pendingTickets: SupervisiPendingTicket[];
+  generatedAt: string;
+}
+
+/**
+ * Data Dashboard Supervisi (PRD revisi §4.A): tanpa selector shift. Hanya tiket
+ * yang terikat ke supervisi ini (`supervisiId`) dan masih `belum` di-approve,
+ * lintas seluruh user / shift / tanggal.
+ */
+export async function getSupervisiDashboardData(
+  supervisiId: string
+): Promise<SupervisiDashboardData> {
+  const where = {
+    supervisiId,
+    statusSupervisi: StatusSupervisi.belum,
+  } as const;
+
+  const [byKategori, rows] = await Promise.all([
+    prisma.ticket.groupBy({
+      by: ["kategori"],
+      where,
+      _count: { _all: true },
+    }),
+    prisma.ticket.findMany({
+      where,
+      orderBy: { waktuOpen: "desc" },
+      select: {
+        id: true,
+        noTiket: true,
+        kategori: true,
+        shiftKode: true,
+        status: true,
+        waktuOpen: true,
+        owner: { select: { nama: true } },
+        atm: { select: { kodeAtm: true, namaAtm: true } },
+      },
+    }),
+  ]);
+
+  const count = (k: TicketKategori) =>
+    byKategori.find((r) => r.kategori === k)?._count._all ?? 0;
+  const atm = count(TicketKategori.atm);
+  const jaringan = count(TicketKategori.jaringan);
+
+  return {
+    pending: { atm, jaringan, total: atm + jaringan },
+    pendingTickets: rows.map((t) => ({
+      id: t.id,
+      noTiket: t.noTiket,
+      kategori: t.kategori,
+      kodeAtm: t.atm?.kodeAtm ?? "—",
+      namaAtm: t.atm?.namaAtm ?? "—",
+      shiftKode: t.shiftKode,
+      status: t.status,
+      waktuOpen: t.waktuOpen,
+      ownerNama: t.owner.nama,
     })),
     generatedAt: new Date().toISOString(),
   };

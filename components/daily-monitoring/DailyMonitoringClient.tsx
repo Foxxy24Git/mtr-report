@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, ArrowRightLeft } from "lucide-react";
+import { Loader2, ArrowRightLeft, AlertTriangle } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
@@ -38,6 +38,9 @@ interface Props {
   currentShift: string;
   leaders: LeaderOption[];
   supervisiUsers: SupervisiOption[];
+  petugasUsers: SupervisiOption[];
+  currentUserId: string;
+  currentUserHasTtd: boolean;
 }
 
 const SELECT_CLS =
@@ -50,6 +53,9 @@ export function DailyMonitoringClient({
   currentShift,
   leaders,
   supervisiUsers,
+  petugasUsers,
+  currentUserId,
+  currentUserHasTtd,
 }: Props) {
   const router = useRouter();
   const [items, setItems] = useState<TicketListItem[]>(initialItems);
@@ -62,6 +68,8 @@ export function DailyMonitoringClient({
   const hasShift = shifts.includes(currentShift);
   const toShift = hasShift ? nextShift(currentShift as ShiftCode) : null;
   const [hoOpen, setHoOpen] = useState(false);
+  // Langkah modal: "confirm" = peringatan pastikan data benar, "select" = pemilihan supervisi & pimpinan.
+  const [hoStep, setHoStep] = useState<"confirm" | "select">("confirm");
   const [hoBusy, setHoBusy] = useState(false);
   const [hoErr, setHoErr] = useState("");
   // Penanda tangan laporan dipilih saat serah terima (PRD revisi §2).
@@ -69,16 +77,23 @@ export function DailyMonitoringClient({
   const [hoDivisi, setHoDivisi] = useState("");
   const [hoSupervisi, setHoSupervisi] = useState("");
   const [hoSupervisiNext, setHoSupervisiNext] = useState("");
+  // Petugas penerima shift (WAJIB, PRD revisi §1).
+  const [hoReceiver, setHoReceiver] = useState("");
 
   const leadersInfra = leaders.filter((l) => l.jabatan === "infrastruktur");
   const leadersDivisi = leaders.filter((l) => l.jabatan === "divisi");
-  const canHandover = Boolean(hoInfra && hoDivisi && hoSupervisi);
+  // Penerima dipilih dari petugas (role=user) selain diri sendiri.
+  const receiverOptions = petugasUsers.filter((u) => u.id !== currentUserId);
+  const canHandover = Boolean(
+    hoInfra && hoDivisi && hoSupervisi && hoReceiver
+  );
 
   function resetHandoverPick() {
     setHoInfra("");
     setHoDivisi("");
     setHoSupervisi("");
     setHoSupervisiNext("");
+    setHoReceiver("");
   }
 
   const loadTickets = useCallback(async () => {
@@ -136,6 +151,7 @@ export function DailyMonitoringClient({
           pimpinanDivisiId: hoDivisi,
           supervisiId: hoSupervisi,
           supervisiNextId: hoSupervisiNext || null,
+          receiverUserId: hoReceiver,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -178,15 +194,16 @@ export function DailyMonitoringClient({
           </div>
           <Button
             size="sm"
-            variant="secondary"
+            variant="danger"
             disabled={!hasShift}
             onClick={() => {
               setHoErr("");
               resetHandoverPick();
+              setHoStep("confirm");
               setHoOpen(true);
             }}
           >
-            <ArrowRightLeft className="w-4 h-4" /> Serah Terima Shift ke Shift
+            <AlertTriangle className="w-4 h-4" /> Serah Terima Shift ke Shift
             Berikutnya
           </Button>
         </div>
@@ -256,9 +273,33 @@ export function DailyMonitoringClient({
       <Modal
         open={hoOpen}
         onClose={() => setHoOpen(false)}
-        title="Serahkan semua tiket open ke shift berikutnya?"
+        title={
+          hoStep === "confirm"
+            ? "Konfirmasi serah terima shift"
+            : "Serahkan semua tiket open ke shift berikutnya?"
+        }
         size="sm"
       >
+        {hoStep === "confirm" ? (
+          <>
+            <div className="flex items-start gap-3 rounded-md border border-red-200 bg-red-50 px-3 py-3 text-sm text-red-700">
+              <AlertTriangle className="w-6 h-6 text-red-600 shrink-0 mt-0.5" />
+              <p>
+                Pastikan seluruh kegiatan penanganan sudah benar dan tidak ada
+                typo.
+              </p>
+            </div>
+            <div className="flex justify-end gap-2 pt-4">
+              <Button variant="secondary" onClick={() => setHoOpen(false)}>
+                Periksa kembali
+              </Button>
+              <Button variant="danger" onClick={() => setHoStep("select")}>
+                Ya, sudah benar
+              </Button>
+            </div>
+          </>
+        ) : (
+          <>
         <div className="flex items-start gap-2 text-sm text-gray-600">
           <ArrowRightLeft className="w-5 h-5 text-accent-dark shrink-0 mt-0.5" />
           <p>
@@ -336,7 +377,30 @@ export function DailyMonitoringClient({
               (opsional — hanya jika ada pergantian supervisi)
             </p>
           </div>
+          <Select
+            label="Petugas yang Menerima Shift"
+            required
+            value={hoReceiver}
+            onChange={(e) => setHoReceiver(e.target.value)}
+          >
+            <option value="">— Pilih petugas penerima —</option>
+            {receiverOptions.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.nama}
+              </option>
+            ))}
+          </Select>
         </div>
+
+        {!currentUserHasTtd && (
+          <p className="mt-3 flex items-start gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
+            <span>
+              Anda belum mengupload tanda tangan digital. TTD pada laporan akan
+              tampil sebagai placeholder. Upload TTD di menu Setting.
+            </span>
+          </p>
+        )}
 
         {hoErr && (
           <p className="mt-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
@@ -344,8 +408,8 @@ export function DailyMonitoringClient({
           </p>
         )}
         <div className="flex justify-end gap-2 pt-4">
-          <Button variant="secondary" onClick={() => setHoOpen(false)}>
-            Batal
+          <Button variant="secondary" onClick={() => setHoStep("confirm")}>
+            Kembali
           </Button>
           <Button
             loading={hoBusy}
@@ -355,6 +419,8 @@ export function DailyMonitoringClient({
             <ArrowRightLeft className="w-4 h-4" /> Serahkan Shift
           </Button>
         </div>
+          </>
+        )}
       </Modal>
     </div>
   );

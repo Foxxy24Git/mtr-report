@@ -46,12 +46,21 @@ export async function POST(req: Request) {
     typeof body.supervisiNextId === "string" && body.supervisiNextId
       ? body.supervisiNextId
       : null;
-  if (!pimpinanInfraId || !pimpinanDivisiId || !supervisiId) {
+  // Petugas penerima shift (WAJIB, PRD revisi §1/§2) → kolom to_user.
+  const receiverUserId =
+    typeof body.receiverUserId === "string" ? body.receiverUserId : "";
+  if (!pimpinanInfraId || !pimpinanDivisiId || !supervisiId || !receiverUserId) {
     return NextResponse.json(
       {
         error:
-          "Pilih Pimpinan Bag. Infrastruktur, Pimpinan Divisi, dan Supervisi terlebih dahulu.",
+          "Pilih Pimpinan Bag. Infrastruktur, Pimpinan Divisi, Supervisi, dan Petugas penerima terlebih dahulu.",
       },
+      { status: 400 }
+    );
+  }
+  if (receiverUserId === session.sub) {
+    return NextResponse.json(
+      { error: "Petugas penerima tidak boleh diri sendiri." },
       { status: 400 }
     );
   }
@@ -70,10 +79,26 @@ export async function POST(req: Request) {
     select: { id: true },
   });
 
+  // Lingkup tiket "shift ini" untuk Daily Monitoring (PRD revisi §4.B): tiket
+  // yang tampil pada sesi shift berjalan — tiket sendiri sejak shift dimulai
+  // ATAU tiket tindak lanjut dari shift sebelumnya.
+  const startedAt = session.shiftStartedAt
+    ? new Date(session.shiftStartedAt)
+    : null;
+  const mineWhere: Record<string, unknown> = { ownerUserId: session.sub };
+  if (startedAt && !Number.isNaN(startedAt.getTime())) {
+    mineWhere.waktuOpen = { gte: startedAt };
+  }
+  const shiftScopeOR = [
+    mineWhere,
+    { activities: { some: { isTindakLanjutFlag: true } } },
+  ];
+
   await prisma.$transaction(async (tx) => {
     await tx.shiftHandover.create({
       data: {
         fromUserId: session.sub,
+        toUserId: receiverUserId,
         fromShift: fromShift as ShiftKode,
         toShift,
         pimpinanInfraId,
@@ -81,6 +106,18 @@ export async function POST(req: Request) {
         supervisiId,
         supervisiNextId,
       },
+    });
+
+    // Tiket yang SUDAH selesai (close) pada shift ini juga diikat ke supervisi
+    // pilihan modal (PRD revisi §3): supervisi dapat melihatnya & sudah final.
+    // Tiket proses memperoleh supervisiId pada updateMany handover di bawah.
+    await tx.ticket.updateMany({
+      where: {
+        status: TicketStatus.selesai,
+        shiftKode: fromShift as ShiftKode,
+        OR: shiftScopeOR,
+      },
+      data: { supervisiId },
     });
 
     if (openTickets.length > 0) {

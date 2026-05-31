@@ -35,6 +35,7 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/daily-monitoring",
     icon: Activity,
     description: "Semua tiket ATM & jaringan aktif",
+    roles: ["superadmin", "user"],
   },
   {
     label: "Weekly Monitoring",

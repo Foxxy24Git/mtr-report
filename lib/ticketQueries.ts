@@ -1,5 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
+import { computeSla } from "@/lib/sla";
 import { ShiftKode, TicketKategori, TicketStatus } from "@prisma/client";
 
 const KATEGORI = Object.values(TicketKategori) as string[];
@@ -152,7 +153,16 @@ export interface WeeklyTicketFilter {
   shift?: string | null;
   /** Filter owner/PIC berdasar id user. */
   ownerUserId?: string | null;
-  /** Cari berdasar no tiket atau kode/lokasi ATM. */
+  /** belum | approved | all — filter status supervisi (PRD revisi §4.3). */
+  statusSupervisi?: string | null;
+  /** Filter satu ATM (id master) untuk track riwayat permasalahan ATM. */
+  atmId?: string | null;
+  /** Filter vendor (nilai persis). */
+  vendor?: string | null;
+  /**
+   * Cari (real-time) berdasar no tiket, kode/lokasi ATM, vendor, no tiket
+   * vendor, atau teks kegiatan penanganan (isi log kronologis). PRD revisi §4.2.
+   */
   search?: string | null;
 }
 
@@ -187,6 +197,10 @@ export async function listWeeklyTickets(
   if (f.status === "proses" || f.status === "selesai") where.status = f.status;
   if (f.shift && SHIFTS.includes(f.shift)) where.shiftKode = f.shift;
   if (f.ownerUserId) where.ownerUserId = f.ownerUserId;
+  if (f.statusSupervisi === "belum" || f.statusSupervisi === "approved")
+    where.statusSupervisi = f.statusSupervisi;
+  if (f.atmId) where.atmId = f.atmId;
+  if (f.vendor?.trim()) where.vendor = f.vendor.trim();
 
   const search = f.search?.trim();
   if (search) {
@@ -194,6 +208,9 @@ export async function listWeeklyTickets(
       { noTiket: { contains: search, mode: "insensitive" } },
       { atm: { kodeAtm: { contains: search, mode: "insensitive" } } },
       { atm: { namaAtm: { contains: search, mode: "insensitive" } } },
+      { vendor: { contains: search, mode: "insensitive" } },
+      { noTiketVendor: { contains: search, mode: "insensitive" } },
+      { activities: { some: { teks: { contains: search, mode: "insensitive" } } } },
     ];
   }
 
@@ -221,6 +238,81 @@ export async function listWeeklyTickets(
     vendor: t.vendor,
     noTiketVendor: t.noTiketVendor,
   }));
+}
+
+/**
+ * Total tiket pada rentang tanggal (tanpa filter lain) — dipakai untuk
+ * menampilkan "Menampilkan X dari Y total" di Weekly Monitoring (PRD §4.5).
+ */
+export async function countWeeklyTickets(range: {
+  from: Date;
+  to: Date;
+}): Promise<number> {
+  return prisma.ticket.count({
+    where: { waktuOpen: { gte: range.from, lte: range.to } },
+  });
+}
+
+export interface AtmHistory {
+  /** Total tiket pernah open untuk ATM ini (sepanjang data). */
+  total: number;
+  /** Jenis gangguan terbanyak + jumlah kemunculan. */
+  topGangguan: { nilai: string; count: number } | null;
+  /** Rata-rata SLA (pecahan 0..1) atas tiket yang sudah selesai. */
+  avgSlaPersen: number | null;
+  /** Rata-rata lama penanganan (menit) atas tiket yang sudah selesai. */
+  avgLamaMenit: number | null;
+  /** Jumlah tiket selesai yang dihitung untuk rata-rata SLA. */
+  selesaiCount: number;
+}
+
+/**
+ * Ringkasan riwayat satu ATM (PRD revisi §4.7): total tiket sepanjang data,
+ * jenis gangguan terbanyak, dan rata-rata SLA/lama penanganan. Berguna untuk
+ * mengidentifikasi ATM yang sering bermasalah.
+ */
+export async function getAtmHistory(atmId: string): Promise<AtmHistory> {
+  const tickets = await prisma.ticket.findMany({
+    where: { atmId },
+    select: {
+      jenisGangguan: true,
+      waktuOpen: true,
+      waktuSelesai: true,
+      status: true,
+    },
+  });
+
+  const counts = new Map<string, number>();
+  for (const t of tickets) {
+    const g = t.jenisGangguan?.trim();
+    if (g) counts.set(g, (counts.get(g) ?? 0) + 1);
+  }
+  let topGangguan: AtmHistory["topGangguan"] = null;
+  for (const [nilai, count] of counts) {
+    if (!topGangguan || count > topGangguan.count) topGangguan = { nilai, count };
+  }
+
+  let sumSla = 0;
+  let sumLama = 0;
+  let selesaiCount = 0;
+  for (const t of tickets) {
+    if (t.status === "selesai" && t.waktuSelesai) {
+      const sla = computeSla(t.waktuOpen, t.waktuSelesai);
+      if (sla.slaPersen != null && sla.lamaMenit != null) {
+        sumSla += sla.slaPersen;
+        sumLama += sla.lamaMenit;
+        selesaiCount += 1;
+      }
+    }
+  }
+
+  return {
+    total: tickets.length,
+    topGangguan,
+    avgSlaPersen: selesaiCount > 0 ? sumSla / selesaiCount : null,
+    avgLamaMenit: selesaiCount > 0 ? Math.round(sumLama / selesaiCount) : null,
+    selesaiCount,
+  };
 }
 
 export interface TicketActivityItem {

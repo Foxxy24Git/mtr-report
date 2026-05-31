@@ -2,7 +2,18 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Search, CalendarRange, CheckCircle2, Clock, Timer } from "lucide-react";
+import {
+  Loader2,
+  Search,
+  CalendarRange,
+  CheckCircle2,
+  Clock,
+  Timer,
+  History,
+  AlertTriangle,
+  Gauge,
+  X,
+} from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import {
   Table,
@@ -12,11 +23,11 @@ import {
   Th,
   Td,
 } from "@/components/ui/Table";
-import { fmtDateTime } from "@/lib/format";
-import { computeSla, menitToHHMM } from "@/lib/sla";
+import { fmtDateTime, fmtDateKey } from "@/lib/format";
+import { computeSla, menitToHHMM, formatSlaPersen } from "@/lib/sla";
 import { SHIFT_NAMES } from "@/lib/constants";
 import type { ShiftCode } from "@/lib/shift";
-import type { WeeklyTicketItem } from "@/lib/ticketQueries";
+import type { WeeklyTicketItem, AtmHistory } from "@/lib/ticketQueries";
 
 interface PicUser {
   id: string;
@@ -24,50 +35,64 @@ interface PicUser {
   nama: string;
 }
 
+interface AtmOption {
+  id: string;
+  kodeAtm: string;
+  namaAtm: string;
+}
+
 interface Props {
   initialItems: WeeklyTicketItem[];
+  initialTotal: number;
   initialFrom: string;
   initialTo: string;
   shifts: ShiftCode[];
   picUsers: PicUser[];
+  atmOptions: AtmOption[];
+  vendorOptions: string[];
 }
 
 const SELECT_CLS =
   "px-3 py-1.5 text-sm rounded-md border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary";
 const DAY_MS = 86_400_000;
-const MAX_RANGE_DAYS = 31;
+
+type RangePreset = "7d" | "1m" | "3m" | "year" | "custom";
+
+const atmLabel = (o: AtmOption) => `${o.kodeAtm} — ${o.namaAtm}`;
 
 export function WeeklyMonitoringClient({
   initialItems,
+  initialTotal,
   initialFrom,
   initialTo,
   shifts,
   picUsers,
+  atmOptions,
+  vendorOptions,
 }: Props) {
   const router = useRouter();
   const [items, setItems] = useState<WeeklyTicketItem[]>(initialItems);
+  const [total, setTotal] = useState(initialTotal);
   const [loading, setLoading] = useState(false);
 
   const [kategori, setKategori] = useState("");
   const [status, setStatus] = useState("");
+  const [statusSupervisi, setStatusSupervisi] = useState("");
   const [shift, setShift] = useState("");
   const [owner, setOwner] = useState("");
   const [vendorFilter, setVendorFilter] = useState("");
   const [search, setSearch] = useState("");
   const [from, setFrom] = useState(initialFrom);
   const [to, setTo] = useState(initialTo);
+  const [preset, setPreset] = useState<RangePreset>("7d");
 
-  // Peringatan rentang > 31 hari (server tetap melakukan clamp).
-  const rangeTooWide = useMemo(() => {
-    if (!from || !to || from > to) return false;
-    const span =
-      Math.round(
-        (new Date(`${to}T00:00:00`).getTime() -
-          new Date(`${from}T00:00:00`).getTime()) /
-          DAY_MS
-      ) + 1;
-    return span > MAX_RANGE_DAYS;
-  }, [from, to]);
+  // Filter ATM (autocomplete): teks input + id master yang terpilih.
+  const [atmQuery, setAtmQuery] = useState("");
+  const atmId = useMemo(() => {
+    const q = atmQuery.trim();
+    if (!q) return "";
+    return atmOptions.find((o) => atmLabel(o) === q)?.id ?? "";
+  }, [atmQuery, atmOptions]);
 
   const loadTickets = useCallback(async () => {
     setLoading(true);
@@ -75,21 +100,36 @@ export function WeeklyMonitoringClient({
       const qs = new URLSearchParams();
       if (kategori) qs.set("kategori", kategori);
       if (status) qs.set("status", status);
+      if (statusSupervisi) qs.set("statusSupervisi", statusSupervisi);
       if (shift) qs.set("shift", shift);
       if (owner) qs.set("owner", owner);
+      if (vendorFilter) qs.set("vendor", vendorFilter);
+      if (atmId) qs.set("atmId", atmId);
       if (search.trim()) qs.set("search", search.trim());
       if (from) qs.set("from", from);
       if (to) qs.set("to", to);
       const res = await fetch(`/api/weekly?${qs.toString()}`);
       const data = await res.json();
       setItems(data.items ?? []);
-      // Sinkronkan rentang efektif (jika server melakukan clamp ke 31 hari).
+      setTotal(data.total ?? 0);
+      // Sinkronkan rentang efektif (jika server melakukan clamp).
       if (data.from && data.from !== from) setFrom(data.from);
       if (data.to && data.to !== to) setTo(data.to);
     } finally {
       setLoading(false);
     }
-  }, [kategori, status, shift, owner, search, from, to]);
+  }, [
+    kategori,
+    status,
+    statusSupervisi,
+    shift,
+    owner,
+    vendorFilter,
+    atmId,
+    search,
+    from,
+    to,
+  ]);
 
   const firstRender = useRef(true);
   useEffect(() => {
@@ -101,27 +141,50 @@ export function WeeklyMonitoringClient({
     return () => clearTimeout(handle);
   }, [loadTickets]);
 
-  // Daftar vendor unik untuk dropdown filter (client-side, dari data termuat).
-  const vendorOptions = useMemo(() => {
-    const set = new Set<string>();
-    for (const t of items) if (t.vendor?.trim()) set.add(t.vendor.trim());
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [items]);
+  // Ringkasan riwayat ATM (PRD §4.7) saat satu ATM dipilih di filter.
+  const [atmHistory, setAtmHistory] = useState<AtmHistory | null>(null);
+  const [atmHistoryLoading, setAtmHistoryLoading] = useState(false);
+  useEffect(() => {
+    if (!atmId) {
+      setAtmHistory(null);
+      return;
+    }
+    let cancelled = false;
+    setAtmHistoryLoading(true);
+    fetch(`/api/weekly/atm-history?atmId=${encodeURIComponent(atmId)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!cancelled) setAtmHistory(data);
+      })
+      .finally(() => {
+        if (!cancelled) setAtmHistoryLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [atmId]);
 
-  // Filter vendor diterapkan client-side; mempengaruhi tabel & ringkasan.
-  const visibleItems = useMemo(
-    () =>
-      vendorFilter
-        ? items.filter((t) => (t.vendor?.trim() ?? "") === vendorFilter)
-        : items,
-    [items, vendorFilter]
-  );
+  // Shortcut rentang tanggal (PRD §4.4).
+  function applyPreset(p: Exclude<RangePreset, "custom">) {
+    const now = new Date();
+    const todayKey = fmtDateKey(now);
+    let fromKey = todayKey;
+    if (p === "7d") fromKey = fmtDateKey(new Date(now.getTime() - 6 * DAY_MS));
+    else if (p === "1m")
+      fromKey = fmtDateKey(new Date(now.getTime() - 29 * DAY_MS));
+    else if (p === "3m")
+      fromKey = fmtDateKey(new Date(now.getTime() - 89 * DAY_MS));
+    else if (p === "year") fromKey = `${now.getFullYear()}-01-01`;
+    setFrom(fromKey);
+    setTo(todayKey);
+    setPreset(p);
+  }
 
-  // Ringkasan minggu ini (mengikuti hasil filter aktif).
+  // Ringkasan minggu/rentang ini (mengikuti hasil filter aktif).
   const summary = useMemo(() => {
-    const total = visibleItems.length;
-    const selesai = visibleItems.filter((t) => t.status === "selesai");
-    const proses = total - selesai.length;
+    const totalShown = items.length;
+    const selesai = items.filter((t) => t.status === "selesai");
+    const proses = totalShown - selesai.length;
     let totalMenit = 0;
     for (const t of selesai) {
       const sla = computeSla(
@@ -131,17 +194,47 @@ export function WeeklyMonitoringClient({
       if (sla.lamaMenit != null) totalMenit += sla.lamaMenit;
     }
     const avg =
-      selesai.length > 0 ? menitToHHMM(Math.round(totalMenit / selesai.length)) : "—";
-    return { total, selesai: selesai.length, proses, avg };
-  }, [visibleItems]);
+      selesai.length > 0
+        ? menitToHHMM(Math.round(totalMenit / selesai.length))
+        : "—";
+    return { total: totalShown, selesai: selesai.length, proses, avg };
+  }, [items]);
+
+  const hasActiveFilter =
+    !!kategori ||
+    !!status ||
+    !!statusSupervisi ||
+    !!shift ||
+    !!owner ||
+    !!vendorFilter ||
+    !!atmId ||
+    !!search.trim();
+
+  const selectedAtm = atmOptions.find((o) => o.id === atmId) ?? null;
 
   return (
     <div className="space-y-4">
+      {/* Search bar utama (prominent) */}
+      <div className="relative">
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+        <input
+          type="search"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Cari no tiket, kode/lokasi ATM, vendor, no tiket vendor, atau isi kegiatan…"
+          className="w-full pl-12 pr-4 py-3 text-base rounded-xl border border-gray-200 bg-white shadow-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors"
+          aria-label="Cari tiket"
+        />
+        {loading && (
+          <Loader2 className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 animate-spin" />
+        )}
+      </div>
+
       {/* Ringkasan */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <SummaryCard
           icon={<CalendarRange className="w-4 h-4" />}
-          label="Total Tiket"
+          label="Tiket Tampil"
           value={summary.total}
           tone="primary"
         />
@@ -165,19 +258,86 @@ export function WeeklyMonitoringClient({
         />
       </div>
 
-      {/* Filter & pencarian */}
+      {/* Riwayat ATM terpilih (PRD §4.7) */}
+      {selectedAtm && (
+        <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
+          <div className="flex items-center gap-2 text-sm font-semibold text-primary">
+            <History className="w-4 h-4" />
+            Riwayat ATM{" "}
+            <span className="font-mono">{selectedAtm.kodeAtm}</span> —{" "}
+            {selectedAtm.namaAtm}
+          </div>
+          {atmHistoryLoading ? (
+            <p className="mt-2 flex items-center gap-2 text-xs text-gray-500">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" /> Memuat riwayat…
+            </p>
+          ) : atmHistory ? (
+            <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+              <AtmStat
+                icon={<History className="w-4 h-4" />}
+                label="Total Tiket (sepanjang data)"
+                value={atmHistory.total.toLocaleString("id-ID")}
+              />
+              <AtmStat
+                icon={<AlertTriangle className="w-4 h-4" />}
+                label="Gangguan Terbanyak"
+                value={
+                  atmHistory.topGangguan
+                    ? `${atmHistory.topGangguan.nilai} (${atmHistory.topGangguan.count}×)`
+                    : "—"
+                }
+              />
+              <AtmStat
+                icon={<Gauge className="w-4 h-4" />}
+                label="Rata-rata SLA / Lama"
+                value={
+                  atmHistory.avgSlaPersen != null
+                    ? `${formatSlaPersen(atmHistory.avgSlaPersen)} · ${
+                        atmHistory.avgLamaMenit != null
+                          ? menitToHHMM(atmHistory.avgLamaMenit)
+                          : "—"
+                      }`
+                    : "Belum ada tiket selesai"
+                }
+              />
+            </div>
+          ) : (
+            <p className="mt-2 text-xs text-gray-500">
+              Tidak ada riwayat untuk ATM ini.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Filter */}
       <div className="space-y-3 rounded-lg border border-gray-100 bg-surface-subtle/60 px-4 py-3">
         <div className="flex flex-wrap items-center gap-3">
+          {/* Autocomplete ATM */}
           <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
-              type="search"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Cari no tiket / lokasi ATM…"
-              className="pl-8 pr-3 py-1.5 text-sm rounded-md border border-gray-300 bg-white w-64 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
-              aria-label="Cari tiket"
+              type="text"
+              value={atmQuery}
+              onChange={(e) => setAtmQuery(e.target.value)}
+              list="weekly-atm-options"
+              placeholder="Kode / lokasi ATM…"
+              className={`${SELECT_CLS} w-60 pr-7`}
+              aria-label="Filter kode atau lokasi ATM"
             />
+            {atmQuery && (
+              <button
+                type="button"
+                onClick={() => setAtmQuery("")}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                aria-label="Hapus filter ATM"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+            <datalist id="weekly-atm-options">
+              {atmOptions.map((o) => (
+                <option key={o.id} value={atmLabel(o)} />
+              ))}
+            </datalist>
           </div>
 
           <select
@@ -200,6 +360,17 @@ export function WeeklyMonitoringClient({
             <option value="">Semua Status</option>
             <option value="proses">Proses</option>
             <option value="selesai">Selesai</option>
+          </select>
+
+          <select
+            value={statusSupervisi}
+            onChange={(e) => setStatusSupervisi(e.target.value)}
+            className={SELECT_CLS}
+            aria-label="Filter status supervisi"
+          >
+            <option value="">Semua Supervisi</option>
+            <option value="belum">Belum Approve</option>
+            <option value="approved">Sudah Approve</option>
           </select>
 
           <select
@@ -245,14 +416,43 @@ export function WeeklyMonitoringClient({
           </select>
         </div>
 
+        {/* Rentang tanggal + shortcut */}
         <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
           <CalendarRange className="w-4 h-4 text-gray-400" />
-          <span>Rentang:</span>
+          <div className="flex flex-wrap items-center gap-1">
+            <PresetButton
+              active={preset === "7d"}
+              onClick={() => applyPreset("7d")}
+            >
+              7 Hari
+            </PresetButton>
+            <PresetButton
+              active={preset === "1m"}
+              onClick={() => applyPreset("1m")}
+            >
+              1 Bulan
+            </PresetButton>
+            <PresetButton
+              active={preset === "3m"}
+              onClick={() => applyPreset("3m")}
+            >
+              3 Bulan
+            </PresetButton>
+            <PresetButton
+              active={preset === "year"}
+              onClick={() => applyPreset("year")}
+            >
+              Tahun Ini
+            </PresetButton>
+          </div>
           <input
             type="date"
             value={from}
             max={to}
-            onChange={(e) => setFrom(e.target.value)}
+            onChange={(e) => {
+              setFrom(e.target.value);
+              setPreset("custom");
+            }}
             className={SELECT_CLS}
             aria-label="Tanggal dari"
           />
@@ -261,18 +461,16 @@ export function WeeklyMonitoringClient({
             type="date"
             value={to}
             min={from}
-            onChange={(e) => setTo(e.target.value)}
+            onChange={(e) => {
+              setTo(e.target.value);
+              setPreset("custom");
+            }}
             className={SELECT_CLS}
             aria-label="Tanggal sampai"
           />
-          {rangeTooWide && (
-            <span className="text-xs text-amber-700">
-              Maksimal 31 hari — rentang akan disesuaikan otomatis.
-            </span>
-          )}
-          {loading && <Loader2 className="w-4 h-4 text-gray-400 animate-spin" />}
           <span className="ml-auto text-xs text-gray-500">
-            {visibleItems.length} tiket
+            Menampilkan {items.length.toLocaleString("id-ID")} tiket dari{" "}
+            {total.toLocaleString("id-ID")} total.
           </span>
         </div>
       </div>
@@ -295,14 +493,16 @@ export function WeeklyMonitoringClient({
           </TableRow>
         </TableHead>
         <TableBody>
-          {visibleItems.length === 0 ? (
+          {items.length === 0 ? (
             <TableRow>
               <Td colSpan={11} className="text-center text-gray-400 py-8">
-                Tidak ada tiket pada rentang &amp; filter ini.
+                {hasActiveFilter
+                  ? "Tidak ditemukan tiket yang cocok dengan pencarian."
+                  : "Tidak ada tiket pada rentang ini."}
               </Td>
             </TableRow>
           ) : (
-            visibleItems.map((t) => {
+            items.map((t) => {
               const sla = computeSla(
                 new Date(t.waktuOpen),
                 t.waktuSelesai ? new Date(t.waktuSelesai) : null
@@ -315,7 +515,7 @@ export function WeeklyMonitoringClient({
                 >
                   <Td className="whitespace-nowrap">
                     <span className="font-mono font-semibold text-primary">
-                      {t.noTiket}
+                      <Highlight text={t.noTiket} term={search} />
                     </span>
                   </Td>
                   <Td>
@@ -324,9 +524,9 @@ export function WeeklyMonitoringClient({
                     </Badge>
                   </Td>
                   <Td className="font-mono font-medium text-gray-900">
-                    {t.kodeAtm}
+                    <Highlight text={t.kodeAtm} term={search} />
                     <div className="text-xs font-sans font-normal text-gray-500 max-w-[14rem] truncate">
-                      {t.namaAtm}
+                      <Highlight text={t.namaAtm} term={search} />
                     </div>
                   </Td>
                   <Td className="whitespace-nowrap text-xs">
@@ -364,7 +564,7 @@ export function WeeklyMonitoringClient({
                   <Td className="max-w-[10rem]">
                     {t.vendor?.trim() ? (
                       <span className="block truncate text-gray-700">
-                        {t.vendor}
+                        <Highlight text={t.vendor} term={search} />
                       </span>
                     ) : (
                       <span className="text-gray-400">—</span>
@@ -372,7 +572,9 @@ export function WeeklyMonitoringClient({
                   </Td>
                   <Td className="whitespace-nowrap font-mono text-xs">
                     {t.noTiketVendor?.trim() ? (
-                      <span className="text-gray-700">{t.noTiketVendor}</span>
+                      <span className="text-gray-700">
+                        <Highlight text={t.noTiketVendor} term={search} />
+                      </span>
                     ) : (
                       <span className="font-sans text-gray-400">—</span>
                     )}
@@ -383,6 +585,81 @@ export function WeeklyMonitoringClient({
           )}
         </TableBody>
       </Table>
+    </div>
+  );
+}
+
+/** Menyorot bagian teks yang cocok dengan kata kunci pencarian. */
+function Highlight({ text, term }: { text: string; term: string }) {
+  const q = term.trim();
+  if (!q || !text) return <>{text}</>;
+  const lowerText = text.toLowerCase();
+  const lowerQ = q.toLowerCase();
+  const parts: React.ReactNode[] = [];
+  let rest = text;
+  let lowerRest = lowerText;
+  let key = 0;
+  while (true) {
+    const i = lowerRest.indexOf(lowerQ);
+    if (i === -1) {
+      parts.push(rest);
+      break;
+    }
+    if (i > 0) parts.push(rest.slice(0, i));
+    parts.push(
+      <mark
+        key={key++}
+        className="rounded bg-yellow-200 px-0.5 text-gray-900"
+      >
+        {rest.slice(i, i + q.length)}
+      </mark>
+    );
+    rest = rest.slice(i + q.length);
+    lowerRest = lowerRest.slice(i + q.length);
+  }
+  return <>{parts}</>;
+}
+
+function PresetButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`px-2.5 py-1 text-xs rounded-md border transition-colors ${
+        active
+          ? "border-primary bg-primary text-white"
+          : "border-gray-300 bg-white text-gray-600 hover:border-primary/50 hover:text-primary"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function AtmStat({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-md bg-white border border-gray-100 px-3 py-2">
+      <div className="flex items-center gap-1.5 text-xs text-gray-500">
+        {icon}
+        {label}
+      </div>
+      <div className="mt-1 font-semibold text-gray-900">{value}</div>
     </div>
   );
 }

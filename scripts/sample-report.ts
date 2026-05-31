@@ -85,8 +85,11 @@ const data: ReportData = {
   ],
   signatures: {
     penyerah: "Kurnia Fajri",
+    penyerahTtdPath: null,
     penerima: "Rian Islami Putra",
+    penerimaTtdPath: null,
     supervisi: "Tio Rahmayunda",
+    supervisiApproved: true,
     supervisiTtdPath: null,
     pimpinanInfra: "Pimpinan Bag. Infrastruktur TI",
     pimpinanDivisi: "Pemimpin Divisi TI",

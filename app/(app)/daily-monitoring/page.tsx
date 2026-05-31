@@ -8,8 +8,8 @@ export const dynamic = "force-dynamic";
 
 export default async function DailyMonitoringPage() {
   const session = await requireSession();
-  // Pimpinan & supervisi untuk modal serah terima shift (PRD revisi §2).
-  const [items, leaders, supervisiUsers] = await Promise.all([
+  // Pimpinan, supervisi & petugas penerima untuk modal serah terima (PRD revisi §1/§2).
+  const [items, leaders, supervisiUsers, petugasUsers, me] = await Promise.all([
     listTickets({
       currentUserId: session.sub,
       dailyMonitoring: true,
@@ -25,6 +25,16 @@ export default async function DailyMonitoringPage() {
       where: { role: "supervisi" },
       orderBy: { nama: "asc" },
       select: { id: true, nama: true },
+    }),
+    // Petugas penerima shift: role=user (mtr1–mtr5), klien mengecualikan diri sendiri.
+    prisma.user.findMany({
+      where: { role: "user" },
+      orderBy: { username: "asc" },
+      select: { id: true, nama: true },
+    }),
+    prisma.user.findUnique({
+      where: { id: session.sub },
+      select: { ttdUrl: true },
     }),
   ]);
 
@@ -45,6 +55,9 @@ export default async function DailyMonitoringPage() {
         currentShift={session.shift}
         leaders={leaders}
         supervisiUsers={supervisiUsers}
+        petugasUsers={petugasUsers}
+        currentUserId={session.sub}
+        currentUserHasTtd={Boolean(me?.ttdUrl)}
       />
     </div>
   );

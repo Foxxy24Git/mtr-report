@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
-import { listWeeklyTickets } from "@/lib/ticketQueries";
+import { countWeeklyTickets, listWeeklyTickets } from "@/lib/ticketQueries";
 import { resolveRange } from "@/lib/weeklyRange";
 
 /**
  * GET /api/weekly — daftar tiket Weekly Monitoring (menu baru).
- * Query: from, to (YYYY-MM-DD), kategori, status, shift, owner, search.
- * Read-only, lintas user & shift. Semua role login boleh mengakses.
+ * Query: from, to (YYYY-MM-DD), kategori, status, shift, owner, statusSupervisi,
+ * atmId, vendor, search. Read-only, lintas user & shift. Semua role login boleh
+ * mengakses.
  */
 export async function GET(req: Request) {
   const session = await getSession();
@@ -20,15 +21,21 @@ export async function GET(req: Request) {
     sp.get("to")
   );
 
-  const items = await listWeeklyTickets({
-    from,
-    to,
-    kategori: sp.get("kategori"),
-    status: sp.get("status"),
-    shift: sp.get("shift"),
-    ownerUserId: sp.get("owner"),
-    search: sp.get("search"),
-  });
+  const [items, total] = await Promise.all([
+    listWeeklyTickets({
+      from,
+      to,
+      kategori: sp.get("kategori"),
+      status: sp.get("status"),
+      shift: sp.get("shift"),
+      ownerUserId: sp.get("owner"),
+      statusSupervisi: sp.get("statusSupervisi"),
+      atmId: sp.get("atmId"),
+      vendor: sp.get("vendor"),
+      search: sp.get("search"),
+    }),
+    countWeeklyTickets({ from, to }),
+  ]);
 
-  return NextResponse.json({ items, from: fromKey, to: toKey });
+  return NextResponse.json({ items, total, from: fromKey, to: toKey });
 }

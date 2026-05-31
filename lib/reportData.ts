@@ -174,15 +174,23 @@ export async function gatherReportData(p: GatherParams): Promise<GatherResult> {
           pimpinanInfra: { select: { nama: true } },
           pimpinanDivisi: { select: { nama: true } },
           supervisi: { select: { nama: true, ttdUrl: true } },
+          fromUser: { select: { nama: true, ttdUrl: true } },
+          toUser: { select: { nama: true, ttdUrl: true } },
         },
       })
     : null;
 
+  // Supervisi sudah approve jika ada tiket approved pada laporan (PRD revisi §4).
+  const supervisiApproved = Boolean(approver);
+
   const signatures: ReportSignatures = {
-    penyerah: uniqueJoin(ticketRows.map((t) => t.owner.nama)),
-    // Serah terima kini batch otomatis tanpa pemilihan petugas penerima —
-    // kolom penerima ditandatangani manual pada form.
-    penerima: "",
+    // Penyerah: petugas yang melakukan handover; fallback ke owner tiket.
+    penyerah:
+      handover?.fromUser?.nama || uniqueJoin(ticketRows.map((t) => t.owner.nama)),
+    penyerahTtdPath: handover?.fromUser?.ttdUrl ?? null,
+    // Penerima: petugas yang dipilih saat serah terima (to_user / receiver).
+    penerima: handover?.toUser?.nama ?? "",
+    penerimaTtdPath: handover?.toUser?.ttdUrl ?? null,
     supervisi:
       handover?.supervisi?.nama ||
       uniqueJoin(
@@ -190,8 +198,11 @@ export async function gatherReportData(p: GatherParams): Promise<GatherResult> {
           .filter((t) => t.statusSupervisi === "approved")
           .map((t) => t.approver?.nama ?? null)
       ),
-    supervisiTtdPath:
-      handover?.supervisi?.ttdUrl ?? approver?.approver?.ttdUrl ?? null,
+    supervisiApproved,
+    // TTD supervisi hanya relevan setelah approve (excel meng-gate via flag).
+    supervisiTtdPath: supervisiApproved
+      ? handover?.supervisi?.ttdUrl ?? approver?.approver?.ttdUrl ?? null
+      : null,
     pimpinanInfra:
       handover?.pimpinanInfra?.nama ||
       uniqueJoin(ticketRows.map((t) => t.pimpinanInfra?.nama ?? null)) ||

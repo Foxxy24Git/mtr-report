@@ -58,8 +58,14 @@ export interface ReportServer {
 
 export interface ReportSignatures {
   penyerah: string;
+  /** Path TTD digital petugas penyerah relatif /public (null = belum upload). */
+  penyerahTtdPath: string | null;
   penerima: string;
+  /** Path TTD digital petugas penerima relatif /public (null = belum upload). */
+  penerimaTtdPath: string | null;
   supervisi: string;
+  /** True bila supervisi sudah approve tiket → TTD supervisi boleh muncul. */
+  supervisiApproved: boolean;
   /** Path file TTD digital supervisi relatif terhadap /public (mis. "/ttd/x.png"). */
   supervisiTtdPath: string | null;
   pimpinanInfra: string;
@@ -477,22 +483,54 @@ export async function buildReportWorkbook(data: ReportData): Promise<Buffer> {
     cell.border = { top: THIN };
   }
 
-  // TTD digital supervisi (jika sudah approve & file tersedia).
-  if (sig.supervisiTtdPath) {
-    const ttdAbs = join(process.cwd(), "public", sig.supervisiTtdPath.replace(/^\//, ""));
-    const ext = sig.supervisiTtdPath.toLowerCase().endsWith(".jpg") ||
-      sig.supervisiTtdPath.toLowerCase().endsWith(".jpeg")
-      ? "jpeg"
-      : "png";
-    if (existsSync(ttdAbs) && (ext === "png" || ext === "jpeg")) {
-      const ttdId = wb.addImage({
-        buffer: readFileSync(ttdAbs) as unknown as ArrayBuffer,
-        extension: ext,
-      });
-      ws.addImage(ttdId, {
-        tl: { col: 8.2, row: titleRow + 0.6 }, // kolom I (index 8) area Supervisi
-        ext: { width: 110, height: 55 },
-      });
+  // ------------------- TTD digital petugas & supervisi (baris 28) -------------------
+  // Penyerah & penerima: SELALU muncul (sudah serah terima = sudah menyetujui).
+  // Supervisi: hanya SETELAH approve tiket. ttd_url NULL → placeholder teks "(TTD)".
+  const ttdRow = titleRow + 2; // baris 28 saat sigStart=25 (PRD §5: C28/F28/I28)
+  const signers: {
+    col1: string;
+    col2: string;
+    imgCol: number;
+    path: string | null;
+    show: boolean;
+  }[] = [
+    { col1: "C", col2: "E", imgCol: 2, path: sig.penyerahTtdPath, show: true },
+    { col1: "F", col2: "H", imgCol: 5, path: sig.penerimaTtdPath, show: true },
+    {
+      col1: "I",
+      col2: "K",
+      imgCol: 8,
+      path: sig.supervisiTtdPath,
+      show: sig.supervisiApproved,
+    },
+  ];
+
+  for (const s of signers) {
+    if (!s.show) continue;
+    let drawn = false;
+    if (s.path) {
+      const ttdAbs = join(process.cwd(), "public", s.path.replace(/^\//, ""));
+      const low = s.path.toLowerCase();
+      const ext = low.endsWith(".jpg") || low.endsWith(".jpeg") ? "jpeg" : "png";
+      if (existsSync(ttdAbs) && (ext === "png" || ext === "jpeg")) {
+        const ttdId = wb.addImage({
+          buffer: readFileSync(ttdAbs) as unknown as ArrayBuffer,
+          extension: ext,
+        });
+        ws.addImage(ttdId, {
+          tl: { col: s.imgCol + 0.2, row: ttdRow - 1 + 0.1 },
+          ext: { width: 110, height: 55 },
+        });
+        drawn = true;
+      }
+    }
+    if (!drawn) {
+      // Placeholder "(TTD)" bila belum upload tanda tangan digital.
+      ws.mergeCells(`${s.col1}${ttdRow}:${s.col2}${ttdRow}`);
+      const ph = ws.getCell(`${s.col1}${ttdRow}`);
+      ph.value = "(TTD)";
+      ph.font = { size: 9, italic: true, color: { argb: "FF999999" } };
+      ph.alignment = { horizontal: "center", vertical: "middle" };
     }
   }
 

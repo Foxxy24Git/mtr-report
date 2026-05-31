@@ -1,7 +1,9 @@
 import { fmtDateKey } from "@/lib/format";
 
 const DAY_MS = 86_400_000;
-export const MAX_RANGE_DAYS = 31;
+// Batas atas rentang diperluas menjadi 1 tahun (PRD revisi §4) agar user bisa
+// menelusuri riwayat permasalahan satu ATM dalam jangka panjang.
+export const MAX_RANGE_DAYS = 366;
 
 /** Validasi format YYYY-MM-DD. */
 function isDateKey(v: string | null | undefined): v is string {
@@ -10,7 +12,7 @@ function isDateKey(v: string | null | undefined): v is string {
 
 /**
  * Resolusi rentang tanggal Weekly Monitoring (zona WIB) dengan default 7 hari
- * (rolling) dan batas maksimal 31 hari inklusif. Mengembalikan instant batas
+ * (rolling) dan batas maksimal 1 tahun inklusif. Mengembalikan instant batas
  * bawah/atas hari beserta kunci tanggal yang sudah dinormalisasi.
  */
 export function resolveRange(
