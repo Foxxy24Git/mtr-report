@@ -166,6 +166,8 @@ export async function POST(req: Request) {
         vendor: optStr(body?.vendor),
         noTiketVendor: optStr(body?.noTiketVendor),
         shiftKode,
+        // Shift asal = shift saat open; immutable, dipakai untuk laporan.
+        openShiftKode: shiftKode,
         ownerUserId: session.sub,
       },
     });

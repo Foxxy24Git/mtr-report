@@ -152,7 +152,13 @@ model Ticket {
   // Supervisi yang berhak approve tiket ini. Diisi saat serah terima shift
   // (PRD revisi §2/§3): nilai dari field "Supervisi" pada modal handover.
   supervisiId         String?         @map("supervisi_id")
+  // Shift current: dimutasi ke shift berikutnya saat serah terima (Daily
+  // Monitoring & scoping handover memakai ini).
   shiftKode           ShiftKode       @map("shift_kode")
+  // Shift asal: shift tempat tiket pertama di-open. IMMUTABLE — tidak pernah
+  // berubah saat serah terima. Dipakai sebagai kriteria laporan harian/shift
+  // agar tiket tetap muncul di laporan shift asal walau di-handover.
+  openShiftKode       ShiftKode       @map("open_shift_kode")
   ownerUserId         String          @map("owner_user_id")
   keterangan          String?
   createdAt           DateTime        @default(now()) @map("created_at")
@@ -169,6 +175,7 @@ model Ticket {
   @@index([status])
   @@index([kategori])
   @@index([supervisiId])
+  @@index([openShiftKode])
   @@map("tickets")
 }
 

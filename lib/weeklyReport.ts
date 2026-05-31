@@ -62,7 +62,9 @@ export async function buildWeeklyReportZip(p: WeeklyParams): Promise<WeeklyResul
       waktuOpen: { gte: from, lte: to },
       ...(p.ownerUserId ? { ownerUserId: p.ownerUserId } : {}),
     },
-    select: { waktuOpen: true, ownerUserId: true, shiftKode: true },
+    // openShiftKode (shift asal) agar kombinasi file sejalan dengan filter
+    // laporan di gatherReportData (yang juga memakai openShiftKode).
+    select: { waktuOpen: true, ownerUserId: true, openShiftKode: true },
     orderBy: { waktuOpen: "asc" },
   });
 
@@ -81,9 +83,9 @@ export async function buildWeeklyReportZip(p: WeeklyParams): Promise<WeeklyResul
   >();
   for (const t of ticketRows) {
     const dateKey = fmtDateKey(t.waktuOpen);
-    const key = `${dateKey}|${t.ownerUserId}|${t.shiftKode}`;
+    const key = `${dateKey}|${t.ownerUserId}|${t.openShiftKode}`;
     if (!combos.has(key)) {
-      combos.set(key, { dateKey, ownerId: t.ownerUserId, shift: t.shiftKode });
+      combos.set(key, { dateKey, ownerId: t.ownerUserId, shift: t.openShiftKode });
     }
   }
 

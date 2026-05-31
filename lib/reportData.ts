@@ -3,6 +3,7 @@ import { ShiftKode } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { SHIFT_LABELS } from "@/lib/constants";
 import { SERVERS } from "@/lib/suhuServer";
+import { buildReportTicketWhere } from "@/lib/reportQuery";
 import type {
   ReportData,
   ReportTicket,
@@ -76,11 +77,14 @@ export async function gatherReportData(p: GatherParams): Promise<GatherResult> {
 
   // ----------------------- Tiket -----------------------
   const ticketRows = await prisma.ticket.findMany({
-    where: {
-      waktuOpen: { gte: startWib, lt: endWib },
-      ...(shift ? { shiftKode: shift } : {}),
-      ...(p.ownerUserId ? { ownerUserId: p.ownerUserId } : {}),
-    },
+    // Filter shift via openShiftKode (shift asal, immutable) — bukan shiftKode
+    // current yang dimutasi saat serah terima. Lihat lib/reportQuery.ts.
+    where: buildReportTicketWhere({
+      startWib,
+      endWib,
+      shift,
+      ownerUserId: p.ownerUserId,
+    }),
     orderBy: { waktuOpen: "asc" },
     include: {
       atm: { select: { kodeAtm: true, namaAtm: true } },
@@ -92,7 +96,16 @@ export async function gatherReportData(p: GatherParams): Promise<GatherResult> {
     },
   });
 
-  const tickets: ReportTicket[] = ticketRows.map((t, i) => {
+  // Urutan baris laporan (PRD §4.D revisi): tiket SELESAI tampil lebih dulu,
+  // lalu tiket DALAM PROSES (yang diteruskan ke shift berikutnya) di bawah.
+  // Query sudah orderBy waktuOpen asc, jadi partisi stabil ini menjaga urutan
+  // waktu_open ASC di dalam masing-masing kelompok.
+  const orderedRows = [
+    ...ticketRows.filter((t) => t.status === "selesai"),
+    ...ticketRows.filter((t) => t.status !== "selesai"),
+  ];
+
+  const tickets: ReportTicket[] = orderedRows.map((t, i) => {
     const cp =
       t.cpTipe === "wag"
         ? "WAG"
