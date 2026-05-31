@@ -56,6 +56,7 @@ export function DailyMonitoringClient({
   const [loading, setLoading] = useState(false);
 
   const [kategori, setKategori] = useState("");
+  const [vendorFilter, setVendorFilter] = useState("");
 
   // --- Serah terima shift (batch, global) ---
   const hasShift = shifts.includes(currentShift);
@@ -104,13 +105,24 @@ export function DailyMonitoringClient({
     return () => clearTimeout(handle);
   }, [loadTickets]);
 
+  // Daftar vendor unik untuk dropdown filter (client-side, dari data termuat).
+  const vendorOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const t of items) if (t.vendor?.trim()) set.add(t.vendor.trim());
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [items]);
+
   // Pisahkan tiket sesuai PRD §4.B: milik shift aktif (saya) vs tindak lanjut.
+  // Filter vendor diterapkan client-side sebelum pemisahan.
   const { mine, lanjutan } = useMemo(() => {
     const m: TicketListItem[] = [];
     const l: TicketListItem[] = [];
-    for (const t of items) (t.lanjutan ? l : m).push(t);
+    for (const t of items) {
+      if (vendorFilter && (t.vendor?.trim() ?? "") !== vendorFilter) continue;
+      (t.lanjutan ? l : m).push(t);
+    }
     return { mine: m, lanjutan: l };
-  }, [items]);
+  }, [items, vendorFilter]);
 
   async function confirmHandover() {
     setHoErr("");
@@ -191,6 +203,20 @@ export function DailyMonitoringClient({
           <option value="">Semua Kategori</option>
           <option value="atm">ATM</option>
           <option value="jaringan">Jaringan Kantor</option>
+        </select>
+
+        <select
+          value={vendorFilter}
+          onChange={(e) => setVendorFilter(e.target.value)}
+          className={SELECT_CLS}
+          aria-label="Filter vendor"
+        >
+          <option value="">Semua Vendor</option>
+          {vendorOptions.map((v) => (
+            <option key={v} value={v}>
+              {v}
+            </option>
+          ))}
         </select>
 
         {loading && (
@@ -385,6 +411,8 @@ function TicketSection({
               <Th>PIC Update</Th>
               <Th>Status</Th>
               <Th>Supervisi</Th>
+              <Th>Vendor</Th>
+              <Th>Tiket Vendor</Th>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -454,6 +482,22 @@ function TicketSection({
                       ? "Sudah Approve"
                       : "Belum Approve"}
                   </Badge>
+                </Td>
+                <Td className="max-w-[10rem]">
+                  {t.vendor?.trim() ? (
+                    <span className="block truncate text-gray-700">
+                      {t.vendor}
+                    </span>
+                  ) : (
+                    <span className="text-gray-400">—</span>
+                  )}
+                </Td>
+                <Td className="whitespace-nowrap font-mono text-xs">
+                  {t.noTiketVendor?.trim() ? (
+                    <span className="text-gray-700">{t.noTiketVendor}</span>
+                  ) : (
+                    <span className="font-sans text-gray-400">—</span>
+                  )}
                 </Td>
               </TableRow>
             ))}

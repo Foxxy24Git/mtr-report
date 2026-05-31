@@ -52,6 +52,7 @@ export function WeeklyMonitoringClient({
   const [status, setStatus] = useState("");
   const [shift, setShift] = useState("");
   const [owner, setOwner] = useState("");
+  const [vendorFilter, setVendorFilter] = useState("");
   const [search, setSearch] = useState("");
   const [from, setFrom] = useState(initialFrom);
   const [to, setTo] = useState(initialTo);
@@ -100,10 +101,26 @@ export function WeeklyMonitoringClient({
     return () => clearTimeout(handle);
   }, [loadTickets]);
 
+  // Daftar vendor unik untuk dropdown filter (client-side, dari data termuat).
+  const vendorOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const t of items) if (t.vendor?.trim()) set.add(t.vendor.trim());
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [items]);
+
+  // Filter vendor diterapkan client-side; mempengaruhi tabel & ringkasan.
+  const visibleItems = useMemo(
+    () =>
+      vendorFilter
+        ? items.filter((t) => (t.vendor?.trim() ?? "") === vendorFilter)
+        : items,
+    [items, vendorFilter]
+  );
+
   // Ringkasan minggu ini (mengikuti hasil filter aktif).
   const summary = useMemo(() => {
-    const total = items.length;
-    const selesai = items.filter((t) => t.status === "selesai");
+    const total = visibleItems.length;
+    const selesai = visibleItems.filter((t) => t.status === "selesai");
     const proses = total - selesai.length;
     let totalMenit = 0;
     for (const t of selesai) {
@@ -116,7 +133,7 @@ export function WeeklyMonitoringClient({
     const avg =
       selesai.length > 0 ? menitToHHMM(Math.round(totalMenit / selesai.length)) : "—";
     return { total, selesai: selesai.length, proses, avg };
-  }, [items]);
+  }, [visibleItems]);
 
   return (
     <div className="space-y-4">
@@ -212,6 +229,20 @@ export function WeeklyMonitoringClient({
               </option>
             ))}
           </select>
+
+          <select
+            value={vendorFilter}
+            onChange={(e) => setVendorFilter(e.target.value)}
+            className={SELECT_CLS}
+            aria-label="Filter vendor"
+          >
+            <option value="">Semua Vendor</option>
+            {vendorOptions.map((v) => (
+              <option key={v} value={v}>
+                {v}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
@@ -241,7 +272,7 @@ export function WeeklyMonitoringClient({
           )}
           {loading && <Loader2 className="w-4 h-4 text-gray-400 animate-spin" />}
           <span className="ml-auto text-xs text-gray-500">
-            {items.length} tiket
+            {visibleItems.length} tiket
           </span>
         </div>
       </div>
@@ -259,17 +290,19 @@ export function WeeklyMonitoringClient({
             <Th>Status</Th>
             <Th>Lama Penanganan</Th>
             <Th>Supervisi</Th>
+            <Th>Vendor</Th>
+            <Th>Tiket Vendor</Th>
           </TableRow>
         </TableHead>
         <TableBody>
-          {items.length === 0 ? (
+          {visibleItems.length === 0 ? (
             <TableRow>
-              <Td colSpan={9} className="text-center text-gray-400 py-8">
+              <Td colSpan={11} className="text-center text-gray-400 py-8">
                 Tidak ada tiket pada rentang &amp; filter ini.
               </Td>
             </TableRow>
           ) : (
-            items.map((t) => {
+            visibleItems.map((t) => {
               const sla = computeSla(
                 new Date(t.waktuOpen),
                 t.waktuSelesai ? new Date(t.waktuSelesai) : null
@@ -327,6 +360,22 @@ export function WeeklyMonitoringClient({
                         ? "Sudah Approve"
                         : "Belum Approve"}
                     </Badge>
+                  </Td>
+                  <Td className="max-w-[10rem]">
+                    {t.vendor?.trim() ? (
+                      <span className="block truncate text-gray-700">
+                        {t.vendor}
+                      </span>
+                    ) : (
+                      <span className="text-gray-400">—</span>
+                    )}
+                  </Td>
+                  <Td className="whitespace-nowrap font-mono text-xs">
+                    {t.noTiketVendor?.trim() ? (
+                      <span className="text-gray-700">{t.noTiketVendor}</span>
+                    ) : (
+                      <span className="font-sans text-gray-400">—</span>
+                    )}
                   </Td>
                 </TableRow>
               );

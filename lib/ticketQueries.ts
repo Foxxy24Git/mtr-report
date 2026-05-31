@@ -47,6 +47,8 @@ export interface TicketListItem {
   lastTeks: string | null;
   lastWaktu: Date | null;
   lastPic: string | null;
+  vendor: string | null;
+  noTiketVendor: string | null;
 }
 
 /** Query daftar tiket Daily Monitoring (dipakai API route & server page). */
@@ -123,6 +125,8 @@ export async function listTickets(
       lastTeks: last?.teks ?? null,
       lastWaktu: last?.waktu ?? null,
       lastPic: last?.user.nama ?? null,
+      vendor: t.vendor,
+      noTiketVendor: t.noTiketVendor,
     };
   });
 }
@@ -154,6 +158,8 @@ export interface WeeklyTicketItem {
   kodeAtm: string;
   namaAtm: string;
   ownerNama: string;
+  vendor: string | null;
+  noTiketVendor: string | null;
 }
 
 /**
@@ -202,6 +208,8 @@ export async function listWeeklyTickets(
     kodeAtm: t.atm?.kodeAtm ?? "—",
     namaAtm: t.atm?.namaAtm ?? "—",
     ownerNama: t.owner.nama,
+    vendor: t.vendor,
+    noTiketVendor: t.noTiketVendor,
   }));
 }
 
