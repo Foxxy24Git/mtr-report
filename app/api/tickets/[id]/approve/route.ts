@@ -27,6 +27,15 @@ export async function POST(_req: Request, { params }: Params) {
   if (!ticket) {
     return NextResponse.json({ error: "Tiket tidak ditemukan." }, { status: 404 });
   }
+  // Tiket hanya bisa di-approve oleh supervisi yang dipilih saat serah terima
+  // shift (PRD revisi §3). Tiket tanpa supervisiId (belum pernah di-handover)
+  // tidak dapat di-approve.
+  if (ticket.supervisiId !== session.sub) {
+    return NextResponse.json(
+      { error: "Tiket ini bukan tanggung jawab supervisi Anda." },
+      { status: 403 }
+    );
+  }
   if (ticket.status !== TicketStatus.selesai) {
     return NextResponse.json(
       { error: "Hanya tiket yang sudah Selesai (close) yang dapat disetujui." },

@@ -76,6 +76,7 @@ model User {
 
   ticketsOwned     Ticket[]          @relation("TicketOwner")
   ticketsApproved  Ticket[]          @relation("TicketApprover")
+  ticketsSupervisi Ticket[]          @relation("TicketSupervisi")
   activities       TicketActivity[]
   activitiesEdited TicketActivity[]  @relation("ActivityEditor")
   handoversFrom    ShiftHandover[]   @relation("HandoverFrom")
@@ -148,6 +149,9 @@ model Ticket {
   approvedAt          DateTime?       @map("approved_at")
   pimpinanInfraId     String?         @map("pimpinan_infra_id")
   pimpinanDivisiId    String?         @map("pimpinan_divisi_id")
+  // Supervisi yang berhak approve tiket ini. Diisi saat serah terima shift
+  // (PRD revisi §2/§3): nilai dari field "Supervisi" pada modal handover.
+  supervisiId         String?         @map("supervisi_id")
   shiftKode           ShiftKode       @map("shift_kode")
   ownerUserId         String          @map("owner_user_id")
   keterangan          String?
@@ -158,11 +162,13 @@ model Ticket {
   approver       User?            @relation("TicketApprover", fields: [approvedById], references: [id])
   pimpinanInfra  Leader?          @relation("TicketPimpinanInfra", fields: [pimpinanInfraId], references: [id])
   pimpinanDivisi Leader?          @relation("TicketPimpinanDivisi", fields: [pimpinanDivisiId], references: [id])
+  supervisi      User?            @relation("TicketSupervisi", fields: [supervisiId], references: [id])
   activities     TicketActivity[]
   handovers      ShiftHandover[]
 
   @@index([status])
   @@index([kategori])
+  @@index([supervisiId])
   @@map("tickets")
 }
 

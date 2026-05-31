@@ -18,6 +18,12 @@ export default async function SupervisiTicketDetailPage({ params }: Params) {
   const ticket = await getTicketDetail(id);
   if (!ticket) notFound();
 
+  // Supervisi hanya boleh membuka tiket yang terikat ke dirinya (PRD revisi §3).
+  // Superadmin tetap bisa membuka semua tiket (override/emergency).
+  if (session.role === "supervisi" && ticket.supervisiId !== session.sub) {
+    redirect("/supervisi");
+  }
+
   const [lookups, me] = await Promise.all([
     prisma.masterLookup.findMany({
       orderBy: { nilai: "asc" },

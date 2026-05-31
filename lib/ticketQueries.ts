@@ -16,6 +16,12 @@ export interface TicketListFilter {
   statusSupervisi?: string | null;
   currentUserId: string;
   /**
+   * Scope menu Supervisi (PRD revisi §4): bila diisi, hanya tampilkan tiket
+   * yang terikat ke supervisi ini (supervisiId = nilai ini). Diisi dengan id
+   * user supervisi yang login; superadmin TIDAK mengisi (melihat semua tiket).
+   */
+  supervisiId?: string | null;
+  /**
    * Mode Daily Monitoring (PRD revisi §4.B).
    * Bila true, tampilkan SEMUA tiket (proses & selesai) yang menjadi tanggung
    * jawab user pada shift session yang sedang berjalan:
@@ -90,6 +96,10 @@ export async function listTickets(
 
   if (f.statusSupervisi === "belum" || f.statusSupervisi === "approved")
     where.statusSupervisi = f.statusSupervisi;
+
+  // Supervisi hanya melihat tiket yang diikat ke dirinya (status proses &
+  // selesai). Superadmin tidak mengisi supervisiId → tetap melihat semua.
+  if (f.supervisiId) where.supervisiId = f.supervisiId;
 
   const tickets = await prisma.ticket.findMany({
     where,
@@ -247,6 +257,7 @@ export interface TicketDetail {
   shiftKode: ShiftKode;
   ownerId: string;
   ownerNama: string;
+  supervisiId: string | null;
   pimpinanInfraId: string | null;
   pimpinanDivisiId: string | null;
   pimpinanInfraNama: string | null;
@@ -305,6 +316,7 @@ export async function getTicketDetail(id: string): Promise<TicketDetail | null> 
     shiftKode: t.shiftKode,
     ownerId: t.owner.id,
     ownerNama: t.owner.nama,
+    supervisiId: t.supervisiId,
     pimpinanInfraId: t.pimpinanInfraId,
     pimpinanDivisiId: t.pimpinanDivisiId,
     pimpinanInfraNama: t.pimpinanInfra?.nama ?? null,

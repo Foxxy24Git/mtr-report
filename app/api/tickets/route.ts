@@ -38,6 +38,9 @@ export async function GET(req: Request) {
     status: sp.get("status"),
     statusSupervisi: sp.get("statusSupervisi"),
     currentUserId: session.sub,
+    // Supervisi terikat: hanya tiket dengan supervisiId = dirinya (PRD revisi
+    // §4). Superadmin & user lain tidak dibatasi field ini.
+    supervisiId: session.role === "supervisi" ? session.sub : null,
     dailyMonitoring,
     currentShift: dailyMonitoring ? session.shift : null,
     shiftStartedAt: dailyMonitoring ? session.shiftStartedAt : null,

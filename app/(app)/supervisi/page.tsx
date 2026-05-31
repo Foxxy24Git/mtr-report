@@ -11,7 +11,12 @@ export default async function SupervisiPage() {
     redirect("/dashboard");
   }
 
-  const items = await listTickets({ currentUserId: session.sub });
+  // Supervisi hanya melihat tiket yang terikat ke dirinya; superadmin (override
+  // emergency) melihat semua tiket (PRD revisi §4).
+  const items = await listTickets({
+    currentUserId: session.sub,
+    supervisiId: session.role === "supervisi" ? session.sub : null,
+  });
 
   return (
     <div>

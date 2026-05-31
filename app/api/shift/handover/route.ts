@@ -94,9 +94,11 @@ export async function POST(req: Request) {
           isTindakLanjutFlag: true,
         })),
       });
+      // Setiap tiket di-handover diikat ke supervisi pilihan modal (PRD revisi
+      // §2/§3): supervisi tsb yang berhak meng-approve tiket ini nantinya.
       await tx.ticket.updateMany({
         where: { status: TicketStatus.proses },
-        data: { shiftKode: toShift },
+        data: { shiftKode: toShift, supervisiId },
       });
     }
   });
