@@ -1,8 +1,10 @@
 // Generator laporan harian Form OPS-001 (PRD §4.D, §5, §7).
 //
-// Membangun workbook ExcelJS sel-per-sel sesuai mapping kolom B–S di PRD §5
-// sehingga hasil identik dengan template Excel existing. Fungsi ini murni:
-// menerima ReportData (tanpa I/O DB) agar bisa dipakai API route & skrip contoh.
+// Membangun workbook ExcelJS sel-per-sel agar hasil .xlsx IDENTIK dengan
+// template Excel existing (lihat spesifikasi format pada PRD §5 / catatan
+// analisis template asli): font, lebar kolom, merge cell, warna header,
+// alignment, dan blok tanda tangan dibuat persis. Fungsi ini murni: menerima
+// ReportData (tanpa I/O DB) agar bisa dipakai API route & skrip contoh.
 
 import ExcelJS from "exceljs";
 import { readFileSync, existsSync } from "node:fs";
@@ -12,8 +14,12 @@ const TZ = "Asia/Jakarta";
 const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
 const EXCEL_EPOCH_UTC = Date.UTC(1899, 11, 30);
 
-// Warna korporat Bank Nagari.
-const BLUE = "FF003580";
+// Font global template: "Swis721 Lt BT" (fallback Arial otomatis oleh Excel
+// bila font tidak terpasang di server/klien). Warna teks default hitam.
+const FONT = "Swis721 Lt BT";
+const BLACK = "FF000000";
+// Biru muda header tabel (sesuai template).
+const HEADER_FILL = "FF83CAFF";
 
 // ----------------------------- Tipe data laporan -----------------------------
 
@@ -92,6 +98,7 @@ function excelSerialWIB(d: Date): number {
   return (wibMs - EXCEL_EPOCH_UTC) / 86400000;
 }
 
+/** "14:05" (24 jam, WIB). */
 function fmtJamWIB(d: Date): string {
   return new Intl.DateTimeFormat("en-GB", {
     hour: "2-digit",
@@ -101,16 +108,48 @@ function fmtJamWIB(d: Date): string {
   }).format(d);
 }
 
+/** "03:00 PM" (12 jam, WIB) — format kolom C/N pada template. */
+function fmtJam12WIB(d: Date): string {
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: TZ,
+  }).format(d);
+}
+
+/** "30-04-2026" (WIB) — baris kedua sel waktu kejadian/selesai. */
+function fmtTanggalDMY(d: Date): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    timeZone: TZ,
+  })
+    .format(d)
+    .replace(/\//g, "-");
+}
+
+/** Sel waktu kejadian/selesai 2 baris: "03:00 PM\n30-04-2026". */
+function fmtWaktuTanggal(d: Date): string {
+  return `${fmtJam12WIB(d)}\n${fmtTanggalDMY(d)}`;
+}
+
 // ----------------------------- Helper styling -----------------------------
 
-const THIN = { style: "thin" as const, color: { argb: "FF888888" } };
+const THIN = { style: "thin" as const, color: { argb: BLACK } };
 const ALL_BORDERS = { top: THIN, left: THIN, bottom: THIN, right: THIN };
+
+/** Buat objek font template (selalu memakai nama font & warna hitam). */
+function font(opts: Partial<ExcelJS.Font> = {}): Partial<ExcelJS.Font> {
+  return { name: FONT, color: { argb: BLACK }, ...opts };
+}
 
 function box(cell: ExcelJS.Cell) {
   cell.border = ALL_BORDERS;
 }
 
-function headFill(cell: ExcelJS.Cell, argb = BLUE) {
+function fill(cell: ExcelJS.Cell, argb: string) {
   cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb } };
 }
 
@@ -119,19 +158,26 @@ function borderRange(ws: ExcelJS.Worksheet, range: string) {
   const [a, b] = range.split(":");
   const start = ws.getCell(a);
   const end = ws.getCell(b);
-  for (let r = Number(start.row); r <= Number(end.row); r++) {
-    for (let c = Number(start.col); c <= Number(end.col); c++) {
-      box(ws.getCell(r, c));
+  for (let row = Number(start.row); row <= Number(end.row); row++) {
+    for (let col = Number(start.col); col <= Number(end.col); col++) {
+      box(ws.getCell(row, col));
     }
   }
 }
 
 // ----------------------------- Generator -----------------------------
 
+// Lebar kolom persis template (satuan width Excel) — PRD §5 spec.
 const COL_WIDTHS: Record<string, number> = {
-  A: 3, B: 5, C: 12, D: 24, E: 12, F: 16, G: 18, H: 20, I: 20,
-  J: 14, K: 11, L: 32, M: 14, N: 14, O: 11, P: 11, Q: 13, R: 9, S: 16,
+  A: 2.86, B: 4.29, C: 14.14, D: 17.57, E: 13.86, F: 13.0, G: 13.1,
+  H: 12.29, I: 14.29, J: 14.29, K: 10.43, L: 35.43, M: 16.71, N: 11.26,
+  O: 13.52, P: 14.1, Q: 12.57, R: 14.43, S: 14.43,
 };
+
+// Ukuran gambar TTD digital di blok tanda tangan (px). Diperbesar agar jelas
+// terlihat; dipusatkan horizontal via lebar kolom (lihat blok tanda tangan).
+const TTD_W = 130;
+const TTD_H = 56;
 
 export async function buildReportWorkbook(data: ReportData): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
@@ -154,220 +200,225 @@ export async function buildReportWorkbook(data: ReportData): Promise<Buffer> {
   }
   ws.properties.defaultColWidth = 10;
 
-  // ------------------- Logo Bank Nagari (pojok kiri atas) -------------------
+  // ------------------- Logo Bank Nagari (pojok kiri atas A1:B3) -------------------
+  // Judul berada di B2:R2 (teks di-center jauh dari kolom A), jadi logo kecil di
+  // kolom A–B baris 1–3 tidak menutupi teks judul.
+  ws.getRow(1).height = 18;
+  ws.getRow(2).height = 18;
+  ws.getRow(3).height = 18;
   const logoPath = join(process.cwd(), "public", "logo-bank-nagari.png");
   if (existsSync(logoPath)) {
     const imgId = wb.addImage({
       buffer: readFileSync(logoPath) as unknown as ArrayBuffer,
       extension: "png",
     });
-    ws.addImage(imgId, { tl: { col: 0.25, row: 0.2 }, ext: { width: 132, height: 40 } });
+    ws.addImage(imgId, { tl: { col: 0.1, row: 0.1 }, ext: { width: 84, height: 52 } });
   }
-  ws.getRow(1).height = 20;
-  ws.getRow(2).height = 22;
 
-  // ------------------- Header laporan -------------------
+  // ------------------- Header judul -------------------
   ws.mergeCells("B2:R2");
   const t1 = ws.getCell("B2");
   t1.value = "LAPORAN HARIAN PENANGANAN GANGGUAN";
-  t1.font = { bold: true, size: 14, color: { argb: BLUE } };
+  t1.font = font({ bold: true, size: 10 });
   t1.alignment = { horizontal: "center", vertical: "middle" };
 
-  ws.mergeCells("B3:Q3");
+  ws.mergeCells("B3:R3");
   const t2 = ws.getCell("B3");
   t2.value = "SISTEM ATM DAN JARINGAN KOMUNIKASI";
-  t2.font = { bold: true, size: 11, color: { argb: "FF333333" } };
+  t2.font = font({ bold: true, size: 10 });
   t2.alignment = { horizontal: "center", vertical: "middle" };
 
   const form = ws.getCell("S3");
   form.value = "FORM OPS-001";
-  form.font = { bold: true, size: 9 };
+  form.font = font({ bold: true, size: 10 });
   form.alignment = { horizontal: "center", vertical: "middle" };
-  box(form);
 
   // ------------------- Info petugas (kiri, baris 8–10) -------------------
-  const info: [string, string, string][] = [
-    ["B8", "Hari / Tgl", data.hariTgl],
-    ["B9", "Nama Petugas", data.namaPetugas],
-    ["B10", "Waktu Shift", data.shiftLabel],
+  const info: [number, string, string][] = [
+    [8, "Hari / Tgl :", data.hariTgl],
+    [9, "Nama Petugas :", data.namaPetugas],
+    [10, "Waktu Shift :", data.shiftLabel],
   ];
-  for (const [anchor, label, value] of info) {
-    const row = Number(anchor.slice(1));
+  for (const [row, label, value] of info) {
     ws.mergeCells(`B${row}:C${row}`);
-    ws.mergeCells(`D${row}:F${row}`);
     const l = ws.getCell(`B${row}`);
     l.value = label;
-    l.font = { bold: true, size: 10 };
-    l.alignment = { vertical: "middle" };
+    l.font = font({ size: 10 });
+    l.alignment = { horizontal: "left", vertical: "middle" };
     const v = ws.getCell(`D${row}`);
     v.value = value;
-    v.font = { size: 10 };
-    v.alignment = { vertical: "middle" };
+    v.font = font({ size: 10 });
+    v.alignment = { horizontal: "left", vertical: "middle" };
   }
 
-  // ------------------- Blok Log Server (G5:L10) -------------------
-  ws.mergeCells("G5:H5");
-  ws.mergeCells("I5:J5");
+  // ------------------- Blok Log Server (G5:I10 awal, K5:L10 akhir) -------------------
+  // G5:I5 = header pemeriksaan awal, K5:L5 = header pemeriksaan akhir.
+  // Baris 6–10: kolom G = nama server, H:I = status awal, K:L = status akhir.
+  ws.mergeCells("G5:I5");
   ws.mergeCells("K5:L5");
-  const sv: [string, string][] = [
-    ["G5", "Server"],
-    ["I5", "Awal Shift"],
-    ["K5", "Akhir Shift"],
+  const svHead: [string, string][] = [
+    ["G5", "Pemeriksaan Awal Monitoring"],
+    ["K5", "Pemeriksaan Akhir Monitoring"],
   ];
-  for (const [c, label] of sv) {
-    const cell = ws.getCell(c);
+  for (const [addr, label] of svHead) {
+    const cell = ws.getCell(addr);
     cell.value = label;
-    cell.font = { bold: true, size: 9, color: { argb: "FFFFFFFF" } };
-    cell.alignment = { horizontal: "center", vertical: "middle" };
-    headFill(cell);
+    cell.font = font({ bold: true, size: 9 });
+    cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+    fill(cell, HEADER_FILL);
   }
   data.servers.slice(0, 5).forEach((s, i) => {
-    const r = 6 + i;
-    ws.mergeCells(`G${r}:H${r}`);
-    ws.mergeCells(`I${r}:J${r}`);
-    ws.mergeCells(`K${r}:L${r}`);
-    const name = ws.getCell(`G${r}`);
+    const row = 6 + i;
+    ws.mergeCells(`H${row}:I${row}`);
+    ws.mergeCells(`K${row}:L${row}`);
+    const name = ws.getCell(`G${row}`);
     name.value = s.label;
-    name.font = { bold: true, size: 9 };
-    name.alignment = { vertical: "middle" };
-    const awal = ws.getCell(`I${r}`);
+    name.font = font({ bold: true, size: 9 });
+    name.alignment = { horizontal: "left", vertical: "middle" };
+    const awal = ws.getCell(`H${row}`);
     awal.value = s.awal || "-";
-    awal.font = { size: 9 };
+    awal.font = font({ size: 9 });
     awal.alignment = { horizontal: "center", vertical: "middle" };
-    const akhir = ws.getCell(`K${r}`);
+    const akhir = ws.getCell(`K${row}`);
     akhir.value = s.akhir || "-";
-    akhir.font = { size: 9 };
+    akhir.font = font({ size: 9 });
     akhir.alignment = { horizontal: "center", vertical: "middle" };
   });
   borderRange(ws, "G5:L10");
 
   // ------------------- Blok Suhu AC (N5:R9) -------------------
-  const acHead: [string, string][] = [
-    ["N5", "Cek"],
-    ["O5", "Waktu"],
-    ["P5", "Room Server"],
-    ["Q5", "R. Panel"],
-    ["R5", "AC Ki/Ka"],
-  ];
-  for (const [c, label] of acHead) {
-    const cell = ws.getCell(c);
-    cell.value = label;
-    cell.font = { bold: true, size: 9, color: { argb: "FFFFFFFF" } };
-    cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
-    headFill(cell);
-  }
-  for (let i = 0; i < 3; i++) {
-    const r = 6 + i;
-    const chk = data.acChecks.find((a) => a.urutan === i + 1);
-    ws.getCell(`N${r}`).value = i + 1;
-    ws.getCell(`N${r}`).alignment = { horizontal: "center", vertical: "middle" };
-    const w = ws.getCell(`O${r}`);
+  // O5 = "Waktu Pemantauan :", P5/Q5/R5 = 3 jam pemantauan.
+  // Baris 6–9: label (N:O di-merge) + nilai pemantauan 1/2/3 di P/Q/R.
+  const acSorted = [1, 2, 3].map((u) => data.acChecks.find((a) => a.urutan === u) ?? null);
+  const o5 = ws.getCell("O5");
+  o5.value = "Waktu Pemantauan :";
+  o5.font = font({ bold: true, size: 9 });
+  o5.alignment = { horizontal: "right", vertical: "middle" };
+  ["P", "Q", "R"].forEach((col, i) => {
+    const cell = ws.getCell(`${col}5`);
+    const chk = acSorted[i];
     if (chk?.waktu) {
-      w.value = excelSerialWIB(chk.waktu);
-      w.numFmt = "hh:mm";
+      cell.value = excelSerialWIB(chk.waktu);
+      cell.numFmt = "h:mm";
     } else {
-      w.value = "-";
+      cell.value = "-";
     }
-    w.alignment = { horizontal: "center", vertical: "middle" };
-    ws.getCell(`P${r}`).value = chk?.room || "-";
-    ws.getCell(`Q${r}`).value = chk?.panel || "-";
-    ws.getCell(`R${r}`).value = chk
-      ? `${chk.kiri ? "Aktif" : "Mati"} / ${chk.kanan ? "Aktif" : "Mati"}`
-      : "-";
-    for (const col of ["P", "Q", "R"]) {
-      ws.getCell(`${col}${r}`).font = { size: 9 };
-      ws.getCell(`${col}${r}`).alignment = { horizontal: "center", vertical: "middle" };
-    }
+    cell.font = font({ size: 9 });
+    cell.alignment = { horizontal: "center", vertical: "middle" };
+  });
+
+  const acRows: [number, string, (c: ReportAcCheck) => string][] = [
+    [6, "Suhu Room Server", (c) => c.room || "-"],
+    [7, "Suhu Ruangan Panel", (c) => c.panel || "-"],
+    [8, "Status Aktif AC (Ki/Ka)", (c) => `${c.kiri ? "Aktif" : "Mati"} / ${c.kanan ? "Aktif" : "Mati"}`],
+    [9, "Pemantauan Berkala 12 Jam (Ki/Ka)", (c) => `${c.p12kiri || "-"} / ${c.p12kanan || "-"}`],
+  ];
+  for (const [row, label, getter] of acRows) {
+    ws.mergeCells(`N${row}:O${row}`);
+    const l = ws.getCell(`N${row}`);
+    l.value = label;
+    l.font = font({ bold: true, size: 9 });
+    l.alignment = { horizontal: "left", vertical: "middle", wrapText: true };
+    ["P", "Q", "R"].forEach((col, i) => {
+      const chk = acSorted[i];
+      const cell = ws.getCell(`${col}${row}`);
+      cell.value = chk ? getter(chk) : "-";
+      cell.font = font({ size: 9 });
+      cell.alignment = { horizontal: "center", vertical: "middle" };
+    });
   }
-  ws.mergeCells("N9:Q9");
-  const p12label = ws.getCell("N9");
-  p12label.value = "Pemantauan Berkala 12 Jam (Ki / Ka)";
-  p12label.font = { size: 9, bold: true };
-  p12label.alignment = { vertical: "middle" };
-  const chk12 = data.acChecks.find((a) => a.p12kiri || a.p12kanan);
-  const p12val = ws.getCell("R9");
-  p12val.value = chk12 ? `${chk12.p12kiri || "-"} / ${chk12.p12kanan || "-"}` : "-";
-  p12val.font = { size: 9 };
-  p12val.alignment = { horizontal: "center", vertical: "middle" };
   borderRange(ws, "N5:R9");
 
   // ------------------- Total Menit dalam Bulan (O10/S10) -------------------
+  const bulan = (data.tanggalLabel.split(" ")[1] ?? "").trim();
   ws.mergeCells("O10:R10");
   const tmLabel = ws.getCell("O10");
-  tmLabel.value = "Total Menit dalam 1 Bulan =";
-  tmLabel.font = { bold: true, size: 9 };
+  tmLabel.value = `Total Menit dalam Bulan ${bulan} =`;
+  tmLabel.font = font({ bold: true, size: 9 });
   tmLabel.alignment = { horizontal: "right", vertical: "middle" };
   const tmVal = ws.getCell("S10");
   tmVal.value = { formula: `24*60*${data.jumlahHari}` };
   tmVal.numFmt = "#,##0";
-  tmVal.font = { bold: true, size: 9 };
+  tmVal.font = font({ bold: true, size: 9 });
   tmVal.alignment = { horizontal: "center", vertical: "middle" };
   box(tmVal);
 
   // ------------------- Header tabel tiket (baris 12–13) -------------------
+  // Semua kolom merge vertikal X12:X13 KECUALI K & L. K12:L12 gabungan,
+  // lalu K13="Waktu", L13="Kegiatan". Fill biru muda, bold, border, wrap.
   const HEADERS: [string, string][] = [
     ["B", "No"],
     ["C", "Waktu Kejadian Gangguan"],
-    ["D", "Unit Kerja / Tempat Kejadian"],
+    ["D", "Unit Kerja/tempat kejadian Gangguan"],
     ["E", "Waktu Respon Penanganan Internal"],
     ["F", "Contact Person"],
     ["G", "Jenis Gangguan"],
     ["H", "Sumber Penyebab Gangguan"],
     ["I", "Metode Penanganan Gangguan"],
-    ["J", "Vendor Jaringan / ATM"],
+    ["J", "Vendor jaringan/ATM"],
     ["M", "No Tiket Aduan dari Vendor"],
-    ["N", "Waktu Selesai Gangguan"],
-    ["O", "Lama Penyelesaian (hh:mm)"],
-    ["P", "Lama Penyelesaian (Menit)"],
-    ["Q", "Total Waktu 1 Bulan (Menit)"],
-    ["R", "SLA (%)"],
+    ["N", "Waktu selesai Gangguan"],
+    ["O", "Lama peyelesaian gangguan\n(hh:mm)"],
+    ["P", "Lama peyelesaian gangguan\n(Menit)"],
+    ["Q", "Total waktu dalam 1 Bulan (Menit)"],
+    ["R", "SLA (%) /  otomatis"],
     ["S", "Keterangan"],
   ];
   for (const [col, label] of HEADERS) {
     ws.mergeCells(`${col}12:${col}13`);
     const cell = ws.getCell(`${col}12`);
     cell.value = label;
-    cell.font = { bold: true, size: 9, color: { argb: "FFFFFFFF" } };
-    cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
-    headFill(cell);
+    cell.font = font({ bold: true, size: 9 });
+    // D rata kiri+middle, sisanya center+middle.
+    cell.alignment = {
+      horizontal: col === "D" ? "left" : "center",
+      vertical: "middle",
+      wrapText: true,
+    };
+    fill(cell, HEADER_FILL);
   }
-  // Grup "Uraian Kegiatan" K/L.
+  // Grup "Uraian Kegiatan Penanganan gangguan" (K12:L12) + sub Waktu/Kegiatan.
   ws.mergeCells("K12:L12");
   const uk = ws.getCell("K12");
-  uk.value = "Uraian Kegiatan";
-  uk.font = { bold: true, size: 9, color: { argb: "FFFFFFFF" } };
-  uk.alignment = { horizontal: "center", vertical: "middle" };
-  headFill(uk);
+  uk.value = "Uraian Kegiatan Penanganan gangguan";
+  uk.font = font({ bold: true, size: 9 });
+  uk.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+  fill(uk, HEADER_FILL);
   for (const [col, label] of [["K", "Waktu"], ["L", "Kegiatan"]] as const) {
     const cell = ws.getCell(`${col}13`);
     cell.value = label;
-    cell.font = { bold: true, size: 9, color: { argb: "FFFFFFFF" } };
-    cell.alignment = { horizontal: "center", vertical: "middle" };
-    headFill(cell);
+    cell.font = font({ bold: true, size: 9 });
+    cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+    fill(cell, HEADER_FILL);
   }
-  ws.getRow(12).height = 30;
-  ws.getRow(13).height = 16;
+  borderRange(ws, "B12:S13");
+  ws.getRow(12).height = 28;
+  ws.getRow(13).height = 36;
 
   // ------------------- Baris data tiket (mulai 14) -------------------
+  // Kolom rata kiri (D=lokasi, L=kegiatan, S=keterangan); sisanya center.
+  // E–J center+top sesuai §7 (Waktu Respon, Contact Person, Jenis/Sumber/
+  // Metode gangguan, Vendor). Semua sel data wrap=true, vertical top.
+  const LEFT_COLS = new Set(["D", "L", "S"]);
+  const totalMenit = 24 * 60 * data.jumlahHari;
+
   let r = 14;
   if (data.tickets.length === 0) {
     ws.mergeCells(`B${r}:S${r}`);
     const empty = ws.getCell(`B${r}`);
     empty.value = "Tidak ada tiket gangguan pada shift ini.";
-    empty.font = { italic: true, size: 10, color: { argb: "FF888888" } };
+    empty.font = font({ italic: true, size: 10, color: { argb: "FF888888" } });
     empty.alignment = { horizontal: "center", vertical: "middle" };
     borderRange(ws, `B${r}:S${r}`);
     r++;
   }
 
   for (const t of data.tickets) {
-    const lines = Math.max(t.activities.length, 1);
-    ws.getRow(r).height = Math.min(lines * 13 + 6, 220);
+    const lines = Math.max(t.activities.length, 2);
+    ws.getRow(r).height = Math.min(Math.max(lines * 14 + 8, 40), 240);
 
     ws.getCell(`B${r}`).value = t.no;
-    const c = ws.getCell(`C${r}`);
-    c.value = excelSerialWIB(t.waktuKejadian);
-    c.numFmt = "hh:mm";
+    ws.getCell(`C${r}`).value = fmtWaktuTanggal(t.waktuKejadian);
     ws.getCell(`D${r}`).value = t.unitKerja;
     ws.getCell(`E${r}`).value = t.waktuRespon || "-";
     ws.getCell(`F${r}`).value = t.contactPerson || "-";
@@ -376,163 +427,171 @@ export async function buildReportWorkbook(data: ReportData): Promise<Buffer> {
     ws.getCell(`I${r}`).value = t.metodePenanganan || "-";
     ws.getCell(`J${r}`).value = t.vendor || "-";
 
+    // K = waktu tiap entri (hh:mm), L = teks log; penanda tindak lanjut bold.
     const kText = t.activities
       .map((a) => (a.isTindakLanjut ? "" : fmtJamWIB(a.waktu)))
       .join("\n");
-    const lText = t.activities
-      .map((a) =>
-        a.isTindakLanjut ? "» TINDAK LANJUT MONITORING SELANJUTNYA" : a.teks
-      )
-      .join("\n");
     ws.getCell(`K${r}`).value = kText || "-";
-    ws.getCell(`L${r}`).value = lText || "-";
+
+    if (t.activities.length > 0) {
+      const richText: ExcelJS.RichText[] = [];
+      t.activities.forEach((a, idx) => {
+        if (idx > 0) richText.push({ text: "\n", font: font({ size: 9 }) });
+        if (a.isTindakLanjut) {
+          richText.push({
+            text: "TINDAK LANJUT MONITORING SELANJUTNYA",
+            font: font({ size: 9, bold: true }),
+          });
+        } else {
+          richText.push({ text: a.teks, font: font({ size: 9 }) });
+        }
+      });
+      ws.getCell(`L${r}`).value = { richText };
+    } else {
+      ws.getCell(`L${r}`).value = "-";
+    }
 
     ws.getCell(`M${r}`).value = t.noTiketVendor || "-";
 
     if (t.waktuSelesai) {
-      const n = ws.getCell(`N${r}`);
-      n.value = excelSerialWIB(t.waktuSelesai);
-      n.numFmt = "hh:mm";
+      ws.getCell(`N${r}`).value = fmtWaktuTanggal(t.waktuSelesai);
+      const durDays = excelSerialWIB(t.waktuSelesai) - excelSerialWIB(t.waktuKejadian);
+      const menit = Math.round(durDays * 24 * 60);
       const o = ws.getCell(`O${r}`);
-      o.value = { formula: `N${r}-C${r}` };
+      o.value = durDays;
       o.numFmt = "[h]:mm";
       const p = ws.getCell(`P${r}`);
-      p.value = { formula: `O${r}*24*60` };
+      p.value = menit;
       p.numFmt = "#,##0";
       const q = ws.getCell(`Q${r}`);
-      q.value = { formula: `$S$10-P${r}` };
+      q.value = totalMenit - menit;
       q.numFmt = "#,##0";
       const sla = ws.getCell(`R${r}`);
-      sla.value = { formula: `Q${r}/$S$10` };
+      sla.value = (totalMenit - menit) / totalMenit;
       sla.numFmt = "0.00%";
     } else {
-      // Tiket masih proses: N:P merge "Dalam Proses", Q:R merge teks lanjutan.
+      // Tiket masih proses (PRD §5): N:P di-merge "Dalam Proses";
+      // Q:R di-merge "Monitoring Dilanjutkan oleh Shift berikutnya".
       ws.mergeCells(`N${r}:P${r}`);
-      const np = ws.getCell(`N${r}`);
-      np.value = "Dalam Proses";
-      np.alignment = { horizontal: "center", vertical: "middle" };
-      np.font = { italic: true, size: 9, color: { argb: BLUE } };
+      const n = ws.getCell(`N${r}`);
+      n.value = "Dalam Proses";
       ws.mergeCells(`Q${r}:R${r}`);
       const qr = ws.getCell(`Q${r}`);
       qr.value = "Monitoring Dilanjutkan oleh Shift berikutnya";
-      qr.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
-      qr.font = { italic: true, size: 8, color: { argb: "FF666666" } };
     }
 
     ws.getCell(`S${r}`).value = t.keterangan || "-";
 
-    // Styling umum baris (border + alignment + font dasar).
-    const WRAP_COLS = new Set(["D", "K", "L", "Q"]);
-    const CENTER_COLS = new Set(["B", "C", "E", "N", "O", "P", "Q", "R"]);
+    // Styling umum baris (border + font + alignment + wrap).
     for (let col = 2; col <= 19; col++) {
       const cell = ws.getCell(r, col);
       box(cell);
-      cell.font = { ...(cell.font ?? {}), size: cell.font?.size ?? 9 };
+      const existing = (cell.font ?? {}) as Partial<ExcelJS.Font>;
+      cell.font = font({ size: 9, bold: existing.bold });
       const letter = cell.address.replace(/\d+/g, "");
       cell.alignment = {
         vertical: "top",
-        wrapText: WRAP_COLS.has(letter),
-        horizontal: CENTER_COLS.has(letter) ? "center" : "left",
+        wrapText: true,
+        horizontal: LEFT_COLS.has(letter) ? "left" : "center",
       };
     }
     r++;
   }
 
-  // ------------------- Blok tanda tangan -------------------
+  // ------------------- Blok tanda tangan (baris 25–31) -------------------
+  // Posisi kanonik template = baris 25; bila data lebih panjang, geser ke bawah
+  // dengan offset relatif yang sama (label +1, area TTD +1..+3, nama +6).
   const sigStart = Math.max(25, r + 1);
-  const titleRow = sigStart + 1;
-  const nameRow = sigStart + 6;
+  const titleRow = sigStart + 1; // 26
+  const ttdTop = sigStart + 2; // 27 (area tempel TTD, merge label 26:28)
+  const nameRow = sigStart + 6; // 31
 
-  ws.mergeCells(`B${sigStart}:F${sigStart}`);
+  ws.mergeCells(`B${sigStart}:S${sigStart}`);
   const padang = ws.getCell(`B${sigStart}`);
   padang.value = `Padang, ${data.tanggalLabel}`;
-  padang.font = { size: 10 };
-  padang.alignment = { vertical: "middle" };
+  padang.font = font({ size: 10 });
+  padang.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
 
   const sig = data.signatures;
-  const titles: [string, string, string][] = [
-    ["C", "E", "Petugas Monitoring yang menyerahkan"],
-    ["F", "H", "Petugas Monitoring yang Menerima"],
-    ["I", "K", "Supervisi"],
-    ["O", "P", "Mengetahui,\nBag. Infrastruktur TI"],
-    ["R", "S", "Mengetahui,\nPemimpin Divisi"],
-  ];
-  const names: [string, string, string][] = [
-    ["C", "E", sig.penyerah],
-    ["F", "H", sig.penerima],
-    ["I", "K", sig.supervisi],
-    ["O", "P", sig.pimpinanInfra],
-    ["R", "S", sig.pimpinanDivisi],
-  ];
-
-  for (const [c1, c2, label] of titles) {
-    ws.mergeCells(`${c1}${titleRow}:${c2}${titleRow}`);
-    const cell = ws.getCell(`${c1}${titleRow}`);
-    cell.value = label;
-    cell.font = { size: 9 };
-    cell.alignment = { horizontal: "center", vertical: "top", wrapText: true };
-  }
-  ws.getRow(titleRow).height = 28;
-
-  for (const [c1, c2, nama] of names) {
-    ws.mergeCells(`${c1}${nameRow}:${c2}${nameRow}`);
-    const cell = ws.getCell(`${c1}${nameRow}`);
-    cell.value = `( ${nama || "…………………………"} )`;
-    cell.font = { size: 9, bold: true };
-    cell.alignment = { horizontal: "center", vertical: "middle" };
-    cell.border = { top: THIN };
-  }
-
-  // ------------------- TTD digital petugas & supervisi (baris 28) -------------------
-  // Penyerah & penerima: SELALU muncul (sudah serah terima = sudah menyetujui).
-  // Supervisi: hanya SETELAH approve tiket. ttd_url NULL → placeholder teks "(TTD)".
-  const ttdRow = titleRow + 2; // baris 28 saat sigStart=25 (PRD §5: C28/F28/I28)
-  const signers: {
-    col1: string;
-    col2: string;
+  // Kolom blok TTD: penyerah C:D, penerima F:G, supervisi I:J, infra O:P, divisi R:S.
+  const blocks: {
+    c1: string;
+    c2: string;
     imgCol: number;
-    path: string | null;
+    title: string;
+    nama: string;
+    ttdPath: string | null;
+    /** True = petugas/supervisi (punya TTD digital → tampilkan gambar/placeholder). */
+    signer: boolean;
     show: boolean;
   }[] = [
-    { col1: "C", col2: "E", imgCol: 2, path: sig.penyerahTtdPath, show: true },
-    { col1: "F", col2: "H", imgCol: 5, path: sig.penerimaTtdPath, show: true },
-    {
-      col1: "I",
-      col2: "K",
-      imgCol: 8,
-      path: sig.supervisiTtdPath,
-      show: sig.supervisiApproved,
-    },
+    { c1: "C", c2: "D", imgCol: 2, title: "Petugas Monitoring yang menyerahkan", nama: sig.penyerah, ttdPath: sig.penyerahTtdPath, signer: true, show: true },
+    { c1: "F", c2: "G", imgCol: 5, title: "Petugas Monitoring yang Menerima", nama: sig.penerima, ttdPath: sig.penerimaTtdPath, signer: true, show: true },
+    { c1: "I", c2: "J", imgCol: 8, title: "Supervisi", nama: sig.supervisi, ttdPath: sig.supervisiTtdPath, signer: true, show: sig.supervisiApproved },
+    { c1: "O", c2: "P", imgCol: 14, title: "Mengetahui,\nBag. Infrastruktur TI", nama: sig.pimpinanInfra, ttdPath: null, signer: false, show: true },
+    { c1: "R", c2: "S", imgCol: 17, title: "Mengetahui,\nPemimpin Divisi", nama: sig.pimpinanDivisi, ttdPath: null, signer: false, show: true },
   ];
 
-  for (const s of signers) {
-    if (!s.show) continue;
-    let drawn = false;
-    if (s.path) {
-      const ttdAbs = join(process.cwd(), "public", s.path.replace(/^\//, ""));
-      const low = s.path.toLowerCase();
+  for (let row = titleRow; row <= titleRow + 2; row++) ws.getRow(row).height = 20;
+  ws.getRow(nameRow).height = 31;
+
+  for (const b of blocks) {
+    // Label jabatan (merge X26:Y28) — teks di atas, area TTD di tengah.
+    ws.mergeCells(`${b.c1}${titleRow}:${b.c2}${titleRow + 2}`);
+    const label = ws.getCell(`${b.c1}${titleRow}`);
+    label.value = b.title;
+    label.font = font({ size: 10 });
+    label.alignment = { horizontal: "center", vertical: "top", wrapText: true };
+
+    // Nama dalam kurung (merge X31:Y31).
+    ws.mergeCells(`${b.c1}${nameRow}:${b.c2}${nameRow}`);
+    const name = ws.getCell(`${b.c1}${nameRow}`);
+    name.value = `( ${b.nama || "…………………………"} )`;
+    name.font = font({ size: 10 });
+    name.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+
+    // TTD digital ditempel sebagai gambar melayang di atas area label (baris
+    // 27–28). Petugas penyerah/penerima selalu muncul; supervisi hanya setelah
+    // approve. Tanpa gambar, area di bawah label dibiarkan kosong (ruang TTD
+    // manual) — tidak ditulisi teks agar tidak menimpa label di sel merge.
+    if (b.show && b.signer && b.ttdPath) {
+      const ttdAbs = join(process.cwd(), "public", b.ttdPath.replace(/^\//, ""));
+      const low = b.ttdPath.toLowerCase();
       const ext = low.endsWith(".jpg") || low.endsWith(".jpeg") ? "jpeg" : "png";
-      if (existsSync(ttdAbs) && (ext === "png" || ext === "jpeg")) {
+      if (existsSync(ttdAbs)) {
         const ttdId = wb.addImage({
           buffer: readFileSync(ttdAbs) as unknown as ArrayBuffer,
           extension: ext,
         });
+        // Pusatkan TTD horizontal di area merge label (kolom c1:c2). ExcelJS
+        // membatasi offset via pecahan kolom (cap ≈ width*10000 EMU ≪ lebar
+        // render), jadi offset EMU di-set langsung lewat nativeCol/nativeColOff
+        // (1 px = 9525 EMU; lebar render kolom ≈ width*7+5 px). Vertikal:
+        // nativeRow baris 27 (di bawah teks label, merge 26:28).
+        const EMU_PX = 9525;
+        const colPx = (w: number) => Math.round(w * 7 + 5);
+        const w1 = colPx(COL_WIDTHS[b.c1]);
+        let leftPx = Math.max(0, (w1 + colPx(COL_WIDTHS[b.c2]) - TTD_W) / 2);
+        let nativeCol = b.imgCol;
+        if (leftPx > w1) {
+          leftPx -= w1; // gambar mulai dari kolom kedua (c2)
+          nativeCol += 1;
+        }
         ws.addImage(ttdId, {
-          tl: { col: s.imgCol + 0.2, row: ttdRow - 1 + 0.1 },
-          ext: { width: 110, height: 55 },
-        });
-        drawn = true;
+          tl: {
+            nativeCol,
+            nativeColOff: Math.round(leftPx * EMU_PX),
+            nativeRow: ttdTop - 1,
+            nativeRowOff: 0,
+          },
+          ext: { width: TTD_W, height: TTD_H },
+        } as unknown as Parameters<typeof ws.addImage>[1]);
       }
     }
-    if (!drawn) {
-      // Placeholder "(TTD)" bila belum upload tanda tangan digital.
-      ws.mergeCells(`${s.col1}${ttdRow}:${s.col2}${ttdRow}`);
-      const ph = ws.getCell(`${s.col1}${ttdRow}`);
-      ph.value = "(TTD)";
-      ph.font = { size: 9, italic: true, color: { argb: "FF999999" } };
-      ph.alignment = { horizontal: "center", vertical: "middle" };
-    }
   }
+
+  // ------------------- Print area -------------------
+  ws.pageSetup.printArea = `A1:S${nameRow}`;
 
   const out = await wb.xlsx.writeBuffer();
   return Buffer.from(out);
