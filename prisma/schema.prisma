@@ -97,6 +97,11 @@ model User {
   acTempLogs       AcTempLog[]
   serverLogs       ServerLog[]
   appSettings      AppSetting[]
+  shiftReportsOwned         ShiftReport[] @relation("ShiftReportOwner")
+  shiftReportsReceived      ShiftReport[] @relation("ShiftReportReceiver")
+  shiftReportsSupervisi     ShiftReport[] @relation("ShiftReportSupervisi")
+  shiftReportsSupervisiNext ShiftReport[] @relation("ShiftReportSupervisiNext")
+  shiftReportsApproved      ShiftReport[] @relation("ShiftReportApprover")
 
   @@map("users")
 }
@@ -130,6 +135,8 @@ model Leader {
   ticketsDivisi  Ticket[] @relation("TicketPimpinanDivisi")
   handoversInfra  ShiftHandover[] @relation("HandoverPimpinanInfra")
   handoversDivisi ShiftHandover[] @relation("HandoverPimpinanDivisi")
+  shiftReportsInfra  ShiftReport[] @relation("ShiftReportPimpinanInfra")
+  shiftReportsDivisi ShiftReport[] @relation("ShiftReportPimpinanDivisi")
 
   @@map("leaders")
 }
@@ -270,8 +277,45 @@ model ShiftHandover {
   pimpinanDivisi Leader? @relation("HandoverPimpinanDivisi", fields: [pimpinanDivisiId], references: [id])
   supervisi      User?   @relation("HandoverSupervisi", fields: [supervisiId], references: [id])
   supervisiNext  User?   @relation("HandoverSupervisiNext", fields: [supervisiNextId], references: [id])
+  shiftReports   ShiftReport[]
 
   @@map("shift_handovers")
+}
+
+// Laporan per shift (paradigma approval baru): 1 shift = 1 record. Dibuat
+// otomatis saat serah terima ATAU "Tutup Laporan Shift". Supervisi approve di
+// level laporan ini (bukan per tiket); TTD supervisi di Excel di-gate status.
+model ShiftReport {
+  id               String    @id @default(cuid())
+  tanggal          DateTime  // instant saat shift ditutup (dipakai day-range WIB)
+  shiftKode        ShiftKode @map("shift_kode")
+  shiftLabel       String    @map("shift_label")
+  ownerUserId      String    @map("owner_user_id")
+  receiverUserId   String?   @map("receiver_user_id")
+  supervisiId      String?   @map("supervisi_id")
+  supervisiNextId  String?   @map("supervisi_next_id")
+  pimpinanInfraId  String?   @map("pimpinan_infra_id")
+  pimpinanDivisiId String?   @map("pimpinan_divisi_id")
+  status           String    @default("pending") // pending | approved
+  approvedAt       DateTime? @map("approved_at")
+  approvedById     String?   @map("approved_by")
+  catatanSupervisi String?   @map("catatan_supervisi")
+  handoverId       String?   @map("handover_id")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  ownerUser      User           @relation("ShiftReportOwner", fields: [ownerUserId], references: [id])
+  receiverUser   User?          @relation("ShiftReportReceiver", fields: [receiverUserId], references: [id])
+  supervisi      User?          @relation("ShiftReportSupervisi", fields: [supervisiId], references: [id])
+  supervisiNext  User?          @relation("ShiftReportSupervisiNext", fields: [supervisiNextId], references: [id])
+  approver       User?          @relation("ShiftReportApprover", fields: [approvedById], references: [id])
+  pimpinanInfra  Leader?        @relation("ShiftReportPimpinanInfra", fields: [pimpinanInfraId], references: [id])
+  pimpinanDivisi Leader?        @relation("ShiftReportPimpinanDivisi", fields: [pimpinanDivisiId], references: [id])
+  handover       ShiftHandover? @relation(fields: [handoverId], references: [id])
+
+  @@index([shiftKode, tanggal])
+  @@index([supervisiId, status])
+  @@map("shift_reports")
 }
 
 model AcTempLog {
