@@ -1,12 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import Image from "next/image";
 import { Lock, User2, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { AppLogo } from "@/components/layout/AppLogo";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -14,6 +14,15 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Ambil logo aktif (endpoint publik) agar tampilan login ikut logo terkini.
+    fetch("/api/settings/logo")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setLogoUrl(d?.logo_url ?? null))
+      .catch(() => {});
+  }, []);
 
   const today = useMemo(() => new Date(), []);
   const hariIni = useMemo(
@@ -65,15 +74,7 @@ export default function LoginPage() {
         <div className="bg-white rounded-2xl shadow-card-lg overflow-hidden">
           {/* Header */}
           <div className="bg-primary px-8 pt-8 pb-6 text-center">
-            <div className="relative w-40 h-12 mx-auto mb-3">
-              <Image
-                src="/logo-bank-nagari.svg"
-                alt="Logo Bank Nagari"
-                fill
-                className="object-contain"
-                priority
-              />
-            </div>
+            <AppLogo logoUrl={logoUrl} className="w-40 h-12 mx-auto mb-3" priority />
             <h1 className="text-white text-lg font-display font-bold">
               mtr-Report
             </h1>

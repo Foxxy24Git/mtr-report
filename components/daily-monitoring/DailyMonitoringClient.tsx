@@ -23,7 +23,14 @@ import type { TicketListItem } from "@/lib/ticketQueries";
 interface LeaderOption {
   id: string;
   nama: string;
-  jabatan: string;
+  kategori: "infrastruktur" | "divisi";
+  tipe: "tetap" | "pjs";
+  namaPjs: string | null;
+}
+
+/** Label dropdown: nama + penanda PJS bila pejabat pengganti. */
+function leaderLabel(l: LeaderOption): string {
+  return l.tipe === "pjs" ? `${l.nama} [PJS: ${l.namaPjs ?? "-"}]` : l.nama;
 }
 
 interface SupervisiOption {
@@ -80,8 +87,8 @@ export function DailyMonitoringClient({
   // Petugas penerima shift (WAJIB, PRD revisi §1).
   const [hoReceiver, setHoReceiver] = useState("");
 
-  const leadersInfra = leaders.filter((l) => l.jabatan === "infrastruktur");
-  const leadersDivisi = leaders.filter((l) => l.jabatan === "divisi");
+  const leadersInfra = leaders.filter((l) => l.kategori === "infrastruktur");
+  const leadersDivisi = leaders.filter((l) => l.kategori === "divisi");
   // Penerima dipilih dari petugas (role=user) selain diri sendiri.
   const receiverOptions = petugasUsers.filter((u) => u.id !== currentUserId);
   const canHandover = Boolean(
@@ -330,7 +337,7 @@ export function DailyMonitoringClient({
             <option value="">— Pilih pimpinan —</option>
             {leadersInfra.map((l) => (
               <option key={l.id} value={l.id}>
-                {l.nama}
+                {leaderLabel(l)}
               </option>
             ))}
           </Select>
@@ -343,7 +350,7 @@ export function DailyMonitoringClient({
             <option value="">— Pilih pimpinan —</option>
             {leadersDivisi.map((l) => (
               <option key={l.id} value={l.id}>
-                {l.nama}
+                {leaderLabel(l)}
               </option>
             ))}
           </Select>

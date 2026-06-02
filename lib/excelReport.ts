@@ -88,6 +88,12 @@ export interface ReportData {
   acChecks: ReportAcCheck[];
   servers: ReportServer[];
   signatures: ReportSignatures;
+  /**
+   * Path filesystem absolut logo (PNG/JPG) untuk pojok kiri atas. Bila tidak
+   * diisi, dipakai logo bawaan public/logo-bank-nagari.png. SVG tidak didukung
+   * ExcelJS — pemanggil sudah me-resolve fallback (lihat lib/appSettings.ts).
+   */
+  logoPath?: string;
 }
 
 // ----------------------------- Util waktu -----------------------------
@@ -206,11 +212,16 @@ export async function buildReportWorkbook(data: ReportData): Promise<Buffer> {
   ws.getRow(1).height = 18;
   ws.getRow(2).height = 18;
   ws.getRow(3).height = 18;
-  const logoPath = join(process.cwd(), "public", "logo-bank-nagari.png");
+  // Logo: pakai logo aplikasi yang di-resolve pemanggil (logoPath), jatuh ke
+  // logo bawaan bila tidak diisi. Hanya PNG/JPG (ExcelJS tak mendukung SVG).
+  const logoPath =
+    data.logoPath ?? join(process.cwd(), "public", "logo-bank-nagari.png");
   if (existsSync(logoPath)) {
+    const lower = logoPath.toLowerCase();
+    const extension = lower.endsWith(".jpg") || lower.endsWith(".jpeg") ? "jpeg" : "png";
     const imgId = wb.addImage({
       buffer: readFileSync(logoPath) as unknown as ArrayBuffer,
-      extension: "png",
+      extension,
     });
     ws.addImage(imgId, { tl: { col: 0.1, row: 0.1 }, ext: { width: 84, height: 52 } });
   }

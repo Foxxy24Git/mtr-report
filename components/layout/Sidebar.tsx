@@ -2,12 +2,12 @@
 
 import { NAV_ITEMS, APP_NAME, type Role } from "@/lib/constants";
 import { cn } from "@/lib/cn";
-import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
+import { AppLogo } from "@/components/layout/AppLogo";
 
-export function Sidebar({ role }: { role: Role }) {
+export function Sidebar({ role, logoUrl }: { role: Role; logoUrl?: string | null }) {
   const pathname = usePathname();
   const items = NAV_ITEMS.filter((item) => !item.roles || item.roles.includes(role));
 
@@ -18,15 +18,7 @@ export function Sidebar({ role }: { role: Role }) {
     >
       {/* Logo + App Name */}
       <div className="flex flex-col items-center px-5 py-5 border-b border-primary-700/50">
-        <div className="relative w-36 h-11 mb-2">
-          <Image
-            src="/logo-bank-nagari.svg"
-            alt="Logo Bank Nagari"
-            fill
-            className="object-contain"
-            priority
-          />
-        </div>
+        <AppLogo logoUrl={logoUrl} className="w-36 h-11 mb-2" priority />
         <p className="text-xs text-primary-200 font-medium tracking-wide mt-1">
           {APP_NAME}
         </p>
@@ -39,8 +31,26 @@ export function Sidebar({ role }: { role: Role }) {
         <ul className="space-y-0.5">
           {items.map((item) => {
             const isActive =
-              pathname === item.href || pathname.startsWith(item.href + "/");
+              !item.external &&
+              (pathname === item.href || pathname.startsWith(item.href + "/"));
             const Icon = item.icon;
+
+            // Menu eksternal (mis. Prisma Studio) dibuka di tab baru.
+            if (item.external) {
+              return (
+                <li key={item.href}>
+                  <a
+                    href={item.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 text-primary-100 hover:bg-white/10 hover:text-white"
+                  >
+                    <Icon className="w-4 h-4 shrink-0 relative z-10 text-primary-300" />
+                    <span className="relative z-10">{item.label}</span>
+                  </a>
+                </li>
+              );
+            }
 
             return (
               <li key={item.href}>

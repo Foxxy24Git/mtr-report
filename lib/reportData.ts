@@ -4,7 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { SHIFT_LABELS } from "@/lib/constants";
 import { SERVERS } from "@/lib/suhuServer";
 import { buildReportTicketWhere } from "@/lib/reportQuery";
-import { resolveSender, resolveAcknowledger } from "@/lib/reportSignatures";
+import { resolveSender, resolveAcknowledger, resolveLeaderName } from "@/lib/reportSignatures";
+import { resolveReportLogoPath } from "@/lib/appSettings";
 import type {
   ReportData,
   ReportTicket,
@@ -91,8 +92,8 @@ export async function gatherReportData(p: GatherParams): Promise<GatherResult> {
       atm: { select: { kodeAtm: true, namaAtm: true } },
       owner: { select: { nama: true, ttdUrl: true } },
       approver: { select: { nama: true, ttdUrl: true } },
-      pimpinanInfra: { select: { nama: true } },
-      pimpinanDivisi: { select: { nama: true } },
+      pimpinanInfra: { select: { nama: true, tipe: true, namaPjs: true } },
+      pimpinanDivisi: { select: { nama: true, tipe: true, namaPjs: true } },
       activities: { orderBy: { waktu: "asc" }, include: { user: { select: { nama: true } } } },
     },
   });
@@ -178,8 +179,8 @@ export async function gatherReportData(p: GatherParams): Promise<GatherResult> {
         where: { fromShift: shift, at: { gte: startWib, lt: endWib } },
         orderBy: { at: "desc" },
         include: {
-          pimpinanInfra: { select: { nama: true } },
-          pimpinanDivisi: { select: { nama: true } },
+          pimpinanInfra: { select: { nama: true, tipe: true, namaPjs: true } },
+          pimpinanDivisi: { select: { nama: true, tipe: true, namaPjs: true } },
           supervisi: { select: { nama: true, ttdUrl: true } },
           fromUser: { select: { nama: true, ttdUrl: true } },
           toUser: { select: { nama: true, ttdUrl: true } },
@@ -219,13 +220,14 @@ export async function gatherReportData(p: GatherParams): Promise<GatherResult> {
       : null,
     // O26/R26: pimpinan pilihan handover → fallback pimpinan tingkat tiket.
     // Tanpa default — kosong sampai dipilih saat serah terima (PART 4).
+    // Nama yang dicetak mengikuti tipe: PJS → nama_pjs (PART 5).
     pimpinanInfra: resolveAcknowledger(
-      handover?.pimpinanInfra?.nama,
-      uniqueJoin(ticketRows.map((t) => t.pimpinanInfra?.nama ?? null))
+      resolveLeaderName(handover?.pimpinanInfra),
+      uniqueJoin(ticketRows.map((t) => resolveLeaderName(t.pimpinanInfra) || null))
     ),
     pimpinanDivisi: resolveAcknowledger(
-      handover?.pimpinanDivisi?.nama,
-      uniqueJoin(ticketRows.map((t) => t.pimpinanDivisi?.nama ?? null))
+      resolveLeaderName(handover?.pimpinanDivisi),
+      uniqueJoin(ticketRows.map((t) => resolveLeaderName(t.pimpinanDivisi) || null))
     ),
   };
 
@@ -243,6 +245,7 @@ export async function gatherReportData(p: GatherParams): Promise<GatherResult> {
     acChecks,
     servers,
     signatures,
+    logoPath: (await resolveReportLogoPath()) ?? undefined,
   };
 
   const ownerSlug = p.ownerUserId ? `-user-${(namaPetugas || "user").replace(/\s+/g, "_")}` : "";

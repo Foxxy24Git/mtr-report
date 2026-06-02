@@ -24,6 +24,19 @@ export async function POST(req: Request) {
       { status: 401 }
     );
   }
+  // Akun dinonaktifkan (soft delete oleh Super Admin) tidak boleh login.
+  if (!user.isAktif) {
+    return NextResponse.json(
+      { error: "Akun dinonaktifkan. Hubungi Super Admin." },
+      { status: 403 }
+    );
+  }
+
+  // Catat waktu login terakhir (kolom Member Dashboard Super Admin).
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { lastLogin: new Date() },
+  });
 
   // Shift belum dipilih saat login — dipilih kemudian di Dashboard.
   const token = await signSession({

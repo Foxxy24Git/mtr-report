@@ -8,6 +8,9 @@ import {
   Thermometer,
   Settings,
   ShieldCheck,
+  Crown,
+  Users,
+  Database,
   type LucideIcon,
 } from "lucide-react";
 import type { Role } from "@/lib/roles";
@@ -21,6 +24,8 @@ export interface NavItem {
   description: string;
   /** Role yang boleh mengakses menu ini. Kosong = semua role login. */
   roles?: Role[];
+  /** True bila href adalah URL eksternal (dibuka di tab baru). */
+  external?: boolean;
 }
 
 export const NAV_ITEMS: NavItem[] = [
@@ -35,7 +40,8 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/daily-monitoring",
     icon: Activity,
     description: "Semua tiket ATM & jaringan aktif",
-    roles: ["superadmin", "user"],
+    // Super Admin tidak open/track tiket (PRD §2) — hanya petugas.
+    roles: ["user"],
   },
   {
     label: "Weekly Monitoring",
@@ -48,14 +54,14 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/supervisi",
     icon: ShieldCheck,
     description: "Tinjau & setujui tiket gangguan",
-    roles: ["superadmin", "supervisi"],
+    roles: ["supervisi"],
   },
   {
     label: "Open Tiket",
     href: "/open-tiket",
     icon: TicketPlus,
     description: "Buat tiket gangguan baru",
-    roles: ["superadmin", "user"],
+    roles: ["user"],
   },
   {
     label: "Rekap Laporan",
@@ -75,7 +81,29 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/suhu-server",
     icon: Thermometer,
     description: "Log suhu AC & pemantauan server",
-    roles: ["superadmin", "user"],
+    roles: ["user"],
+  },
+  {
+    label: "Leader",
+    href: "/leader",
+    icon: Crown,
+    description: "Kelola pimpinan Infrastruktur & Divisi (penanda tangan laporan)",
+    roles: ["superadmin"],
+  },
+  {
+    label: "Manajemen Akun",
+    href: "/manajemen-akun",
+    icon: Users,
+    description: "Tambah & ubah akun User/Supervisi",
+    roles: ["superadmin"],
+  },
+  {
+    label: "Prisma Studio",
+    href: "http://localhost:5555",
+    icon: Database,
+    description: "Akses basis data (jalankan `prisma studio` lebih dulu)",
+    roles: ["superadmin"],
+    external: true,
   },
   {
     label: "Setting",

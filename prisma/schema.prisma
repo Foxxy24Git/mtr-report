@@ -18,9 +18,14 @@ enum Role {
   supervisi
 }
 
-enum LeaderJabatan {
+enum LeaderKategori {
   infrastruktur
   divisi
+}
+
+enum LeaderTipe {
+  tetap
+  pjs
 }
 
 enum LookupTipe {
@@ -72,6 +77,12 @@ model User {
   passwordHash String   @map("password_hash")
   fotoProfilUrl String? @map("foto_profil_url")
   ttdUrl       String?  @map("ttd_url")
+  // Soft delete (PRD §3 Super Admin): akun nonaktif tidak bisa login.
+  isAktif      Boolean  @default(true) @map("is_aktif")
+  // Jejak login & shift aktif untuk tabel Member di Dashboard Super Admin.
+  lastLogin     DateTime?  @map("last_login")
+  currentShift  ShiftKode? @map("current_shift")
+  shiftStartedAt DateTime? @map("shift_started_at")
   createdAt    DateTime @default(now()) @map("created_at")
 
   ticketsOwned     Ticket[]          @relation("TicketOwner")
@@ -85,16 +96,35 @@ model User {
   handoversSupervisiNext ShiftHandover[] @relation("HandoverSupervisiNext")
   acTempLogs       AcTempLog[]
   serverLogs       ServerLog[]
+  appSettings      AppSetting[]
 
   @@map("users")
 }
 
+// Pengaturan aplikasi generik (key/value). Saat ini hanya dipakai untuk
+// `logo_url` (logo aplikasi yang diunggah Super Admin). value null = pakai
+// logo default (SVG/PNG Bank Nagari di /public).
+model AppSetting {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String?
+  updatedById String?  @map("updated_by")
+  updatedBy   User?    @relation(fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("app_settings")
+}
+
 model Leader {
-  id      String        @id @default(cuid())
-  nama    String
-  jabatan LeaderJabatan
-  isPjs   Boolean       @default(false) @map("is_pjs")
-  aktif   Boolean       @default(true)
+  id        String         @id @default(cuid())
+  nama      String         // nama pimpinan tetap
+  jabatan   String         // teks jabatan lengkap, mis. "Pemimpin Bagian Infrastruktur TI"
+  kategori  LeaderKategori // infrastruktur | divisi (menentukan section)
+  tipe      LeaderTipe     @default(tetap) // tetap | pjs
+  namaPjs   String?        @map("nama_pjs") // diisi bila tipe = pjs
+  isAktif   Boolean        @default(true) @map("is_aktif")
+  createdAt DateTime       @default(now()) @map("created_at")
+  updatedAt DateTime       @updatedAt @map("updated_at")
 
   ticketsInfra   Ticket[] @relation("TicketPimpinanInfra")
   ticketsDivisi  Ticket[] @relation("TicketPimpinanDivisi")

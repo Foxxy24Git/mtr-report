@@ -2,13 +2,12 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { UserCircle, KeyRound, Users, Building2 } from "lucide-react";
+import { UserCircle, KeyRound, ImageIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
 import type { Role } from "@/lib/roles";
 import { ProfilSection } from "@/components/setting/ProfilSection";
 import { PasswordSection } from "@/components/setting/PasswordSection";
-import { UserSection, type UserRow } from "@/components/setting/UserSection";
-import { LeaderSection, type LeaderRow } from "@/components/setting/LeaderSection";
+import { LogoSection } from "@/components/setting/LogoSection";
 
 interface Props {
   me: {
@@ -19,21 +18,17 @@ interface Props {
     ttdUrl: string | null;
     createdAt: string;
   };
-  users: UserRow[] | null;
-  leaders: LeaderRow[] | null;
+  logoUrl: string | null;
 }
 
-export function SettingClient({ me, users, leaders }: Props) {
-  const isAdmin = me.role === "superadmin";
-
+export function SettingClient({ me, logoUrl }: Props) {
+  // Manajemen akun kini halaman tersendiri (/manajemen-akun, PRD §3).
+  // Tab Logo Aplikasi hanya untuk Super Admin (PRD: pengaturan global).
   const tabs = [
     { key: "profil", label: "Profil", icon: UserCircle },
     { key: "password", label: "Keamanan", icon: KeyRound },
-    ...(isAdmin
-      ? [
-          { key: "users", label: "Pengguna", icon: Users },
-          { key: "leaders", label: "Pimpinan", icon: Building2 },
-        ]
+    ...(me.role === "superadmin"
+      ? ([{ key: "logo", label: "Logo Aplikasi", icon: ImageIcon }] as const)
       : []),
   ] as const;
 
@@ -43,10 +38,7 @@ export function SettingClient({ me, users, leaders }: Props) {
     <div>
       <div className="mb-6">
         <h1 className="page-title">Setting</h1>
-        <p className="page-subtitle">
-          Kelola profil, keamanan akun
-          {isAdmin && ", pengguna, dan daftar pimpinan"}.
-        </p>
+        <p className="page-subtitle">Kelola profil dan keamanan akun.</p>
       </div>
 
       {/* Tabs */}
@@ -96,9 +88,8 @@ export function SettingClient({ me, users, leaders }: Props) {
           />
         )}
         {active === "password" && <PasswordSection />}
-        {active === "users" && users && <UserSection initialUsers={users} />}
-        {active === "leaders" && leaders && (
-          <LeaderSection initialLeaders={leaders} />
+        {active === "logo" && me.role === "superadmin" && (
+          <LogoSection currentLogoUrl={logoUrl} />
         )}
       </motion.div>
     </div>

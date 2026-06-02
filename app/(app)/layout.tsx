@@ -3,18 +3,22 @@ import { Topbar } from "@/components/layout/Topbar";
 import { PageTransition } from "@/components/layout/PageTransition";
 import { requireSession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
+import { getLogoUrl } from "@/lib/appSettings";
 import type { ReactNode } from "react";
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const session = await requireSession();
-  const me = await prisma.user.findUnique({
-    where: { id: session.sub },
-    select: { fotoProfilUrl: true },
-  });
+  const [me, logoUrl] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: session.sub },
+      select: { fotoProfilUrl: true },
+    }),
+    getLogoUrl(),
+  ]);
 
   return (
     <div className="min-h-screen bg-surface-muted">
-      <Sidebar role={session.role} />
+      <Sidebar role={session.role} logoUrl={logoUrl} />
       <Topbar
         user={{
           nama: session.nama,

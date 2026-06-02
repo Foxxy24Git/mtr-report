@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import Image from "next/image";
 import { motion } from "framer-motion";
-import { UploadCloud, Loader2, User2, PenLine } from "lucide-react";
+import { UploadCloud, Loader2, User2, PenLine, Trash2, ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/cn";
 
@@ -12,12 +12,20 @@ interface Props {
   hint?: string;
   currentUrl: string | null;
   endpoint: string;
-  variant: "avatar" | "signature";
+  variant: "avatar" | "signature" | "logo";
   onUploaded: (url: string) => void;
+  /** Tipe MIME yang diterima. Default PNG/JPG/WEBP. */
+  accept?: string;
+  /** Pesan saat format tak sesuai. Default sesuai accept umum. */
+  formatError?: string;
+  /** Bila true, tampilkan tombol Hapus yang memanggil DELETE ke endpoint. */
+  removable?: boolean;
+  /** Dipanggil setelah berhasil dihapus. */
+  onRemoved?: () => void;
 }
 
 const MAX_BYTES = 2 * 1024 * 1024;
-const ACCEPT = "image/png,image/jpeg,image/webp";
+const DEFAULT_ACCEPT = "image/png,image/jpeg,image/webp";
 
 export function ImageUploader({
   title,
@@ -26,6 +34,10 @@ export function ImageUploader({
   endpoint,
   variant,
   onUploaded,
+  accept = DEFAULT_ACCEPT,
+  formatError = "Format harus PNG, JPG, atau WEBP.",
+  removable = false,
+  onRemoved,
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [url, setUrl] = useState(currentUrl);
@@ -36,12 +48,12 @@ export function ImageUploader({
 
   async function handleFile(file: File) {
     setError("");
-    if (!ACCEPT.split(",").includes(file.type)) {
-      setError("Format harus PNG, JPG, atau WEBP.");
+    if (!accept.split(",").includes(file.type)) {
+      setError(formatError);
       return;
     }
     if (file.size > MAX_BYTES) {
-      setError("Ukuran berkas maksimal 2 MB.");
+      setError("Ukuran file maksimal 2MB.");
       return;
     }
     setBusy(true);
@@ -64,8 +76,29 @@ export function ImageUploader({
     }
   }
 
+  async function handleRemove() {
+    setError("");
+    setBusy(true);
+    try {
+      const res = await fetch(endpoint, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error ?? "Gagal menghapus berkas.");
+        return;
+      }
+      setUrl(null);
+      setV((n) => n + 1);
+      onRemoved?.();
+    } catch {
+      setError("Terjadi kesalahan jaringan saat menghapus.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const displaySrc = url ? `${url}?v=${v}` : null;
   const isAvatar = variant === "avatar";
+  const isLogo = variant === "logo";
 
   return (
     <div className="flex items-start gap-4">
@@ -74,7 +107,9 @@ export function ImageUploader({
           "relative shrink-0 overflow-hidden border bg-surface-muted flex items-center justify-center",
           isAvatar
             ? "w-20 h-20 rounded-full border-gray-200"
-            : "w-32 h-20 rounded-lg border-dashed border-gray-300"
+            : isLogo
+              ? "w-44 h-20 rounded-lg border-dashed border-gray-300"
+              : "w-32 h-20 rounded-lg border-dashed border-gray-300"
         )}
       >
         {displaySrc ? (
@@ -82,12 +117,14 @@ export function ImageUploader({
             src={displaySrc}
             alt={title}
             fill
-            sizes="128px"
+            sizes="176px"
             className={cn(isAvatar ? "object-cover" : "object-contain p-1")}
             unoptimized
           />
         ) : isAvatar ? (
           <User2 className="w-8 h-8 text-gray-300" />
+        ) : isLogo ? (
+          <ImageIcon className="w-7 h-7 text-gray-300" />
         ) : (
           <PenLine className="w-7 h-7 text-gray-300" />
         )}
@@ -108,7 +145,7 @@ export function ImageUploader({
         <input
           ref={inputRef}
           type="file"
-          accept={ACCEPT}
+          accept={accept}
           className="hidden"
           onChange={(e) => {
             const f = e.target.files?.[0];
@@ -116,17 +153,31 @@ export function ImageUploader({
             e.target.value = "";
           }}
         />
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="mt-2"
-          loading={busy}
-          onClick={() => inputRef.current?.click()}
-        >
-          <UploadCloud className="w-4 h-4" />
-          {url ? "Ganti" : "Unggah"}
-        </Button>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            loading={busy}
+            onClick={() => inputRef.current?.click()}
+          >
+            <UploadCloud className="w-4 h-4" />
+            {url ? "Ganti" : "Unggah"}
+          </Button>
+          {removable && url && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={busy}
+              onClick={handleRemove}
+              className="text-red-600 hover:bg-red-50"
+            >
+              <Trash2 className="w-4 h-4" />
+              Hapus
+            </Button>
+          )}
+        </div>
         {error && <p className="text-xs text-red-600 mt-1.5">{error}</p>}
       </div>
     </div>

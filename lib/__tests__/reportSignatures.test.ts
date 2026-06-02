@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveSender, resolveAcknowledger } from "../reportSignatures";
+import { resolveSender, resolveAcknowledger, resolveLeaderName } from "../reportSignatures";
 
 describe("resolveSender (C26 — Petugas Monitoring yang menyerahkan)", () => {
   it("ambil nama + TTD dari owner tiket pertama, TTD ADA walau belum serah terima", () => {
@@ -55,5 +55,28 @@ describe("resolveAcknowledger (O26/R26 — Pimpinan Infra & Divisi)", () => {
     // Keputusan PART 4: O26/R26 kosong sampai dipilih saat serah terima.
     expect(resolveAcknowledger("", "")).toBe("");
     expect(resolveAcknowledger(null, null)).toBe("");
+  });
+});
+
+describe("resolveLeaderName (PART 5 — nama dicetak di O26/R26)", () => {
+  it("tipe tetap → tulis nama pimpinan", () => {
+    expect(resolveLeaderName({ nama: "Budi Santoso", tipe: "tetap" })).toBe(
+      "Budi Santoso"
+    );
+  });
+
+  it("tipe pjs → tulis nama_pjs (nama pengganti, bukan nama pimpinan asli)", () => {
+    expect(
+      resolveLeaderName({ nama: "Budi Santoso", tipe: "pjs", namaPjs: "Andi Wijaya" })
+    ).toBe("Andi Wijaya");
+  });
+
+  it("null/undefined → string kosong", () => {
+    expect(resolveLeaderName(null)).toBe("");
+    expect(resolveLeaderName(undefined)).toBe("");
+  });
+
+  it("pjs tanpa nama_pjs → kosong (tidak meminjam nama pimpinan)", () => {
+    expect(resolveLeaderName({ nama: "Budi", tipe: "pjs", namaPjs: null })).toBe("");
   });
 });

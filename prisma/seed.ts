@@ -1,4 +1,4 @@
-import { PrismaClient, Role, LeaderJabatan, LookupTipe } from "@prisma/client";
+import { PrismaClient, Role, LeaderKategori, LeaderTipe, LookupTipe } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -103,12 +103,31 @@ async function seedLeaders() {
   }
   await prisma.leader.createMany({
     data: [
-      { nama: "Pimpinan Bag. Infrastruktur TI", jabatan: LeaderJabatan.infrastruktur, isPjs: false },
-      { nama: "Pemimpin Divisi TI", jabatan: LeaderJabatan.divisi, isPjs: false },
-      { nama: "PJS Pimpinan Bag. Infrastruktur TI", jabatan: LeaderJabatan.infrastruktur, isPjs: true },
+      {
+        nama: "Pimpinan Bag. Infrastruktur TI",
+        jabatan: "Pemimpin Bagian Infrastruktur TI",
+        kategori: LeaderKategori.infrastruktur,
+        tipe: LeaderTipe.tetap,
+      },
+      {
+        nama: "Pemimpin Divisi TI",
+        jabatan: "Pemimpin Divisi TI",
+        kategori: LeaderKategori.divisi,
+        tipe: LeaderTipe.tetap,
+      },
     ],
   });
-  console.log("  leaders: 3 entri (2 reguler + 1 PJS)");
+  console.log("  leaders: 2 entri pimpinan tetap");
+}
+
+async function seedAppSettings() {
+  // logo_url default kosong → aplikasi & laporan pakai logo default Bank Nagari.
+  await prisma.appSetting.upsert({
+    where: { key: "logo_url" },
+    update: {},
+    create: { key: "logo_url", value: null },
+  });
+  console.log("  app_settings: logo_url siap");
 }
 
 async function main() {
@@ -117,6 +136,7 @@ async function main() {
   await seedAtmMaster(40);
   await seedUsers();
   await seedLeaders();
+  await seedAppSettings();
   console.log("Selesai.");
 }
 

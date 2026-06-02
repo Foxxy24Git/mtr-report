@@ -28,6 +28,23 @@ export function resolveSender(
   return { nama: fallbackNama, ttdPath: null };
 }
 
+/** Referensi pimpinan untuk resolusi nama penanda tangan O26/R26. */
+export interface LeaderRef {
+  nama?: string | null;
+  tipe?: "tetap" | "pjs" | null;
+  namaPjs?: string | null;
+}
+
+/**
+ * Nama pimpinan yang dicetak di laporan (PRD §4.G PART 5):
+ * tipe 'pjs' → tulis nama_pjs (nama pengganti); selain itu → nama pimpinan tetap.
+ */
+export function resolveLeaderName(leader: LeaderRef | null | undefined): string {
+  if (!leader) return "";
+  if (leader.tipe === "pjs") return (leader.namaPjs ?? "").trim();
+  return (leader.nama ?? "").trim();
+}
+
 /**
  * Tentukan "Mengetahui" (O26 infra / R26 divisi) — PRD §5, PART 4.
  *

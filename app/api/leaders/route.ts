@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { LeaderJabatan } from "@prisma/client";
+import { LeaderKategori, LeaderTipe } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 
@@ -7,7 +7,14 @@ function cleanStr(v: unknown): string {
   return typeof v === "string" ? v.trim() : "";
 }
 
-/** GET /api/leaders — daftar pimpinan (semua role login, untuk dropdown & setting). */
+function isKategori(v: string): v is LeaderKategori {
+  return v === LeaderKategori.infrastruktur || v === LeaderKategori.divisi;
+}
+function isTipe(v: string): v is LeaderTipe {
+  return v === LeaderTipe.tetap || v === LeaderTipe.pjs;
+}
+
+/** GET /api/leaders — daftar pimpinan (semua role login, untuk dropdown & menu Leader). */
 export async function GET() {
   const session = await getSession();
   if (!session) {
@@ -15,7 +22,7 @@ export async function GET() {
   }
 
   const leaders = await prisma.leader.findMany({
-    orderBy: [{ jabatan: "asc" }, { nama: "asc" }],
+    orderBy: [{ kategori: "asc" }, { nama: "asc" }],
   });
   return NextResponse.json({ leaders });
 }
@@ -33,20 +40,42 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   const nama = cleanStr(body?.nama);
   const jabatan = cleanStr(body?.jabatan);
-  const isPjs = Boolean(body?.isPjs);
+  const kategori = cleanStr(body?.kategori);
+  const tipe = cleanStr(body?.tipe) || LeaderTipe.tetap;
+  const namaPjs = cleanStr(body?.namaPjs);
+  const isAktif = body?.isAktif === undefined ? true : Boolean(body?.isAktif);
 
   if (!nama) {
     return NextResponse.json({ error: "Nama pimpinan wajib diisi." }, { status: 400 });
   }
-  if (jabatan !== LeaderJabatan.infrastruktur && jabatan !== LeaderJabatan.divisi) {
+  if (!jabatan) {
+    return NextResponse.json({ error: "Jabatan wajib diisi." }, { status: 400 });
+  }
+  if (!isKategori(kategori)) {
     return NextResponse.json(
-      { error: "Jabatan harus 'infrastruktur' atau 'divisi'." },
+      { error: "Kategori harus 'infrastruktur' atau 'divisi'." },
+      { status: 400 }
+    );
+  }
+  if (!isTipe(tipe)) {
+    return NextResponse.json({ error: "Tipe tidak valid." }, { status: 400 });
+  }
+  if (tipe === LeaderTipe.pjs && !namaPjs) {
+    return NextResponse.json(
+      { error: "Nama PJS wajib diisi bila tipe PJS." },
       { status: 400 }
     );
   }
 
   const created = await prisma.leader.create({
-    data: { nama, jabatan: jabatan as LeaderJabatan, isPjs, aktif: true },
+    data: {
+      nama,
+      jabatan,
+      kategori,
+      tipe,
+      namaPjs: tipe === LeaderTipe.pjs ? namaPjs : null,
+      isAktif,
+    },
   });
   return NextResponse.json({ leader: created }, { status: 201 });
 }

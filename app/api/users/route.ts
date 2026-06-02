@@ -27,6 +27,7 @@ export async function GET() {
       role: true,
       fotoProfilUrl: true,
       ttdUrl: true,
+      isAktif: true,
       createdAt: true,
     },
   });
@@ -83,8 +84,16 @@ export async function POST(req: Request) {
         nama,
         role: role as Role,
         passwordHash: await hashPassword(password),
+        isAktif: typeof body?.isAktif === "boolean" ? body.isAktif : true,
       },
-      select: { id: true, username: true, nama: true, role: true, createdAt: true },
+      select: {
+        id: true,
+        username: true,
+        nama: true,
+        role: true,
+        isAktif: true,
+        createdAt: true,
+      },
     });
     return NextResponse.json({ user: created }, { status: 201 });
   } catch (e) {

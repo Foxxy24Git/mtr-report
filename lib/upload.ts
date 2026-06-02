@@ -10,9 +10,17 @@ const ALLOWED: Record<string, string> = {
   "image/webp": "webp",
 };
 
+/** Logo aplikasi: PNG/JPG + SVG (vektor, dipakai untuk tampilan UI). */
+const ALLOWED_LOGO: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/jpg": "jpg",
+  "image/svg+xml": "svg",
+};
+
 const MAX_BYTES = 2 * 1024 * 1024; // 2 MB
 
-export type UploadKind = "foto" | "ttd";
+export type UploadKind = "foto" | "ttd" | "logo";
 
 export interface UploadResult {
   ok: true;
@@ -40,22 +48,28 @@ export async function saveImageUpload(
   if (!(file instanceof File) || file.size === 0) {
     return { ok: false, status: 400, error: "Berkas gambar wajib dipilih." };
   }
-  const ext = ALLOWED[file.type];
+  const isLogo = kind === "logo";
+  const ext = (isLogo ? ALLOWED_LOGO : ALLOWED)[file.type];
   if (!ext) {
     return {
       ok: false,
       status: 415,
-      error: "Format tidak didukung. Gunakan PNG, JPG, atau WEBP.",
+      error: isLogo
+        ? "Format file harus PNG, JPG, atau SVG."
+        : "Format tidak didukung. Gunakan PNG, JPG, atau WEBP.",
     };
   }
   if (file.size > MAX_BYTES) {
-    return { ok: false, status: 413, error: "Ukuran berkas maksimal 2 MB." };
+    return { ok: false, status: 413, error: "Ukuran file maksimal 2MB." };
   }
 
   const dir = join(PUBLIC_DIR, "uploads", kind);
   await mkdir(dir, { recursive: true });
 
-  const filename = `${ownerId}-${Date.now()}.${ext}`;
+  // Logo: nama pakai timestamp saja (hanya 1 logo aktif). Lainnya per-owner.
+  const filename = isLogo
+    ? `logo_${Date.now()}.${ext}`
+    : `${ownerId}-${Date.now()}.${ext}`;
   const buffer = Buffer.from(await file.arrayBuffer());
   await writeFile(join(dir, filename), buffer);
 

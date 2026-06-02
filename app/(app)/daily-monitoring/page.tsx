@@ -17,9 +17,9 @@ export default async function DailyMonitoringPage() {
       shiftStartedAt: session.shiftStartedAt,
     }),
     prisma.leader.findMany({
-      where: { aktif: true },
+      where: { isAktif: true },
       orderBy: { nama: "asc" },
-      select: { id: true, nama: true, jabatan: true },
+      select: { id: true, nama: true, kategori: true, tipe: true, namaPjs: true },
     }),
     prisma.user.findMany({
       where: { role: "supervisi" },

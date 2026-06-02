@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { ShiftKode } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { signSession, COOKIE_NAME, SESSION_MAX_AGE } from "@/lib/jwt";
 import { ALL_SHIFTS, type ShiftCode } from "@/lib/shift";
@@ -17,6 +19,12 @@ export async function POST(req: Request) {
   if (!ALL_SHIFTS.includes(shift as ShiftCode)) {
     return NextResponse.json({ error: "Shift tidak dikenal." }, { status: 400 });
   }
+
+  // Persist shift aktif & awalnya ke DB (kolom Shift Aktif Dashboard Super Admin).
+  await prisma.user.update({
+    where: { id: session.sub },
+    data: { currentShift: shift as ShiftKode, shiftStartedAt: new Date() },
+  });
 
   const token = await signSession({
     sub: session.sub,

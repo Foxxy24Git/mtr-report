@@ -1,12 +1,14 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import {
+  Role,
   ShiftKode,
   StatusSupervisi,
   TicketKategori,
   TicketStatus,
 } from "@prisma/client";
 import { ALL_SHIFTS } from "@/lib/shift";
+import { fmtDateKey } from "@/lib/format";
 
 export interface KategoriCount {
   /** Total tiket open kategori ini (seluruh sistem). */
@@ -204,6 +206,133 @@ export async function getSupervisiDashboardData(
       waktuOpen: t.waktuOpen,
       ownerNama: t.owner.nama,
     })),
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+// ----------------------------- Dashboard Super Admin -----------------------------
+
+export interface SuperAdminOpenTicket {
+  id: string;
+  noTiket: string;
+  kategori: TicketKategori;
+  kodeAtm: string;
+  namaAtm: string;
+  shiftKode: ShiftKode;
+  waktuOpen: Date;
+  ownerNama: string;
+  statusSupervisi: StatusSupervisi;
+}
+
+export interface SuperAdminMember {
+  id: string;
+  nama: string;
+  username: string;
+  role: Role;
+  currentShift: ShiftKode | null;
+  lastLogin: Date | null;
+}
+
+export interface SuperAdminDashboardData {
+  counts: {
+    openTotal: number;
+    openAtm: number;
+    openJaringan: number;
+    selesaiHariIni: number;
+    memberUser: number;
+    memberSupervisi: number;
+  };
+  /** Semua tiket open lintas user (tabel realtime + kalender). */
+  openTickets: SuperAdminOpenTicket[];
+  /** Semua user & supervisi aktif. */
+  members: SuperAdminMember[];
+  generatedAt: string;
+}
+
+/**
+ * Data Dashboard Super Admin (PRD §1): metrik global, tabel tiket open semua
+ * user, tabel member, dan tiket untuk kalender. Tanpa scoping owner/shift.
+ */
+export async function getSuperAdminDashboardData(): Promise<SuperAdminDashboardData> {
+  // Rentang "hari ini" pada zona WIB untuk hitung tiket selesai.
+  const todayKey = fmtDateKey(new Date());
+  const startToday = new Date(`${todayKey}T00:00:00+07:00`);
+  const endToday = new Date(startToday.getTime() + 24 * 60 * 60 * 1000);
+
+  const [byKategori, selesaiHariIni, memberByRole, openRows, memberRows] =
+    await Promise.all([
+      prisma.ticket.groupBy({
+        by: ["kategori"],
+        where: OPEN,
+        _count: { _all: true },
+      }),
+      prisma.ticket.count({
+        where: {
+          status: TicketStatus.selesai,
+          waktuSelesai: { gte: startToday, lt: endToday },
+        },
+      }),
+      prisma.user.groupBy({
+        by: ["role"],
+        where: { isAktif: true, role: { in: [Role.user, Role.supervisi] } },
+        _count: { _all: true },
+      }),
+      prisma.ticket.findMany({
+        where: OPEN,
+        orderBy: { waktuOpen: "desc" },
+        select: {
+          id: true,
+          noTiket: true,
+          kategori: true,
+          shiftKode: true,
+          waktuOpen: true,
+          statusSupervisi: true,
+          owner: { select: { nama: true } },
+          atm: { select: { kodeAtm: true, namaAtm: true } },
+        },
+      }),
+      prisma.user.findMany({
+        where: { isAktif: true, role: { in: [Role.user, Role.supervisi] } },
+        orderBy: [{ role: "asc" }, { username: "asc" }],
+        select: {
+          id: true,
+          nama: true,
+          username: true,
+          role: true,
+          currentShift: true,
+          lastLogin: true,
+        },
+      }),
+    ]);
+
+  const kat = (k: TicketKategori) =>
+    byKategori.find((r) => r.kategori === k)?._count._all ?? 0;
+  const role = (r: Role) =>
+    memberByRole.find((m) => m.role === r)?._count._all ?? 0;
+  const openAtm = kat(TicketKategori.atm);
+  const openJaringan = kat(TicketKategori.jaringan);
+
+  return {
+    counts: {
+      openTotal: openAtm + openJaringan,
+      openAtm,
+      openJaringan,
+      selesaiHariIni,
+      memberUser: role(Role.user),
+      memberSupervisi: role(Role.supervisi),
+    },
+    openTickets: openRows.map((t) => ({
+      id: t.id,
+      noTiket: t.noTiket,
+      kategori: t.kategori,
+      kodeAtm: t.atm?.kodeAtm ?? "—",
+      namaAtm: t.atm?.namaAtm ?? "—",
+      shiftKode: t.shiftKode,
+      waktuOpen: t.waktuOpen,
+      ownerNama: t.owner.nama,
+      statusSupervisi: t.statusSupervisi,
+    })),
+    members: memberRows,
     generatedAt: new Date().toISOString(),
   };
 }
