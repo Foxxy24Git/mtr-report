@@ -382,6 +382,7 @@ export interface TicketDetail {
   approvedAt: Date | null;
   waktuOpen: Date;
   waktuSelesai: Date | null;
+  waktuResponInternal: Date | null;
   cpTipe: string | null;
   cpNama: string | null;
   cpTelp: string | null;
@@ -441,6 +442,7 @@ export async function getTicketDetail(id: string): Promise<TicketDetail | null> 
     approvedAt: t.approvedAt,
     waktuOpen: t.waktuOpen,
     waktuSelesai: t.waktuSelesai,
+    waktuResponInternal: t.waktuResponInternal,
     cpTipe: t.cpTipe,
     cpNama: t.cpNama,
     cpTelp: t.cpTelp,

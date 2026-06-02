@@ -53,6 +53,13 @@ export async function POST(req: Request, { params }: Params) {
     return NextResponse.json({ error: "Teks kegiatan wajib diisi." }, { status: 400 });
   }
 
+  // Hitung kegiatan yang sudah ada SEBELUM entri baru ini ditambahkan.
+  // existingCount === 1 berarti entri baru ini adalah kegiatan KEDUA
+  // (update pertama setelah open) → timestamp-nya menjadi waktu respon internal.
+  const existingCount = await prisma.ticketActivity.count({
+    where: { ticketId: id },
+  });
+
   const activity = await prisma.ticketActivity.create({
     data: {
       ticketId: id,
@@ -62,6 +69,15 @@ export async function POST(req: Request, { params }: Params) {
     },
     include: { user: { select: { nama: true } } },
   });
+
+  // Kunci waktu respon internal pada kegiatan ke-2 saja (sekali isi, immutable).
+  // guard.ticket.waktuResponInternal dipakai untuk memastikan belum terisi.
+  if (existingCount === 1 && !guard.ticket.waktuResponInternal) {
+    await prisma.ticket.update({
+      where: { id },
+      data: { waktuResponInternal: activity.waktu },
+    });
+  }
 
   return NextResponse.json({ item: activity }, { status: 201 });
 }

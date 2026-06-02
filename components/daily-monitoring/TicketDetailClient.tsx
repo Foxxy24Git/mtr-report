@@ -548,6 +548,21 @@ export function TicketDetailClient({
               <li className="ml-4 text-sm text-gray-400">Belum ada kegiatan.</li>
             )}
           </ol>
+
+          {ticket.waktuResponInternal ? (
+            <div className="mt-4 ml-2 flex items-center gap-2 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800">
+              <span>✅ Waktu respon tercatat: {fmtTime(ticket.waktuResponInternal)}</span>
+            </div>
+          ) : (
+            !isSelesai && (
+              <div className="mt-4 ml-2 flex items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-500">
+                <span>
+                  ⏳ Waktu respon akan tercatat otomatis saat Anda menambahkan
+                  update kegiatan berikutnya.
+                </span>
+              </div>
+            )
+          )}
         </Card>
       </div>
 
