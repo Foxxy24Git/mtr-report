@@ -13,6 +13,9 @@ const RESTRICTED: { prefix: string; roles: Role[] }[] = [
   { prefix: "/leader", roles: ["superadmin"] },
   // Manajemen Akun — hanya Super Admin (PRD §3).
   { prefix: "/manajemen-akun", roles: ["superadmin"] },
+  // Database Studio + API-nya — hanya Super Admin (PRD §3).
+  { prefix: "/database-studio", roles: ["superadmin"] },
+  { prefix: "/api/superadmin", roles: ["superadmin"] },
 ];
 
 /**

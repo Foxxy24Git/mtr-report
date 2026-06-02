@@ -98,12 +98,11 @@ export const NAV_ITEMS: NavItem[] = [
     roles: ["superadmin"],
   },
   {
-    label: "Prisma Studio",
-    href: "http://localhost:5555",
+    label: "Database Studio",
+    href: "/database-studio",
     icon: Database,
-    description: "Akses basis data (jalankan `prisma studio` lebih dulu)",
+    description: "Lihat & kelola data tabel langsung (Super Admin)",
     roles: ["superadmin"],
-    external: true,
   },
   {
     label: "Setting",
