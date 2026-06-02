@@ -4,19 +4,18 @@ import { ShiftKode, TicketStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { signSession, COOKIE_NAME, SESSION_MAX_AGE } from "@/lib/jwt";
-import { ALL_SHIFTS, nextShift, type ShiftCode } from "@/lib/shift";
+import { ALL_SHIFTS, type ShiftCode } from "@/lib/shift";
 import { getShiftLabel } from "@/lib/shiftReport";
 
 const TINDAK_LANJUT_TEKS = "TINDAK LANJUT MONITORING SELANJUTNYA";
 
 /**
- * POST /api/shift/handover — serah terima shift batch (PRD §3, §4.B).
+ * POST /api/shift/close — "Tutup Laporan Shift" (PART 6).
  *
- * Aksi global tanpa input nama/jam:
- * - shift tujuan ditentukan otomatis dari shift aktif sesi (mapping next-shift).
- * - SEMUA tiket open diteruskan sekaligus ke shift berikutnya.
- * - tiap tiket open mendapat penanda "TINDAK LANJUT MONITORING SELANJUTNYA".
- * - satu baris shift_handovers dicatat untuk seluruh batch.
+ * Dipakai saat user lupa serah terima: membuat ShiftReport TANPA penerima.
+ * Berbeda dari serah terima, route ini TIDAK merotasi shiftKode tiket open ke
+ * shift berikutnya (tidak ada penerima yang melanjutkan). Tiket shift ini tetap
+ * diikat ke supervisi pilihan agar dapat di-approve. Sesi shift dikosongkan.
  */
 export async function POST(req: Request) {
   const session = await getSession();
@@ -25,12 +24,11 @@ export async function POST(req: Request) {
   }
   if (session.role === "supervisi") {
     return NextResponse.json(
-      { error: "Supervisi tidak dapat melakukan serah terima." },
+      { error: "Supervisi tidak menutup laporan shift." },
       { status: 403 }
     );
   }
 
-  // Penanda tangan laporan dipilih pada modal serah terima (PRD revisi §2).
   let body: Record<string, unknown> = {};
   try {
     body = (await req.json()) ?? {};
@@ -47,21 +45,12 @@ export async function POST(req: Request) {
     typeof body.supervisiNextId === "string" && body.supervisiNextId
       ? body.supervisiNextId
       : null;
-  // Petugas penerima shift (WAJIB, PRD revisi §1/§2) → kolom to_user.
-  const receiverUserId =
-    typeof body.receiverUserId === "string" ? body.receiverUserId : "";
-  if (!pimpinanInfraId || !pimpinanDivisiId || !supervisiId || !receiverUserId) {
+  if (!pimpinanInfraId || !pimpinanDivisiId || !supervisiId) {
     return NextResponse.json(
       {
         error:
-          "Pilih Pimpinan Bag. Infrastruktur, Pimpinan Divisi, Supervisi, dan Petugas penerima terlebih dahulu.",
+          "Pilih Pimpinan Bag. Infrastruktur, Pimpinan Divisi, dan Supervisi terlebih dahulu.",
       },
-      { status: 400 }
-    );
-  }
-  if (receiverUserId === session.sub) {
-    return NextResponse.json(
-      { error: "Petugas penerima tidak boleh diri sendiri." },
       { status: 400 }
     );
   }
@@ -69,20 +58,12 @@ export async function POST(req: Request) {
   const fromShift = session.shift;
   if (!ALL_SHIFTS.includes(fromShift as ShiftCode)) {
     return NextResponse.json(
-      { error: "Pilih shift aktif di Dashboard sebelum serah terima." },
+      { error: "Tidak ada shift aktif untuk ditutup." },
       { status: 400 }
     );
   }
-  const toShift = nextShift(fromShift as ShiftCode);
 
-  const openTickets = await prisma.ticket.findMany({
-    where: { status: TicketStatus.proses },
-    select: { id: true },
-  });
-
-  // Lingkup tiket "shift ini" untuk Daily Monitoring (PRD revisi §4.B): tiket
-  // yang tampil pada sesi shift berjalan — tiket sendiri sejak shift dimulai
-  // ATAU tiket tindak lanjut dari shift sebelumnya.
+  // Lingkup tiket "shift ini" — sama dengan serah terima (PRD revisi §4.B).
   const startedAt = session.shiftStartedAt
     ? new Date(session.shiftStartedAt)
     : null;
@@ -95,13 +76,18 @@ export async function POST(req: Request) {
     { activities: { some: { isTindakLanjutFlag: true } } },
   ];
 
+  const openTickets = await prisma.ticket.findMany({
+    where: { status: TicketStatus.proses },
+    select: { id: true },
+  });
+
   await prisma.$transaction(async (tx) => {
     const handover = await tx.shiftHandover.create({
       data: {
         fromUserId: session.sub,
-        toUserId: receiverUserId,
+        toUserId: null,
         fromShift: fromShift as ShiftKode,
-        toShift,
+        toShift: fromShift as ShiftKode,
         pimpinanInfraId,
         pimpinanDivisiId,
         supervisiId,
@@ -109,20 +95,13 @@ export async function POST(req: Request) {
       },
     });
 
-    // Tiket yang SUDAH selesai (close) pada shift ini juga diikat ke supervisi
-    // pilihan modal (PRD revisi §3): supervisi dapat melihatnya & sudah final.
-    // Tiket proses memperoleh supervisiId pada updateMany handover di bawah.
+    // Ikat seluruh tiket shift ini (proses & selesai) ke supervisi pilihan.
     await tx.ticket.updateMany({
-      where: {
-        status: TicketStatus.selesai,
-        shiftKode: fromShift as ShiftKode,
-        OR: shiftScopeOR,
-      },
+      where: { shiftKode: fromShift as ShiftKode, OR: shiftScopeOR },
       data: { supervisiId },
     });
 
     if (openTickets.length > 0) {
-      // Penanda dicatat di shift yang ditutup, sebelum entri shift baru.
       await tx.ticketActivity.createMany({
         data: openTickets.map((t) => ({
           ticketId: t.id,
@@ -132,23 +111,15 @@ export async function POST(req: Request) {
           isTindakLanjutFlag: true,
         })),
       });
-      // Setiap tiket di-handover diikat ke supervisi pilihan modal (PRD revisi
-      // §2/§3): supervisi tsb yang berhak meng-approve tiket ini nantinya.
-      await tx.ticket.updateMany({
-        where: { status: TicketStatus.proses },
-        data: { shiftKode: toShift, supervisiId },
-      });
     }
 
-    // 1 shift = 1 laporan (PART 2): dibuat saat serah terima, status pending.
-    // Laporan tetap dibuat walau shift tanpa gangguan (tidak ada tiket).
     await tx.shiftReport.create({
       data: {
         tanggal: new Date(),
         shiftKode: fromShift as ShiftKode,
         shiftLabel: getShiftLabel(fromShift),
         ownerUserId: session.sub,
-        receiverUserId,
+        receiverUserId: null,
         supervisiId,
         supervisiNextId,
         pimpinanInfraId,
@@ -158,8 +129,7 @@ export async function POST(req: Request) {
     });
   });
 
-  // Shift session berakhir: kosongkan shift sesi user agar Daily Monitoring
-  // kembali kosong & siap untuk shift berikutnya (PRD revisi §4.B).
+  // Akhiri sesi shift (kosongkan) seperti pada serah terima.
   const token = await signSession({
     sub: session.sub,
     username: session.username,
@@ -177,10 +147,5 @@ export async function POST(req: Request) {
     maxAge: SESSION_MAX_AGE,
   });
 
-  return NextResponse.json({
-    ok: true,
-    fromShift,
-    toShift,
-    count: openTickets.length,
-  });
+  return NextResponse.json({ ok: true, shift: fromShift, count: openTickets.length });
 }
