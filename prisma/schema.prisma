@@ -309,3 +309,23 @@ model ServerLog {
 
   @@map("server_logs")
 }
+
+// Jejak audit aksi Database Studio (Super Admin). Setiap edit/hapus baris via
+// menu Database Studio dicatat di sini: siapa, aksi, tabel, id baris, dan
+// snapshot data sebelum/sesudah. Tidak punya relasi FK ke users agar baris
+// tetap tersimpan walau akun pelaku kelak dihapus (username di-snapshot).
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  username  String // snapshot nama akun pelaku
+  action    String // "update" | "delete"
+  tableName String   @map("table_name")
+  rowId     String   @map("row_id")
+  before    Json?
+  after     Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([tableName, rowId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
