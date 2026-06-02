@@ -5,6 +5,7 @@ import { SHIFT_LABELS } from "@/lib/constants";
 import { SERVERS } from "@/lib/suhuServer";
 import { buildReportTicketWhere } from "@/lib/reportQuery";
 import { resolveSender, resolveAcknowledger, resolveLeaderName } from "@/lib/reportSignatures";
+import { resolveShiftReportSignatures } from "@/lib/shiftReport";
 import { resolveReportLogoPath } from "@/lib/appSettings";
 import type {
   ReportData,
@@ -188,6 +189,26 @@ export async function gatherReportData(p: GatherParams): Promise<GatherResult> {
       })
     : null;
 
+  // PART 4: blok tanda tangan bersumber dari ShiftReport bila ada (paradigma
+  // approval baru). Ambil laporan shift untuk (shift, hari, owner?) terbaru.
+  const shiftReport = shift
+    ? await prisma.shiftReport.findFirst({
+        where: {
+          shiftKode: shift,
+          tanggal: { gte: startWib, lt: endWib },
+          ...(p.ownerUserId ? { ownerUserId: p.ownerUserId } : {}),
+        },
+        orderBy: { createdAt: "desc" },
+        include: {
+          ownerUser: { select: { nama: true, ttdUrl: true } },
+          receiverUser: { select: { nama: true, ttdUrl: true } },
+          supervisi: { select: { nama: true, ttdUrl: true } },
+          pimpinanInfra: { select: { nama: true, tipe: true, namaPjs: true } },
+          pimpinanDivisi: { select: { nama: true, tipe: true, namaPjs: true } },
+        },
+      })
+    : null;
+
   // Supervisi sudah approve jika ada tiket approved pada laporan (PRD revisi §4).
   const supervisiApproved = Boolean(approver);
 
@@ -200,36 +221,55 @@ export async function gatherReportData(p: GatherParams): Promise<GatherResult> {
     uniqueJoin(ticketRows.map((t) => t.owner.nama))
   );
 
-  const signatures: ReportSignatures = {
-    penyerah: sender.nama,
-    penyerahTtdPath: sender.ttdPath,
-    // Penerima: petugas yang dipilih saat serah terima (to_user / receiver).
-    penerima: handover?.toUser?.nama ?? "",
-    penerimaTtdPath: handover?.toUser?.ttdUrl ?? null,
-    supervisi:
-      handover?.supervisi?.nama ||
-      uniqueJoin(
-        ticketRows
-          .filter((t) => t.statusSupervisi === "approved")
-          .map((t) => t.approver?.nama ?? null)
+  let signatures: ReportSignatures;
+  if (shiftReport) {
+    // Paradigma baru (PART 4): seluruh blok tanda tangan dari ShiftReport.
+    // Penyerah jatuh ke owner-pertama-tiket bila owner laporan tak bernama.
+    const s = resolveShiftReportSignatures(shiftReport);
+    signatures = {
+      penyerah: s.penyerah || sender.nama,
+      penyerahTtdPath: s.penyerah ? s.penyerahTtdPath : sender.ttdPath,
+      penerima: s.penerima,
+      penerimaTtdPath: s.penerimaTtdPath,
+      supervisi: s.supervisi,
+      supervisiApproved: s.supervisiApproved,
+      supervisiTtdPath: s.supervisiTtdPath,
+      pimpinanInfra: s.pimpinanInfra,
+      pimpinanDivisi: s.pimpinanDivisi,
+    };
+  } else {
+    // Fallback (data lama tanpa ShiftReport): logika handover/tiket lama.
+    signatures = {
+      penyerah: sender.nama,
+      penyerahTtdPath: sender.ttdPath,
+      // Penerima: petugas yang dipilih saat serah terima (to_user / receiver).
+      penerima: handover?.toUser?.nama ?? "",
+      penerimaTtdPath: handover?.toUser?.ttdUrl ?? null,
+      supervisi:
+        handover?.supervisi?.nama ||
+        uniqueJoin(
+          ticketRows
+            .filter((t) => t.statusSupervisi === "approved")
+            .map((t) => t.approver?.nama ?? null)
+        ),
+      supervisiApproved,
+      // TTD supervisi hanya relevan setelah approve (excel meng-gate via flag).
+      supervisiTtdPath: supervisiApproved
+        ? handover?.supervisi?.ttdUrl ?? approver?.approver?.ttdUrl ?? null
+        : null,
+      // O26/R26: pimpinan pilihan handover → fallback pimpinan tingkat tiket.
+      // Tanpa default — kosong sampai dipilih saat serah terima (PART 4).
+      // Nama yang dicetak mengikuti tipe: PJS → nama_pjs (PART 5).
+      pimpinanInfra: resolveAcknowledger(
+        resolveLeaderName(handover?.pimpinanInfra),
+        uniqueJoin(ticketRows.map((t) => resolveLeaderName(t.pimpinanInfra) || null))
       ),
-    supervisiApproved,
-    // TTD supervisi hanya relevan setelah approve (excel meng-gate via flag).
-    supervisiTtdPath: supervisiApproved
-      ? handover?.supervisi?.ttdUrl ?? approver?.approver?.ttdUrl ?? null
-      : null,
-    // O26/R26: pimpinan pilihan handover → fallback pimpinan tingkat tiket.
-    // Tanpa default — kosong sampai dipilih saat serah terima (PART 4).
-    // Nama yang dicetak mengikuti tipe: PJS → nama_pjs (PART 5).
-    pimpinanInfra: resolveAcknowledger(
-      resolveLeaderName(handover?.pimpinanInfra),
-      uniqueJoin(ticketRows.map((t) => resolveLeaderName(t.pimpinanInfra) || null))
-    ),
-    pimpinanDivisi: resolveAcknowledger(
-      resolveLeaderName(handover?.pimpinanDivisi),
-      uniqueJoin(ticketRows.map((t) => resolveLeaderName(t.pimpinanDivisi) || null))
-    ),
-  };
+      pimpinanDivisi: resolveAcknowledger(
+        resolveLeaderName(handover?.pimpinanDivisi),
+        uniqueJoin(ticketRows.map((t) => resolveLeaderName(t.pimpinanDivisi) || null))
+      ),
+    };
+  }
 
   // ----------------------- Meta & nama file -----------------------
   const namaPetugas = signatures.penyerah || "-";
