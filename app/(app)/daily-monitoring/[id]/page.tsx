@@ -15,18 +15,10 @@ export default async function TicketDetailPage({ params }: Params) {
   const ticket = await getTicketDetail(id);
   if (!ticket) notFound();
 
-  const [lookups, me] = await Promise.all([
-    prisma.masterLookup.findMany({
-      orderBy: { nilai: "asc" },
-      select: { tipe: true, nilai: true },
-    }),
-    session.role === "supervisi"
-      ? prisma.user.findUnique({
-          where: { id: session.sub },
-          select: { ttdUrl: true },
-        })
-      : Promise.resolve(null),
-  ]);
+  const lookups = await prisma.masterLookup.findMany({
+    orderBy: { nilai: "asc" },
+    select: { tipe: true, nilai: true },
+  });
 
   const opsi = {
     jenis_gangguan: [] as string[],
@@ -42,7 +34,6 @@ export default async function TicketDetailPage({ params }: Params) {
       role={session.role}
       currentUserId={session.sub}
       currentSessionShift={session.shift}
-      supervisiHasTtd={Boolean(me?.ttdUrl)}
     />
   );
 }

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, ArrowRightLeft, AlertTriangle } from "lucide-react";
+import { Loader2, ArrowRightLeft, AlertTriangle, FileCheck } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
@@ -86,6 +86,12 @@ export function DailyMonitoringClient({
   const [hoSupervisiNext, setHoSupervisiNext] = useState("");
   // Petugas penerima shift (WAJIB, PRD revisi §1).
   const [hoReceiver, setHoReceiver] = useState("");
+
+  // --- Tutup Laporan Shift (tanpa penerima, PART 6) ---
+  const [closeOpen, setCloseOpen] = useState(false);
+  const [closeBusy, setCloseBusy] = useState(false);
+  const [closeErr, setCloseErr] = useState("");
+  const canCloseShift = Boolean(hoInfra && hoDivisi && hoSupervisi);
 
   const leadersInfra = leaders.filter((l) => l.kategori === "infrastruktur");
   const leadersDivisi = leaders.filter((l) => l.kategori === "divisi");
@@ -175,6 +181,34 @@ export function DailyMonitoringClient({
     }
   }
 
+  async function confirmCloseShift() {
+    setCloseErr("");
+    setCloseBusy(true);
+    try {
+      const res = await fetch("/api/shift/close", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pimpinanInfraId: hoInfra,
+          pimpinanDivisiId: hoDivisi,
+          supervisiId: hoSupervisi,
+          supervisiNextId: hoSupervisiNext || null,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setCloseErr(data.error ?? "Gagal menutup laporan shift.");
+        return;
+      }
+      setCloseOpen(false);
+      resetHandoverPick();
+      await loadTickets();
+      router.refresh();
+    } finally {
+      setCloseBusy(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
       {/* Aksi global */}
@@ -199,20 +233,34 @@ export function DailyMonitoringClient({
               "Pilih shift aktif di Dashboard untuk dapat melakukan serah terima shift."
             )}
           </div>
-          <Button
-            size="sm"
-            variant="danger"
-            disabled={!hasShift}
-            onClick={() => {
-              setHoErr("");
-              resetHandoverPick();
-              setHoStep("confirm");
-              setHoOpen(true);
-            }}
-          >
-            <AlertTriangle className="w-4 h-4" /> Serah Terima Shift ke Shift
-            Berikutnya
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={!hasShift}
+              onClick={() => {
+                setCloseErr("");
+                resetHandoverPick();
+                setCloseOpen(true);
+              }}
+            >
+              <FileCheck className="w-4 h-4" /> Tutup Laporan Shift
+            </Button>
+            <Button
+              size="sm"
+              variant="danger"
+              disabled={!hasShift}
+              onClick={() => {
+                setHoErr("");
+                resetHandoverPick();
+                setHoStep("confirm");
+                setHoOpen(true);
+              }}
+            >
+              <AlertTriangle className="w-4 h-4" /> Serah Terima Shift ke Shift
+              Berikutnya
+            </Button>
+          </div>
         </div>
       )}
 
@@ -428,6 +476,114 @@ export function DailyMonitoringClient({
         </div>
           </>
         )}
+      </Modal>
+
+      {/* ---- Modal Tutup Laporan Shift (tanpa penerima, PART 6) ---- */}
+      <Modal
+        open={closeOpen}
+        onClose={() => setCloseOpen(false)}
+        title="Tutup Laporan Shift"
+        size="sm"
+      >
+        <div className="flex items-start gap-2 text-sm text-gray-600">
+          <FileCheck className="w-5 h-5 text-accent-dark shrink-0 mt-0.5" />
+          <p>
+            Tutup laporan shift{" "}
+            <span className="font-semibold text-gray-900">
+              {SHIFT_LABELS[currentShift] ?? `Shift ${currentShift}`}
+            </span>{" "}
+            tanpa penerima (mis. lupa serah terima). Laporan shift dibuat dan
+            menunggu approval supervisi. Tiket open tidak diteruskan ke shift
+            berikutnya.
+          </p>
+        </div>
+
+        <div className="mt-4 space-y-3">
+          <Select
+            label="Pimpinan Bag. Infrastruktur"
+            required
+            value={hoInfra}
+            onChange={(e) => setHoInfra(e.target.value)}
+          >
+            <option value="">— Pilih pimpinan —</option>
+            {leadersInfra.map((l) => (
+              <option key={l.id} value={l.id}>
+                {leaderLabel(l)}
+              </option>
+            ))}
+          </Select>
+          <Select
+            label="Pimpinan Divisi"
+            required
+            value={hoDivisi}
+            onChange={(e) => setHoDivisi(e.target.value)}
+          >
+            <option value="">— Pilih pimpinan —</option>
+            {leadersDivisi.map((l) => (
+              <option key={l.id} value={l.id}>
+                {leaderLabel(l)}
+              </option>
+            ))}
+          </Select>
+          <Select
+            label="Supervisi"
+            required
+            value={hoSupervisi}
+            onChange={(e) => setHoSupervisi(e.target.value)}
+          >
+            <option value="">— Pilih supervisi —</option>
+            {supervisiUsers.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.nama}
+              </option>
+            ))}
+          </Select>
+          <div>
+            <Select
+              label="Supervisi Selanjutnya"
+              value={hoSupervisiNext}
+              onChange={(e) => setHoSupervisiNext(e.target.value)}
+            >
+              <option value="">— Tidak ada —</option>
+              {supervisiUsers.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.nama}
+                </option>
+              ))}
+            </Select>
+            <p className="mt-1 text-xs text-gray-500">
+              (opsional — hanya jika ada pergantian supervisi)
+            </p>
+          </div>
+        </div>
+
+        {!currentUserHasTtd && (
+          <p className="mt-3 flex items-start gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
+            <span>
+              Anda belum mengupload tanda tangan digital. TTD pada laporan akan
+              tampil sebagai placeholder. Upload TTD di menu Setting.
+            </span>
+          </p>
+        )}
+
+        {closeErr && (
+          <p className="mt-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+            {closeErr}
+          </p>
+        )}
+        <div className="flex justify-end gap-2 pt-4">
+          <Button variant="secondary" onClick={() => setCloseOpen(false)}>
+            Batal
+          </Button>
+          <Button
+            loading={closeBusy}
+            disabled={!canCloseShift}
+            onClick={confirmCloseShift}
+          >
+            <FileCheck className="w-4 h-4" /> Tutup Laporan Shift
+          </Button>
+        </div>
       </Modal>
     </div>
   );

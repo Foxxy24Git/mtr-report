@@ -15,7 +15,6 @@ import {
   Send,
   Gauge,
   AlertTriangle,
-  ShieldCheck,
 } from "lucide-react";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -40,7 +39,6 @@ interface Props {
   currentUserId: string;
   /** Shift aktif pada sesi user saat ini (untuk gating kegiatan setelah handover). */
   currentSessionShift: string;
-  supervisiHasTtd?: boolean;
   /** Tujuan tombol "Kembali" & redirect setelah hapus. */
   backHref?: string;
   backLabel?: string;
@@ -63,7 +61,6 @@ export function TicketDetailClient({
   role,
   currentUserId,
   currentSessionShift,
-  supervisiHasTtd = false,
   backHref = "/daily-monitoring",
   backLabel = "Kembali ke Daily Monitoring",
   readOnly = false,
@@ -86,7 +83,6 @@ export function TicketDetailClient({
       ticket.ownerId === currentUserId ||
       isShiftAktifPemegang);
   const isSelesai = ticket.status === "selesai";
-  const isApproved = ticket.statusSupervisi === "approved";
 
   /**
    * Hanya petugas shift aktif (atau Super Admin) yang boleh menambah kegiatan.
@@ -175,11 +171,6 @@ export function TicketDetailClient({
   const [delOpen, setDelOpen] = useState(false);
   const [delBusy, setDelBusy] = useState(false);
   const [actionErr, setActionErr] = useState("");
-
-  // --- Modal approve (supervisi) ---
-  const [approveOpen, setApproveOpen] = useState(false);
-  const [approveBusy, setApproveBusy] = useState(false);
-  const [approveErr, setApproveErr] = useState("");
 
   async function reload() {
     const res = await fetch(`/api/tickets/${ticket.id}`);
@@ -284,25 +275,6 @@ export function TicketDetailClient({
     }
   }
 
-  async function confirmApprove() {
-    setApproveErr("");
-    setApproveBusy(true);
-    try {
-      const res = await fetch(`/api/tickets/${ticket.id}/approve`, {
-        method: "POST",
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setApproveErr(data.error ?? "Gagal menyetujui tiket.");
-        return;
-      }
-      setApproveOpen(false);
-      await reload();
-    } finally {
-      setApproveBusy(false);
-    }
-  }
-
   const sla = computeSla(
     new Date(ticket.waktuOpen),
     ticket.waktuSelesai ? new Date(ticket.waktuSelesai) : null
@@ -330,15 +302,6 @@ export function TicketDetailClient({
               </Badge>
               <Badge variant={isSelesai ? "success" : "warning"}>
                 {isSelesai ? "Selesai" : "Proses"}
-              </Badge>
-              <Badge
-                variant={
-                  ticket.statusSupervisi === "approved" ? "success" : "neutral"
-                }
-              >
-                {ticket.statusSupervisi === "approved"
-                  ? "Disetujui Supervisi"
-                  : "Belum Approve"}
               </Badge>
             </div>
             {ticket.atm && (
@@ -410,43 +373,10 @@ export function TicketDetailClient({
         )}
         {!readOnly && role === "supervisi" && (
           <div className="mt-4 pt-4 border-t border-gray-100">
-            {isApproved ? (
-              <div className="flex items-center gap-2 text-sm text-green-700">
-                <ShieldCheck className="w-4 h-4 shrink-0" />
-                <span>
-                  Disetujui oleh{" "}
-                  <span className="font-semibold">
-                    {ticket.approverNama ?? "Supervisi"}
-                  </span>
-                  {ticket.approvedAt && ` · ${fmtDateTime(ticket.approvedAt)}`}.
-                  Tanda tangan digital otomatis terpasang di laporan.
-                </span>
-              </div>
-            ) : isSelesai ? (
-              <div className="flex flex-wrap items-center gap-3">
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    setApproveErr("");
-                    setApproveOpen(true);
-                  }}
-                >
-                  <ShieldCheck className="w-4 h-4" /> Setujui &amp; Bubuhkan TTD
-                </Button>
-                {!supervisiHasTtd && (
-                  <span className="flex items-center gap-1.5 text-xs text-amber-700">
-                    <AlertTriangle className="w-3.5 h-3.5" />
-                    Anda belum mengunggah tanda tangan digital — unggah di menu
-                    Setting agar TTD muncul di laporan.
-                  </span>
-                )}
-              </div>
-            ) : (
-              <p className="text-xs text-gray-500">
-                Mode tinjauan supervisi — persetujuan tersedia setelah tiket
-                ditutup (Selesai).
-              </p>
-            )}
+            <p className="text-xs text-gray-500">
+              Mode tinjauan — persetujuan kini dilakukan per laporan shift di
+              menu Supervisi, bukan per tiket.
+            </p>
           </div>
         )}
       </Card>
@@ -825,41 +755,6 @@ export function TicketDetailClient({
           </Button>
           <Button variant="danger" loading={delBusy} onClick={confirmDelete}>
             <Trash2 className="w-4 h-4" /> Hapus
-          </Button>
-        </div>
-      </Modal>
-
-      {/* ---- Modal approve (supervisi) ---- */}
-      <Modal
-        open={approveOpen}
-        onClose={() => setApproveOpen(false)}
-        title="Setujui Tiket?"
-        size="sm"
-      >
-        <div className="flex items-start gap-2 text-sm text-gray-600">
-          <ShieldCheck className="w-5 h-5 text-green-600 shrink-0 mt-0.5" />
-          <p>
-            Tiket{" "}
-            <span className="font-mono font-semibold text-gray-900">
-              {ticket.noTiket}
-            </span>{" "}
-            akan ditandai <span className="font-semibold">Disetujui</span>.
-            {supervisiHasTtd
-              ? " Tanda tangan digital Anda akan otomatis terpasang di laporan."
-              : " Catatan: Anda belum mengunggah TTD, sehingga hanya nama yang tampil di laporan."}
-          </p>
-        </div>
-        {approveErr && (
-          <p className="mt-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
-            {approveErr}
-          </p>
-        )}
-        <div className="flex justify-end gap-2 pt-4">
-          <Button variant="secondary" onClick={() => setApproveOpen(false)}>
-            Batal
-          </Button>
-          <Button loading={approveBusy} onClick={confirmApprove}>
-            <ShieldCheck className="w-4 h-4" /> Ya, Setujui
           </Button>
         </div>
       </Modal>
