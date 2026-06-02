@@ -77,7 +77,6 @@ export function WeeklyMonitoringClient({
 
   const [kategori, setKategori] = useState("");
   const [status, setStatus] = useState("");
-  const [statusSupervisi, setStatusSupervisi] = useState("");
   const [shift, setShift] = useState("");
   const [owner, setOwner] = useState("");
   const [vendorFilter, setVendorFilter] = useState("");
@@ -100,7 +99,6 @@ export function WeeklyMonitoringClient({
       const qs = new URLSearchParams();
       if (kategori) qs.set("kategori", kategori);
       if (status) qs.set("status", status);
-      if (statusSupervisi) qs.set("statusSupervisi", statusSupervisi);
       if (shift) qs.set("shift", shift);
       if (owner) qs.set("owner", owner);
       if (vendorFilter) qs.set("vendor", vendorFilter);
@@ -121,7 +119,6 @@ export function WeeklyMonitoringClient({
   }, [
     kategori,
     status,
-    statusSupervisi,
     shift,
     owner,
     vendorFilter,
@@ -203,7 +200,6 @@ export function WeeklyMonitoringClient({
   const hasActiveFilter =
     !!kategori ||
     !!status ||
-    !!statusSupervisi ||
     !!shift ||
     !!owner ||
     !!vendorFilter ||
@@ -360,17 +356,6 @@ export function WeeklyMonitoringClient({
             <option value="">Semua Status</option>
             <option value="proses">Proses</option>
             <option value="selesai">Selesai</option>
-          </select>
-
-          <select
-            value={statusSupervisi}
-            onChange={(e) => setStatusSupervisi(e.target.value)}
-            className={SELECT_CLS}
-            aria-label="Filter status supervisi"
-          >
-            <option value="">Semua Supervisi</option>
-            <option value="belum">Belum Approve</option>
-            <option value="approved">Sudah Approve</option>
           </select>
 
           <select
@@ -553,12 +538,12 @@ export function WeeklyMonitoringClient({
                   <Td>
                     <Badge
                       variant={
-                        t.statusSupervisi === "approved" ? "success" : "neutral"
+                        t.supervisiStatus === "approved" ? "success" : "neutral"
                       }
                     >
-                      {t.statusSupervisi === "approved"
-                        ? "Sudah Approve"
-                        : "Belum Approve"}
+                      {t.supervisiStatus === "approved"
+                        ? `Diapprove oleh ${t.supervisiNama ?? "Supervisi"}`
+                        : "Menunggu Approval"}
                     </Badge>
                   </Td>
                   <Td className="max-w-[10rem]">

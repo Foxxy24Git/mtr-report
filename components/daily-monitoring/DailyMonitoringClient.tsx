@@ -548,12 +548,12 @@ function TicketSection({
                 <Td>
                   <Badge
                     variant={
-                      t.statusSupervisi === "approved" ? "success" : "neutral"
+                      t.supervisiStatus === "approved" ? "success" : "neutral"
                     }
                   >
-                    {t.statusSupervisi === "approved"
-                      ? "Sudah Approve"
-                      : "Belum Approve"}
+                    {t.supervisiStatus === "approved"
+                      ? `Diapprove oleh ${t.supervisiNama ?? "Supervisi"}`
+                      : "Menunggu Approval"}
                   </Badge>
                 </Td>
                 <Td className="max-w-[10rem]">

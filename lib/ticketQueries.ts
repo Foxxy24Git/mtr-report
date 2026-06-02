@@ -1,6 +1,10 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { computeSla } from "@/lib/sla";
+import {
+  buildShiftReportStatusMap,
+  ticketShiftReportKey,
+} from "@/lib/shiftReportQueries";
 import { ShiftKode, TicketKategori, TicketStatus } from "@prisma/client";
 
 const KATEGORI = Object.values(TicketKategori) as string[];
@@ -56,6 +60,10 @@ export interface TicketListItem {
   lastPic: string | null;
   vendor: string | null;
   noTiketVendor: string | null;
+  /** Status supervisi laporan shift (pending | approved) — PART 5. */
+  supervisiStatus: string;
+  /** Nama supervisi (approver bila sudah, jika tidak yang ditugaskan). */
+  supervisiNama: string | null;
 }
 
 /** Query daftar tiket Daily Monitoring (dipakai API route & server page). */
@@ -119,8 +127,11 @@ export async function listTickets(
     },
   });
 
+  const statusMap = await buildShiftReportStatusMapForTickets(tickets);
+
   return tickets.map((t) => {
     const last = t.activities[0] ?? null;
+    const sr = statusMap.get(ticketShiftReportKey(t.openShiftKode, t.waktuOpen));
     return {
       id: t.id,
       noTiket: t.noTiket,
@@ -138,8 +149,32 @@ export async function listTickets(
       lastPic: last?.user.nama ?? null,
       vendor: t.vendor,
       noTiketVendor: t.noTiketVendor,
+      supervisiStatus: sr?.status ?? "pending",
+      supervisiNama: sr?.supervisiNama ?? null,
     };
   });
+}
+
+/**
+ * Bangun peta status supervisi laporan shift untuk sekumpulan tiket, dengan
+ * rentang tanggal turunan dari `waktuOpen` tiket (untuk dipakai listTickets &
+ * listWeeklyTickets). Mengembalikan peta kosong bila tidak ada tiket.
+ */
+async function buildShiftReportStatusMapForTickets(
+  tickets: { waktuOpen: Date }[]
+) {
+  if (tickets.length === 0) {
+    return new Map<string, { status: string; supervisiNama: string | null }>();
+  }
+  let min = tickets[0].waktuOpen;
+  let max = tickets[0].waktuOpen;
+  for (const t of tickets) {
+    if (t.waktuOpen < min) min = t.waktuOpen;
+    if (t.waktuOpen > max) max = t.waktuOpen;
+  }
+  // Lebarkan ke akhir hari max agar laporan shift hari itu ikut tercakup.
+  const to = new Date(max.getTime() + 86_400_000);
+  return buildShiftReportStatusMap({ from: min, to });
 }
 
 export interface WeeklyTicketFilter {
@@ -180,6 +215,9 @@ export interface WeeklyTicketItem {
   ownerNama: string;
   vendor: string | null;
   noTiketVendor: string | null;
+  /** Status supervisi laporan shift (pending | approved) — PART 5. */
+  supervisiStatus: string;
+  supervisiNama: string | null;
 }
 
 /**
@@ -223,21 +261,28 @@ export async function listWeeklyTickets(
     },
   });
 
-  return tickets.map((t) => ({
-    id: t.id,
-    noTiket: t.noTiket,
-    kategori: t.kategori,
-    waktuOpen: t.waktuOpen,
-    waktuSelesai: t.waktuSelesai,
-    status: t.status,
-    statusSupervisi: t.statusSupervisi,
-    shiftKode: t.shiftKode,
-    kodeAtm: t.atm?.kodeAtm ?? "—",
-    namaAtm: t.atm?.namaAtm ?? "—",
-    ownerNama: t.owner.nama,
-    vendor: t.vendor,
-    noTiketVendor: t.noTiketVendor,
-  }));
+  const statusMap = await buildShiftReportStatusMap({ from: f.from, to: f.to });
+
+  return tickets.map((t) => {
+    const sr = statusMap.get(ticketShiftReportKey(t.openShiftKode, t.waktuOpen));
+    return {
+      id: t.id,
+      noTiket: t.noTiket,
+      kategori: t.kategori,
+      waktuOpen: t.waktuOpen,
+      waktuSelesai: t.waktuSelesai,
+      status: t.status,
+      statusSupervisi: t.statusSupervisi,
+      shiftKode: t.shiftKode,
+      kodeAtm: t.atm?.kodeAtm ?? "—",
+      namaAtm: t.atm?.namaAtm ?? "—",
+      ownerNama: t.owner.nama,
+      vendor: t.vendor,
+      noTiketVendor: t.noTiketVendor,
+      supervisiStatus: sr?.status ?? "pending",
+      supervisiNama: sr?.supervisiNama ?? null,
+    };
+  });
 }
 
 /**
