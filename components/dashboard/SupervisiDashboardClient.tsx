@@ -37,18 +37,18 @@ export function SupervisiDashboardClient({ initialData }: Props) {
     return () => clearInterval(id);
   }, [refresh]);
 
-  // Tandai tanggal yang punya tiket belum approve (PRD revisi §4.A).
+  // Tandai tanggal yang punya laporan shift belum approve (PART 5).
   const markedDates = useMemo(
-    () => new Set(data.pendingTickets.map((t) => fmtDateKey(t.waktuOpen))),
-    [data.pendingTickets]
+    () => new Set(data.pendingReports.map((r) => fmtDateKey(r.tanggal))),
+    [data.pendingReports]
   );
 
-  const dayTickets = useMemo(
+  const dayReports = useMemo(
     () =>
       selected
-        ? data.pendingTickets.filter((t) => fmtDateKey(t.waktuOpen) === selected)
+        ? data.pendingReports.filter((r) => fmtDateKey(r.tanggal) === selected)
         : [],
-    [selected, data.pendingTickets]
+    [selected, data.pendingReports]
   );
 
   return (
@@ -62,11 +62,11 @@ export function SupervisiDashboardClient({ initialData }: Props) {
         </Button>
       </div>
 
-      <SupervisiMetricCards pending={data.pending} />
+      <SupervisiMetricCards pendingCount={data.pendingCount} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <Card padding="lg">
-          <CardTitle className="mb-4">Kalender Tiket Belum Approve</CardTitle>
+          <CardTitle className="mb-4">Kalender Laporan Shift Belum Approve</CardTitle>
           <MiniCalendar
             markedDates={markedDates}
             selected={selected}
@@ -74,8 +74,8 @@ export function SupervisiDashboardClient({ initialData }: Props) {
           />
         </Card>
         <Card padding="lg">
-          <CardTitle className="mb-4">Tiket Belum Approve pada Tanggal Terpilih</CardTitle>
-          <SupervisiDayTicketList dateKey={selected} tickets={dayTickets} />
+          <CardTitle className="mb-4">Laporan Shift Belum Approve pada Tanggal Terpilih</CardTitle>
+          <SupervisiDayTicketList dateKey={selected} reports={dayReports} />
         </Card>
       </div>
     </div>
