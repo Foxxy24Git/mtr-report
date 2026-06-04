@@ -100,28 +100,42 @@ export function RekapLaporanClient({
     setLoadingHarian(false);
   }
 
-  // --- Download per User ---
-  const [tglUser, setTglUser] = useState(today);
-  const [ownerId, setOwnerId] = useState(isSuperadmin ? "" : currentUser.id);
-  const [shiftUser, setShiftUser] = useState(""); // "" = semua shift
+  // --- Download per User (Logbook, modal rentang tanggal) ---
+  // Default rentang = bulan berjalan (logbook bulanan, PRD revisi §4.D).
+  const firstOfMonth = `${today.slice(0, 8)}01`;
+  const [openLogbook, setOpenLogbook] = useState(false);
+  const [lbDari, setLbDari] = useState(firstOfMonth);
+  const [lbSampai, setLbSampai] = useState(today);
+  const [lbUser, setLbUser] = useState(isSuperadmin ? "" : currentUser.id);
   const [loadingUser, setLoadingUser] = useState(false);
   const [errUser, setErrUser] = useState("");
 
+  const logbookUser = isSuperadmin ? lbUser : currentUser.id;
+  const logbookValid =
+    Boolean(lbDari) && Boolean(lbSampai) && lbDari <= lbSampai && Boolean(logbookUser);
+
   async function unduhUser() {
     setErrUser("");
-    const owner = isSuperadmin ? ownerId : currentUser.id;
-    if (!owner) {
+    if (lbDari > lbSampai) {
+      setErrUser("Tanggal 'dari' tidak boleh setelah tanggal 'sampai'.");
+      return;
+    }
+    if (!logbookUser) {
       setErrUser("Pilih user terlebih dahulu.");
       return;
     }
     setLoadingUser(true);
-    const params = new URLSearchParams({ mode: "user", tanggal: tglUser, owner });
-    if (shiftUser) params.set("shift", shiftUser);
+    const params = new URLSearchParams({
+      dari: lbDari,
+      sampai: lbSampai,
+      user: logbookUser,
+    });
     const res = await downloadFile(
-      `/api/rekap?${params.toString()}`,
-      `Laporan-${tglUser}.xlsx`
+      `/api/rekap/logbook?${params.toString()}`,
+      `LOGBOOK_${lbDari}_sd_${lbSampai}.xlsx`
     );
-    if (!res.ok) setErrUser(res.error);
+    if (res.ok) setOpenLogbook(false);
+    else setErrUser(res.error);
     setLoadingUser(false);
   }
 
@@ -252,7 +266,7 @@ export function RekapLaporanClient({
         </Card>
       </motion.div>
 
-      {/* Download per User */}
+      {/* Download per User (Logbook) */}
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
         <Card padding="lg">
           <CardHeader>
@@ -261,59 +275,79 @@ export function RekapLaporanClient({
             </CardTitle>
           </CardHeader>
           <p className="text-sm text-gray-500 mb-4">
-            Hanya tiket yang di-open oleh petugas terkait pada tanggal tersebut.
-            Shift opsional (kosongkan untuk semua shift).
+            Logbook pribadi: SEMUA tiket yang <strong>di-open petugas</strong>{" "}
+            pada rentang tanggal (semua shift &amp; status), lengkap kronologi
+            kegiatan termasuk tindak lanjut shift berikutnya.
           </p>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <Input
-              label="Tanggal"
-              type="date"
-              value={tglUser}
-              onChange={(e) => setTglUser(e.target.value)}
-            />
-            <Select
-              label="Petugas"
-              value={isSuperadmin ? ownerId : currentUser.id}
-              disabled={!isSuperadmin}
-              onChange={(e) => setOwnerId(e.target.value)}
-            >
-              {isSuperadmin && <option value="">— Pilih petugas —</option>}
-              {isSuperadmin ? (
-                users.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.nama}
-                  </option>
-                ))
-              ) : (
-                <option value={currentUser.id}>{currentUser.nama}</option>
-              )}
-            </Select>
-            <Select
-              label="Shift (opsional)"
-              value={shiftUser}
-              onChange={(e) => setShiftUser(e.target.value)}
-            >
-              <option value="">Semua shift</option>
-              {ALL_SHIFTS.map((s) => (
-                <option key={s} value={s}>
-                  {SHIFT_LABELS[s] ?? `Shift ${s}`}
-                </option>
-              ))}
-            </Select>
-          </div>
-          {errUser && (
-            <p className="mt-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
-              {errUser}
-            </p>
-          )}
-          <div className="flex justify-end mt-4">
-            <Button onClick={unduhUser} loading={loadingUser} variant="outline">
-              {!loadingUser && <FileSpreadsheet className="w-4 h-4" />} Download Excel
+          <div className="flex justify-end">
+            <Button onClick={() => setOpenLogbook(true)} variant="outline">
+              <FileSpreadsheet className="w-4 h-4" /> Download per User
             </Button>
           </div>
         </Card>
       </motion.div>
     </div>
+
+      <Modal
+        open={openLogbook}
+        onClose={() => setOpenLogbook(false)}
+        title="Download Logbook per User"
+        description="Pilih rentang tanggal (logbook bulanan). Hanya tiket yang di-open petugas yang muncul."
+        size="lg"
+      >
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Input
+              label="Dari Tanggal"
+              type="date"
+              required
+              value={lbDari}
+              max={lbSampai}
+              onChange={(e) => setLbDari(e.target.value)}
+            />
+            <Input
+              label="Sampai Tanggal"
+              type="date"
+              required
+              value={lbSampai}
+              min={lbDari}
+              onChange={(e) => setLbSampai(e.target.value)}
+            />
+          </div>
+          <Select
+            label="Petugas"
+            value={logbookUser}
+            disabled={!isSuperadmin}
+            onChange={(e) => setLbUser(e.target.value)}
+          >
+            {isSuperadmin && <option value="">— Pilih petugas —</option>}
+            {isSuperadmin ? (
+              users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.nama}
+                </option>
+              ))
+            ) : (
+              <option value={currentUser.id}>{currentUser.nama}</option>
+            )}
+          </Select>
+
+          {errUser && (
+            <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+              {errUser}
+            </p>
+          )}
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setOpenLogbook(false)} disabled={loadingUser}>
+              Batal
+            </Button>
+            <Button onClick={unduhUser} disabled={!logbookValid || loadingUser}>
+              <Download className="w-4 h-4" /> {loadingUser ? "Memproses…" : "Download"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Download Weekly (ZIP) */}
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
