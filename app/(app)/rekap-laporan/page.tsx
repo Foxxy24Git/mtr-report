@@ -10,14 +10,27 @@ export default async function RekapLaporanPage() {
   const session = await requireSession();
   const isSuperadmin = session.role === "superadmin";
 
-  // Daftar petugas untuk dropdown per-user (hanya relevan bagi superadmin).
-  const users = isSuperadmin
-    ? await prisma.user.findMany({
-        where: { role: Role.user },
-        orderBy: { nama: "asc" },
-        select: { id: true, nama: true },
-      })
-    : [];
+  // Daftar petugas untuk dropdown per-user (hanya relevan bagi superadmin),
+  // plus supervisi & pimpinan aktif untuk blok TTD "Download Laporan Lengkap".
+  const [users, supervisiUsers, leaders] = await Promise.all([
+    isSuperadmin
+      ? prisma.user.findMany({
+          where: { role: Role.user },
+          orderBy: { nama: "asc" },
+          select: { id: true, nama: true },
+        })
+      : Promise.resolve([]),
+    prisma.user.findMany({
+      where: { role: Role.supervisi, isAktif: true },
+      orderBy: { nama: "asc" },
+      select: { id: true, nama: true },
+    }),
+    prisma.leader.findMany({
+      where: { isAktif: true },
+      orderBy: { nama: "asc" },
+      select: { id: true, nama: true, kategori: true, tipe: true, namaPjs: true },
+    }),
+  ]);
 
   return (
     <div>
@@ -34,6 +47,8 @@ export default async function RekapLaporanPage() {
         isSuperadmin={isSuperadmin}
         currentUser={{ id: session.sub, nama: session.nama }}
         users={users}
+        supervisiUsers={supervisiUsers}
+        leaders={leaders}
       />
     </div>
   );

@@ -8,11 +8,13 @@ import {
   User as UserIcon,
   FileSpreadsheet,
   FileArchive,
+  FileText,
 } from "lucide-react";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
 import { SHIFT_LABELS } from "@/lib/constants";
 import { ALL_SHIFTS } from "@/lib/shift";
 
@@ -21,11 +23,26 @@ interface UserOpt {
   nama: string;
 }
 
+interface LeaderOpt {
+  id: string;
+  nama: string;
+  kategori: "infrastruktur" | "divisi";
+  tipe: "tetap" | "pjs";
+  namaPjs: string | null;
+}
+
+/** Label dropdown pimpinan: nama + penanda PJS bila pejabat pengganti. */
+function leaderLabel(l: LeaderOpt): string {
+  return l.tipe === "pjs" ? `${l.nama} [PJS: ${l.namaPjs ?? "-"}]` : l.nama;
+}
+
 interface Props {
   today: string; // YYYY-MM-DD (WIB)
   isSuperadmin: boolean;
   currentUser: UserOpt;
   users: UserOpt[];
+  supervisiUsers: UserOpt[];
+  leaders: LeaderOpt[];
 }
 
 /** Picu unduhan file dari endpoint; tangani error JSON (400/401) dengan rapi. */
@@ -54,7 +71,14 @@ async function downloadFile(
   return { ok: true };
 }
 
-export function RekapLaporanClient({ today, isSuperadmin, currentUser, users }: Props) {
+export function RekapLaporanClient({
+  today,
+  isSuperadmin,
+  currentUser,
+  users,
+  supervisiUsers,
+  leaders,
+}: Props) {
   // --- Download Harian ---
   const [tglHarian, setTglHarian] = useState(today);
   const [shiftHarian, setShiftHarian] = useState("");
@@ -129,6 +153,54 @@ export function RekapLaporanClient({ today, isSuperadmin, currentUser, users }: 
     );
     if (!res.ok) setErrWeekly(res.error);
     setLoadingWeekly(false);
+  }
+
+  // --- Download Laporan Lengkap (modal) ---
+  const leadersInfra = leaders.filter((l) => l.kategori === "infrastruktur");
+  const leadersDivisi = leaders.filter((l) => l.kategori === "divisi");
+
+  const [openLengkap, setOpenLengkap] = useState(false);
+  const [lkpDari, setLkpDari] = useState(today);
+  const [lkpSampai, setLkpSampai] = useState(today);
+  const [lkpSupervisi, setLkpSupervisi] = useState("");
+  const [lkpInfra, setLkpInfra] = useState("");
+  const [lkpDivisi, setLkpDivisi] = useState("");
+  const [loadingLengkap, setLoadingLengkap] = useState(false);
+  const [errLengkap, setErrLengkap] = useState("");
+
+  const lengkapValid =
+    Boolean(lkpDari) &&
+    Boolean(lkpSampai) &&
+    lkpDari <= lkpSampai &&
+    Boolean(lkpSupervisi) &&
+    Boolean(lkpInfra) &&
+    Boolean(lkpDivisi);
+
+  async function unduhLengkap() {
+    setErrLengkap("");
+    if (lkpDari > lkpSampai) {
+      setErrLengkap("Tanggal 'sampai' tidak boleh sebelum tanggal 'dari'.");
+      return;
+    }
+    if (!lengkapValid) {
+      setErrLengkap("Lengkapi semua field terlebih dahulu.");
+      return;
+    }
+    setLoadingLengkap(true);
+    const params = new URLSearchParams({
+      dari: lkpDari,
+      sampai: lkpSampai,
+      supervisi: lkpSupervisi,
+      infra: lkpInfra,
+      divisi: lkpDivisi,
+    });
+    const res = await downloadFile(
+      `/api/rekap/lengkap?${params.toString()}`,
+      `REKAP_LAPORAN_LENGKAP_${lkpDari}_sd_${lkpSampai}.xlsx`
+    );
+    if (res.ok) setOpenLengkap(false);
+    else setErrLengkap(res.error);
+    setLoadingLengkap(false);
   }
 
   return (
@@ -291,6 +363,109 @@ export function RekapLaporanClient({ today, isSuperadmin, currentUser, users }: 
           </div>
         </Card>
       </motion.div>
+
+      {/* Download Laporan Lengkap */}
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
+        <Card padding="lg">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <FileText className="w-4 h-4 text-primary" /> Download Laporan Lengkap
+            </CardTitle>
+          </CardHeader>
+          <p className="text-sm text-gray-500 mb-4">
+            Rekap laporan untuk rentang tanggal tertentu, lengkap dengan blok tanda
+            tangan Supervisi serta Pimpinan/PJS Bag. Infrastruktur &amp; Divisi TI.
+          </p>
+          <div className="flex justify-end">
+            <Button onClick={() => setOpenLengkap(true)}>
+              <FileText className="w-4 h-4" /> Download Laporan Lengkap
+            </Button>
+          </div>
+        </Card>
+      </motion.div>
+
+      <Modal
+        open={openLengkap}
+        onClose={() => setOpenLengkap(false)}
+        title="Download Laporan Lengkap"
+        description="Tentukan rentang tanggal dan penanda tangan rekap."
+        size="lg"
+      >
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Input
+              label="Dari Tanggal"
+              type="date"
+              required
+              value={lkpDari}
+              max={lkpSampai}
+              onChange={(e) => setLkpDari(e.target.value)}
+            />
+            <Input
+              label="Sampai Tanggal"
+              type="date"
+              required
+              value={lkpSampai}
+              min={lkpDari}
+              onChange={(e) => setLkpSampai(e.target.value)}
+            />
+          </div>
+          <Select
+            label="Supervisi"
+            required
+            value={lkpSupervisi}
+            onChange={(e) => setLkpSupervisi(e.target.value)}
+          >
+            <option value="">— Pilih supervisi —</option>
+            {supervisiUsers.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.nama}
+              </option>
+            ))}
+          </Select>
+          <Select
+            label="Pimpinan / PJS Bag. Infrastruktur"
+            required
+            value={lkpInfra}
+            onChange={(e) => setLkpInfra(e.target.value)}
+          >
+            <option value="">— Pilih pimpinan —</option>
+            {leadersInfra.map((l) => (
+              <option key={l.id} value={l.id}>
+                {leaderLabel(l)}
+              </option>
+            ))}
+          </Select>
+          <Select
+            label="Pimpinan / PJS Divisi TI"
+            required
+            value={lkpDivisi}
+            onChange={(e) => setLkpDivisi(e.target.value)}
+          >
+            <option value="">— Pilih pimpinan —</option>
+            {leadersDivisi.map((l) => (
+              <option key={l.id} value={l.id}>
+                {leaderLabel(l)}
+              </option>
+            ))}
+          </Select>
+
+          {errLengkap && (
+            <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+              {errLengkap}
+            </p>
+          )}
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setOpenLengkap(false)} disabled={loadingLengkap}>
+              Batal
+            </Button>
+            <Button onClick={unduhLengkap} disabled={!lengkapValid || loadingLengkap}>
+              <Download className="w-4 h-4" /> {loadingLengkap ? "Memproses…" : "Download"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
