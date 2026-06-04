@@ -4,6 +4,7 @@ import {
   CalendarRange,
   TicketPlus,
   FileBarChart2,
+  BarChart3,
   Server,
   Thermometer,
   Settings,
@@ -62,6 +63,12 @@ export const NAV_ITEMS: NavItem[] = [
     icon: TicketPlus,
     description: "Buat tiket gangguan baru",
     roles: ["user"],
+  },
+  {
+    label: "Monitoring SLA",
+    href: "/monitoring-sla",
+    icon: BarChart3,
+    description: "Dashboard agregat SLA, ATM bermasalah & distribusi gangguan",
   },
   {
     label: "Rekap Laporan",
