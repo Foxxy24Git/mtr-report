@@ -62,7 +62,9 @@ export async function buildLaporanLengkapExcel(
     tickets,
     signatures: {
       supervisi: supervisi?.nama ?? "",
-      supervisiTtdPath: supervisi?.ttdUrl ?? null,
+      // Laporan Lengkap: nama supervisi tampil, TTD digital TIDAK ditampilkan
+      // (beda dengan laporan per shift yang menyertakan TTD supervisi).
+      supervisiTtdPath: null,
       // PJS → nama_pjs (PART 5), pimpinan tetap → nama.
       pimpinanInfra: resolveLeaderName(infra),
       pimpinanDivisi: resolveLeaderName(divisi),
