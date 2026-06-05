@@ -1,0 +1,9 @@
+
+ RUN  v4.1.7 /Users/user/mtr-Report
+
+
+ Test Files  12 passed (12)
+      Tests  99 passed (99)
+   Start at  21:33:45
+   Duration  812ms (transform 481ms, setup 0ms, import 1.12s, tests 195ms, environment 1ms)
+

@@ -362,7 +362,12 @@ export async function buildLengkapWorkbook(data: LengkapReportData): Promise<Buf
       ws.getCell(`S${r}`).value = "";
     }
 
-    ws.getCell(`T${r}`).value = t.keterangan || "-";
+    // Kolom Keterangan (T): tiket close = "Selesai"; tiket masih proses =
+    // "Monitoring Dilanjutkan oleh Shift berikutnya".
+    ws.getCell(`T${r}`).value =
+      t.waktuSelesai && t.sla.selesai
+        ? "Selesai"
+        : "Monitoring Dilanjutkan oleh Shift berikutnya";
 
     // Styling umum baris (border + font + alignment + wrap + stripe).
     for (let col = 1; col <= 20; col++) {

@@ -120,7 +120,12 @@ export function buildLogbookRows(tickets: LogbookTicketInput[]): LogbookRow[] {
       lama: sla.lamaHHMM ?? "Dalam Proses",
       slaPersen: sla.slaPersen,
       status: t.status === "selesai" ? "Selesai" : "Dalam Proses",
-      keterangan: t.keterangan ?? "-",
+      // Kolom Keterangan: tiket close = "Selesai"; tiket masih proses =
+      // "Monitoring Dilanjutkan oleh Shift berikutnya".
+      keterangan:
+        t.status === "selesai"
+          ? "Selesai"
+          : "Monitoring Dilanjutkan oleh Shift berikutnya",
     };
   });
 }

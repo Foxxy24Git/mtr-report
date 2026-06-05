@@ -491,7 +491,11 @@ export async function buildReportWorkbook(data: ReportData): Promise<Buffer> {
       qr.value = "Monitoring Dilanjutkan oleh Shift berikutnya";
     }
 
-    ws.getCell(`S${r}`).value = t.keterangan || "-";
+    // Kolom Keterangan (S): tiket close = "Selesai"; tiket masih proses =
+    // "Monitoring Dilanjutkan oleh Shift berikutnya" (waktuSelesai null = proses).
+    ws.getCell(`S${r}`).value = t.waktuSelesai
+      ? "Selesai"
+      : "Monitoring Dilanjutkan oleh Shift berikutnya";
 
     // Styling umum baris (border + font + alignment + wrap).
     for (let col = 2; col <= 19; col++) {
