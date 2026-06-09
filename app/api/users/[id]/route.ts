@@ -81,6 +81,23 @@ export async function PATCH(req: Request, { params }: Params) {
     data.isAktif = body.isAktif;
   }
 
+  // Integrasi Telegram (Fase 2) — hanya Super Admin (route ini sudah dibatasi)
+  // dan hanya untuk akun non-superadmin. String kosong → null (hapus setelan).
+  if (body?.telegramChatId !== undefined) {
+    if (target.role === Role.superadmin) {
+      return NextResponse.json(
+        { error: "Chat ID Telegram tidak berlaku untuk akun Super Admin." },
+        { status: 400 }
+      );
+    }
+    const chatId = cleanStr(body.telegramChatId);
+    data.telegramChatId = chatId || null;
+  }
+  if (body?.telegramNomor !== undefined) {
+    const nomor = cleanStr(body.telegramNomor);
+    data.telegramNomor = nomor || null;
+  }
+
   // Password (reset) — opsional.
   if (body?.password) {
     const password: string = body.password;
@@ -104,6 +121,8 @@ export async function PATCH(req: Request, { params }: Params) {
         role: true,
         fotoProfilUrl: true,
         ttdUrl: true,
+        telegramChatId: true,
+        telegramNomor: true,
         isAktif: true,
       },
     });

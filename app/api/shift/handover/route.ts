@@ -6,6 +6,7 @@ import { getSession } from "@/lib/session";
 import { signSession, COOKIE_NAME, SESSION_MAX_AGE } from "@/lib/jwt";
 import { ALL_SHIFTS, nextShift, type ShiftCode } from "@/lib/shift";
 import { getShiftLabel } from "@/lib/shiftReport";
+import { notifyReportPending } from "@/lib/telegramScheduler";
 
 const TINDAK_LANJUT_TEKS = "TINDAK LANJUT MONITORING SELANJUTNYA";
 
@@ -95,7 +96,7 @@ export async function POST(req: Request) {
     { activities: { some: { isTindakLanjutFlag: true } } },
   ];
 
-  await prisma.$transaction(async (tx) => {
+  const report = await prisma.$transaction(async (tx) => {
     const handover = await tx.shiftHandover.create({
       data: {
         fromUserId: session.sub,
@@ -142,7 +143,7 @@ export async function POST(req: Request) {
 
     // 1 shift = 1 laporan (PART 2): dibuat saat serah terima, status pending.
     // Laporan tetap dibuat walau shift tanpa gangguan (tidak ada tiket).
-    await tx.shiftReport.create({
+    return tx.shiftReport.create({
       data: {
         tanggal: new Date(),
         shiftKode: fromShift as ShiftKode,
@@ -157,6 +158,10 @@ export async function POST(req: Request) {
       },
     });
   });
+
+  // Fase 4: notif langsung ke supervisi terpilih (di-gate jadwal WIB; di luar
+  // jadwal scheduler yang akan mengirim). Tidak boleh menggagalkan serah terima.
+  await notifyReportPending(report.id);
 
   // Shift session berakhir: kosongkan shift sesi user agar Daily Monitoring
   // kembali kosong & siap untuk shift berikutnya (PRD revisi §4.B).

@@ -30,6 +30,9 @@ services:
       DATABASE_URL: "postgresql://mtr_user:mtr_pass@db:5432/mtr_report_db?schema=public"
       AUTH_SECRET: "change-this-secret-in-production"
       NODE_ENV: "production"
+      # Token bot Telegram (dari @BotFather) — dipakai polling handler /start & /id
+      # serta notifikasi. Diisi dari env host: `export TELEGRAM_BOT_TOKEN=...`.
+      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"
     ports:
       - "3000:3000"
     volumes:

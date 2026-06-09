@@ -77,6 +77,10 @@ model User {
   passwordHash String   @map("password_hash")
   fotoProfilUrl String? @map("foto_profil_url")
   ttdUrl       String?  @map("ttd_url")
+  // Integrasi Telegram (Fase 2): chat ID tujuan notif bot — hanya diisi Super
+  // Admin untuk akun Supervisi. telegramNomor = catatan nomor HP/WA (opsional).
+  telegramChatId String? @map("telegram_chat_id")
+  telegramNomor  String? @map("telegram_nomor")
   // Soft delete (PRD §3 Super Admin): akun nonaktif tidak bisa login.
   isAktif      Boolean  @default(true) @map("is_aktif")
   // Jejak login & shift aktif untuk tabel Member di Dashboard Super Admin.

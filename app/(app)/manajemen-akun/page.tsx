@@ -28,6 +28,8 @@ export default async function ManajemenAkunPage({ searchParams }: SearchParams) 
       role: true,
       fotoProfilUrl: true,
       ttdUrl: true,
+      telegramChatId: true,
+      telegramNomor: true,
       isAktif: true,
     },
   });

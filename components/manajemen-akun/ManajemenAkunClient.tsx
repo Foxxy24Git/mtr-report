@@ -10,6 +10,7 @@ import {
   Ban,
   RotateCcw,
   ImageIcon,
+  Send,
 } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -34,6 +35,8 @@ export interface AkunRow {
   role: Role;
   fotoProfilUrl: string | null;
   ttdUrl: string | null;
+  telegramChatId: string | null;
+  telegramNomor: string | null;
   isAktif: boolean;
 }
 
@@ -54,6 +57,8 @@ interface FormState {
   password: string;
   role: string;
   isAktif: boolean;
+  telegramNomor: string;
+  telegramChatId: string;
 }
 
 const EMPTY: FormState = {
@@ -62,6 +67,8 @@ const EMPTY: FormState = {
   password: "",
   role: "user",
   isAktif: true,
+  telegramNomor: "",
+  telegramChatId: "",
 };
 
 interface Props {
@@ -83,6 +90,11 @@ export function ManajemenAkunClient({
   const [ttdFile, setTtdFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // Hasil uji koneksi Telegram (tombol "Kirim Notif Test").
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<
+    { ok: boolean; message: string } | null
+  >(null);
   const fotoRef = useRef<HTMLInputElement>(null);
   const ttdRef = useRef<HTMLInputElement>(null);
 
@@ -94,6 +106,7 @@ export function ManajemenAkunClient({
     setFotoFile(null);
     setTtdFile(null);
     setError("");
+    setTestResult(null);
     setOpen(true);
   }
 
@@ -105,10 +118,13 @@ export function ManajemenAkunClient({
       password: "",
       role: u.role === "superadmin" ? "user" : u.role,
       isAktif: u.isAktif,
+      telegramNomor: u.telegramNomor ?? "",
+      telegramChatId: u.telegramChatId ?? "",
     });
     setFotoFile(null);
     setTtdFile(null);
     setError("");
+    setTestResult(null);
     setOpen(true);
   }
 
@@ -166,6 +182,13 @@ export function ManajemenAkunClient({
             ...(isSuper
               ? {}
               : { username: form.username, role: form.role, isAktif: form.isAktif }),
+            // Field Telegram hanya relevan untuk akun Supervisi.
+            ...(!isSuper && form.role === "supervisi"
+              ? {
+                  telegramChatId: form.telegramChatId,
+                  telegramNomor: form.telegramNomor,
+                }
+              : {}),
             ...(form.password ? { password: form.password } : {}),
           }),
         });
@@ -205,6 +228,8 @@ export function ManajemenAkunClient({
               ...data.user,
               fotoProfilUrl: imgs.fotoProfilUrl ?? null,
               ttdUrl: imgs.ttdUrl ?? null,
+              telegramChatId: null,
+              telegramNomor: null,
             } as AkunRow,
             ...prev,
           ].sort((a, b) => a.username.localeCompare(b.username))
@@ -215,6 +240,43 @@ export function ManajemenAkunClient({
       setError(err instanceof Error ? err.message : "Terjadi kesalahan.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  /** Uji koneksi Telegram dengan Chat ID yang sedang diisi (endpoint Fase 1). */
+  async function kirimNotifTest() {
+    const chatId = form.telegramChatId.trim();
+    if (!chatId) {
+      setTestResult({ ok: false, message: "Isi Chat ID Telegram lebih dulu." });
+      return;
+    }
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const res = await fetch("/api/telegram/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chatId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.ok) {
+        setTestResult({
+          ok: true,
+          message: "Pesan uji terkirim. Cek Telegram supervisi.",
+        });
+      } else {
+        setTestResult({
+          ok: false,
+          message: data.error ?? "Gagal mengirim pesan uji.",
+        });
+      }
+    } catch (err) {
+      setTestResult({
+        ok: false,
+        message: err instanceof Error ? err.message : "Terjadi kesalahan.",
+      });
+    } finally {
+      setTesting(false);
     }
   }
 
@@ -259,6 +321,7 @@ export function ManajemenAkunClient({
               <Th>Status</Th>
               <Th>Foto</Th>
               <Th>TTD</Th>
+              <Th>Telegram</Th>
               <Th className="text-right">Aksi</Th>
             </tr>
           </TableHead>
@@ -304,6 +367,17 @@ export function ManajemenAkunClient({
                       <span className="inline-flex items-center gap-1 text-xs text-gray-400">
                         <PenLine className="w-3.5 h-3.5" /> Belum
                       </span>
+                    )}
+                  </Td>
+                  <Td>
+                    {u.role === "supervisi" ? (
+                      u.telegramChatId ? (
+                        <Badge variant="success">Telegram Aktif</Badge>
+                      ) : (
+                        <Badge variant="neutral">Belum Set</Badge>
+                      )
+                    ) : (
+                      <span className="text-xs text-gray-400">—</span>
                     )}
                   </Td>
                   <Td>
@@ -441,6 +515,60 @@ export function ManajemenAkunClient({
               )}
             </div>
           </div>
+
+          {/* Integrasi Telegram (Fase 2) — hanya untuk akun Supervisi. */}
+          {form.role === "supervisi" && (
+            <div className="rounded-lg border border-gray-200 bg-surface-subtle p-4 space-y-3">
+              <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                <Send className="w-4 h-4 text-primary" /> Notifikasi Telegram
+              </div>
+              <p className="text-xs text-gray-500 leading-relaxed">
+                Cara dapat Chat ID: Supervisi buka Telegram → cari bot → klik
+                Start → kirim <code className="font-mono">/id</code> → bot balas
+                Chat ID. Masukkan angka itu ke field di bawah.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Input
+                  label="Nomor Telegram/WA"
+                  value={form.telegramNomor}
+                  onChange={(e) =>
+                    setForm({ ...form, telegramNomor: e.target.value })
+                  }
+                  hint="Opsional — catatan nomor HP/WA supervisi."
+                />
+                <Input
+                  label="Chat ID Telegram"
+                  value={form.telegramChatId}
+                  onChange={(e) =>
+                    setForm({ ...form, telegramChatId: e.target.value })
+                  }
+                  hint="Dipakai bot untuk mengirim notif."
+                />
+              </div>
+              <div className="flex items-center gap-3">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  loading={testing}
+                  onClick={kirimNotifTest}
+                >
+                  <Send className="w-3.5 h-3.5" /> Kirim Notif Test
+                </Button>
+                {testResult && (
+                  <span
+                    className={
+                      testResult.ok
+                        ? "text-xs text-green-700"
+                        : "text-xs text-red-600"
+                    }
+                  >
+                    {testResult.message}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
 
           {error && (
             <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
