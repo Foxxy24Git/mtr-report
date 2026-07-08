@@ -31,8 +31,9 @@ export async function middleware(req: NextRequest) {
 export const config = {
   // Proteksi semua route kecuali API auth, GET logo publik (dipakai halaman
   // login), asset statis Next, dan file publik. POST/DELETE logo tetap diamankan
-  // di handler-nya (cek Super Admin).
+  // di handler-nya (cek Super Admin). uploads/logo dikecualikan karena berkas
+  // logo hasil unggahan juga tampil di halaman login (belum ada sesi).
   matcher: [
-    "/((?!api/auth|api/settings/logo|_next/static|_next/image|favicon.ico|logo-bank-nagari.svg).*)",
+    "/((?!api/auth|api/settings/logo|_next/static|_next/image|favicon.ico|logo-bank-nagari.svg|uploads/logo).*)",
   ],
 };
