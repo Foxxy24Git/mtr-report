@@ -50,7 +50,7 @@ async function seedMasterLookup() {
   console.log(`  master_lookup: ${res.count} baris baru (dari ${rows.length} unik)`);
 }
 
-async function seedAtmMaster(limit = 40) {
+async function seedAtmMaster() {
   const text = readFileSync(join(ROOT, "master_atm_full.txt"), "utf-8");
   const lines = text.split(/\r?\n/);
 
@@ -62,14 +62,13 @@ async function seedAtmMaster(limit = 40) {
     if (seen.has(parsed.kode)) continue;
     seen.add(parsed.kode);
     data.push({ kodeAtm: parsed.kode, namaAtm: parsed.nama });
-    if (data.length >= limit) break;
   }
 
   const res = await prisma.atmMaster.createMany({
     data,
     skipDuplicates: true,
   });
-  console.log(`  atm_master: ${res.count} ATM baru (target ${limit})`);
+  console.log(`  atm_master: ${res.count} ATM baru (dari ${data.length} baris valid)`);
 }
 
 async function seedUsers() {
@@ -133,7 +132,7 @@ async function seedAppSettings() {
 async function main() {
   console.log("Seeding mtr-Report…");
   await seedMasterLookup();
-  await seedAtmMaster(40);
+  await seedAtmMaster();
   await seedUsers();
   await seedLeaders();
   await seedAppSettings();
