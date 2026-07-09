@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { ShiftKode } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
-import { signSession, COOKIE_NAME, SESSION_MAX_AGE } from "@/lib/jwt";
+import { signSession, COOKIE_NAME, SESSION_MAX_AGE, isSecureCookie } from "@/lib/jwt";
 import { ALL_SHIFTS, type ShiftCode } from "@/lib/shift";
 
 /** POST /api/shift — set shift aktif sesi (dipilih dari Dashboard). */
@@ -40,7 +40,7 @@ export async function POST(req: Request) {
   store.set(COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: isSecureCookie(),
     path: "/",
     maxAge: SESSION_MAX_AGE,
   });

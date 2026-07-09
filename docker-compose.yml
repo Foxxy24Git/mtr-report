@@ -30,6 +30,12 @@ services:
       DATABASE_URL: "postgresql://mtr_user:mtr_pass@db:5432/mtr_report_db?schema=public"
       AUTH_SECRET: "change-this-secret-in-production"
       NODE_ENV: "production"
+      # Cookie sesi login butuh HTTPS (flag Secure) secara default di
+      # production. Kalau app diakses HTTP polos langsung (tanpa reverse
+      # proxy/Cloudflare yang terminasi TLS), set `export COOKIE_SECURE=false`
+      # di host sebelum `docker compose up`, jaga tetap `true` kalau sudah
+      # ada HTTPS di depan.
+      COOKIE_SECURE: "${COOKIE_SECURE:-true}"
       # Token bot Telegram (dari @BotFather) — dipakai polling handler /start & /id
       # serta notifikasi. Diisi dari env host: `export TELEGRAM_BOT_TOKEN=...`.
       TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"

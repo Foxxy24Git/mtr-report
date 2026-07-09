@@ -21,6 +21,19 @@ export interface SessionPayload {
   shiftStartedAt: string;
 }
 
+/**
+ * Flag `secure` untuk cookie sesi. Default true di production (asumsi HTTPS
+ * di depan). Bisa dioverride via env COOKIE_SECURE="false"/"true" untuk
+ * deployment yang diakses HTTP polos langsung (tanpa reverse proxy TLS),
+ * karena browser menolak menyimpan cookie `Secure` di koneksi non-HTTPS.
+ */
+export function isSecureCookie(): boolean {
+  const override = process.env.COOKIE_SECURE;
+  if (override === "true") return true;
+  if (override === "false") return false;
+  return process.env.NODE_ENV === "production";
+}
+
 function secret(): Uint8Array {
   const s = process.env.AUTH_SECRET;
   if (!s) throw new Error("AUTH_SECRET tidak diset");
