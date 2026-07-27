@@ -15,7 +15,7 @@ export interface SessionPayload {
   shift: string;
   /**
    * Awal sesi shift (ISO 8601). Diisi saat user memilih shift, dipulihkan dari
-   * DB saat login ulang (maks 12 jam — lihat resumableShiftSession), dan
+   * DB saat login ulang (maks 16 jam — lihat resumableShiftSession), dan
    * dikosongkan saat serah terima / tutup laporan shift. Dipakai Daily
    * Monitoring untuk membatasi tiket pada shift session yang sedang berjalan
    * (PRD revisi §4.B).

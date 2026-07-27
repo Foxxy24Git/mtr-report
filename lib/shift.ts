@@ -21,14 +21,22 @@ export function nextShift(shift: ShiftCode): ShiftCode {
 }
 
 /**
- * Batas usia sesi shift yang masih boleh dipulihkan saat login ulang: 12 jam.
+ * Batas usia sesi shift yang masih boleh dipulihkan saat login ulang: 16 jam.
+ *
+ * Diturunkan dari shift lembur terpanjang — D & E di lib/constants.ts, masing-
+ * masing 12 jam — ditambah 4 jam kelonggaran untuk serah terima yang molor.
+ * Batas 12 jam yang lama persis sama dengan panjang shift D/E, sehingga
+ * petugas yang login ulang tepat pada jam serah terima gagal memulihkan
+ * sesinya dan kehilangan tiketnya sendiri dari Daily Monitoring.
  *
  * Ditulis sebagai konstanta lokal — BUKAN import SESSION_MAX_AGE dari
  * lib/jwt.ts — karena lib/shift.ts dipakai komponen klien ShiftSelector.tsx,
  * sehingga mengimpor lib/jwt.ts akan menarik paket `jose` ke bundle browser.
- * Nilainya harus dijaga tetap sama dengan SESSION_MAX_AGE (60 * 60 * 12 detik).
+ * Umur cookie (SESSION_MAX_AGE, parameter keamanan auth) dan umur sesi shift
+ * (parameter proses bisnis di atas) adalah dua hal berbeda yang tidak perlu
+ * disamakan.
  */
-export const SHIFT_RESUME_MAX_AGE_MS = 12 * 60 * 60 * 1000;
+export const SHIFT_RESUME_MAX_AGE_MS = 16 * 60 * 60 * 1000;
 
 export interface ResumedShiftSession {
   /** Kode shift (A–E), atau "" bila tidak ada sesi yang bisa dipulihkan. */

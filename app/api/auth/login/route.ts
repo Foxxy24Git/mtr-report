@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { verifyPassword } from "@/lib/password";
 import { signSession, COOKIE_NAME, SESSION_MAX_AGE, isSecureCookie } from "@/lib/jwt";
 import type { Role } from "@/lib/roles";
-import { resumableShiftSession } from "@/lib/shift";
+import { resumableShiftSession, SHIFT_RESUME_MAX_AGE_MS } from "@/lib/shift";
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
@@ -39,14 +39,27 @@ export async function POST(req: Request) {
   // Daily Monitoring setelah login kembali.
   const resumed = resumableShiftSession(user.currentShift, user.shiftStartedAt);
 
+  // Kolom sesi shift hanya boleh dihapus bila memang kedaluwarsa karena umur
+  // (>SHIFT_RESUME_MAX_AGE_MS — petugas lupa menutup shift). JANGAN pakai
+  // "!resumed.shift" sebagai syarat: resumableShiftSession juga menolak saat
+  // usia < 0 (jam server bergeser mundur, mis. koreksi NTP / restart
+  // kontainer) padahal sesinya masih hidup — menghapus di jalur itu akan
+  // membuang shiftStartedAt asli secara permanen dan memaksa petugas memilih
+  // shift lagi, mengorbankan tiketnya sendiri.
+  const kedaluwarsa =
+    user.shiftStartedAt != null &&
+    Date.now() - user.shiftStartedAt.getTime() > SHIFT_RESUME_MAX_AGE_MS;
+
   // Catat waktu login terakhir (kolom Member Dashboard Super Admin). Sekaligus
-  // bersihkan sesi shift yang sudah kedaluwarsa (>12 jam — petugas lupa menutup
-  // shift) agar kolom "Shift Aktif" di dashboard Super Admin tidak menyesatkan.
+  // bersihkan sesi shift yang kedaluwarsa agar kolom "Shift Aktif" di dashboard
+  // Super Admin tidak menyesatkan. Penghapusan ini murni kosmetik — JWT sudah
+  // mengabaikan nilai basi lewat resumableShiftSession terlepas dari ada
+  // tidaknya penghapusan di sini.
   await prisma.user.update({
     where: { id: user.id },
     data: {
       lastLogin: new Date(),
-      ...(resumed.shift ? {} : { currentShift: null, shiftStartedAt: null }),
+      ...(kedaluwarsa ? { currentShift: null, shiftStartedAt: null } : {}),
     },
   });
 

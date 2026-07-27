@@ -30,7 +30,7 @@ export async function POST(req: Request) {
   }
   if (!SHIFTS.includes(session.shift)) {
     return NextResponse.json(
-      { error: "Shift sesi tidak valid. Silakan login ulang." },
+      { error: "Shift sesi tidak aktif. Pilih shift di Dashboard terlebih dahulu." },
       { status: 400 }
     );
   }

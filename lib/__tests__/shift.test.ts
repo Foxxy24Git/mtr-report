@@ -40,22 +40,33 @@ describe("resumableShiftSession", () => {
     expect(resumableShiftSession(null, mulai, now)).toEqual(KOSONG);
   });
 
-  it("memulihkan tepat pada batas 12 jam", () => {
-    const mulai = new Date("2026-07-27T04:00:00.000Z");
+  it("memulihkan tepat pada batas 16 jam", () => {
+    const mulai = new Date("2026-07-27T00:00:00.000Z");
     expect(resumableShiftSession("B", mulai, now)).toEqual({
       shift: "B",
-      shiftStartedAt: "2026-07-27T04:00:00.000Z",
+      shiftStartedAt: "2026-07-27T00:00:00.000Z",
     });
   });
 
-  it("kosong bila lewat 1 detik dari batas 12 jam", () => {
-    const mulai = new Date("2026-07-27T03:59:59.000Z");
+  it("kosong bila lewat 1 detik dari batas 16 jam", () => {
+    const mulai = new Date("2026-07-26T23:59:59.000Z");
     expect(resumableShiftSession("B", mulai, now)).toEqual(KOSONG);
   });
 
   it("kosong bila sesi menggantung berhari-hari (lupa tutup shift)", () => {
     const mulai = new Date("2026-07-25T03:00:00.000Z");
     expect(resumableShiftSession("B", mulai, now)).toEqual(KOSONG);
+  });
+
+  it("memulihkan shift D pada usia 12 jam (login ulang tepat saat serah terima)", () => {
+    // Shift D ("Lembur Pagi 07:00–19:00") panjangnya tepat 12 jam — batas lama
+    // (12 jam) menolak sesi ini persis di jam serah terima; batas baru (16 jam)
+    // harus tetap memulihkannya.
+    const mulai = new Date("2026-07-27T04:00:00.000Z");
+    expect(resumableShiftSession("D", mulai, now)).toEqual({
+      shift: "D",
+      shiftStartedAt: "2026-07-27T04:00:00.000Z",
+    });
   });
 
   it("kosong bila kode shift tidak dikenal", () => {
