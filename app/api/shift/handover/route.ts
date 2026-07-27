@@ -143,7 +143,7 @@ export async function POST(req: Request) {
 
     // 1 shift = 1 laporan (PART 2): dibuat saat serah terima, status pending.
     // Laporan tetap dibuat walau shift tanpa gangguan (tidak ada tiket).
-    return tx.shiftReport.create({
+    const shiftReport = await tx.shiftReport.create({
       data: {
         tanggal: new Date(),
         shiftKode: fromShift as ShiftKode,
@@ -157,6 +157,16 @@ export async function POST(req: Request) {
         handoverId: handover.id,
       },
     });
+
+    // Sesi shift benar-benar berakhir: kosongkan penandanya di DB, bukan hanya
+    // di cookie. Inilah yang mencegah login berikutnya memulihkan shift yang
+    // sudah diserahterimakan (lihat resumableShiftSession di lib/shift.ts).
+    await tx.user.update({
+      where: { id: session.sub },
+      data: { currentShift: null, shiftStartedAt: null },
+    });
+
+    return shiftReport;
   });
 
   // Fase 4: notif langsung ke supervisi terpilih (di-gate jadwal WIB; di luar
