@@ -84,4 +84,4 @@ Akses `http://<ip-vm>:3000`. Login `superadmin` / `superadmin`, lalu **segera ga
   Sertakan folder ini dalam rutinitas backup.
 - **Backup database**: volume `postgres_data`. Mis. `docker compose exec db pg_dump -U mtr_user mtr_report_db > backup.sql`.
 - **TLS / domain**: letakkan di belakang reverse proxy (Nginx/Caddy/Traefik) bila perlu HTTPS.
-- **Update versi**: `git pull && docker compose build && docker compose up -d`, lalu ulangi langkah migrasi (4) bila ada migrasi baru.
+- **Update versi**: `git pull && docker compose build`, lalu ulangi langkah migrasi (4) bila ada migrasi baru, **baru kemudian** `docker compose up -d` — migrasi harus lebih dulu membersihkan sisa `current_shift` yang basi sebelum image baru (dengan fitur pemulihan sesi shift saat login) berjalan, agar login pertama pasca-deploy tidak salah memulihkan shift yang sebenarnya sudah ditutup.

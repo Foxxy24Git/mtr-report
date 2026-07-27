@@ -33,8 +33,9 @@ export interface TicketListFilter {
    * shiftKode = currentShift DAN
    * (ownerUserId = currentUserId pada shift session ini  ATAU
    *  tiket diteruskan ke shift ini via tindak lanjut/handover).
-   * Tiket hilang hanya saat shift berakhir (serah terima) atau user logout —
-   * keduanya mengosongkan shift sesi sehingga query mengembalikan [].
+   * Tiket hilang hanya saat shift berakhir (serah terima / tutup laporan
+   * shift), yang mengosongkan shift sesi sehingga query mengembalikan [].
+   * Logout TIDAK mengakhiri sesi shift — sesi dipulihkan saat login kembali.
    */
   dailyMonitoring?: boolean;
   /** Shift aktif sesi user (A–E). Wajib bila dailyMonitoring=true. */
