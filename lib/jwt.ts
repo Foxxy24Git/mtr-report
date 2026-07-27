@@ -14,9 +14,11 @@ export interface SessionPayload {
   /** Shift aktif. Kosong ("") bila petugas belum memilih shift di Dashboard. */
   shift: string;
   /**
-   * Awal sesi shift (ISO 8601). Diisi saat user memilih shift, dikosongkan
-   * saat login & saat serah terima shift. Dipakai Daily Monitoring untuk
-   * membatasi tiket pada shift session yang sedang berjalan (PRD revisi §4.B).
+   * Awal sesi shift (ISO 8601). Diisi saat user memilih shift, dipulihkan dari
+   * DB saat login ulang (maks 12 jam — lihat resumableShiftSession), dan
+   * dikosongkan saat serah terima / tutup laporan shift. Dipakai Daily
+   * Monitoring untuk membatasi tiket pada shift session yang sedang berjalan
+   * (PRD revisi §4.B).
    */
   shiftStartedAt: string;
 }
