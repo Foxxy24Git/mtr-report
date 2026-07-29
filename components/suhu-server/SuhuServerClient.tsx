@@ -29,6 +29,9 @@ import { fmtTime } from "@/lib/format";
 import {
   SERVERS,
   SERVER_STATUS_OPTIONS,
+  SUHU_OPTIONS,
+  PEMANTAUAN_STATUS_OPTIONS,
+  PEMANTAUAN_DEFAULT,
   AC_URUTAN,
   SERVER_FASES,
   FASE_LABELS,
@@ -142,6 +145,29 @@ function SavedFlash({ show }: { show: boolean }) {
   );
 }
 
+/**
+ * Daftar <option> untuk dropdown. Nilai lama hasil ketik bebas (data sebelum
+ * dropdown diterapkan) tetap ditampilkan agar tidak hilang saat form dibuka.
+ */
+function OptionList({
+  options,
+  value,
+}: {
+  options: readonly string[];
+  value: string;
+}) {
+  return (
+    <>
+      {options.map((opt) => (
+        <option key={opt} value={opt}>
+          {opt}
+        </option>
+      ))}
+      {value && !options.includes(value) && <option value={value}>{value}</option>}
+    </>
+  );
+}
+
 // ----------------------------- Form 1 pengecekan AC -----------------------------
 
 function AcCheckRow({
@@ -162,8 +188,13 @@ function AcCheckRow({
   const [panel, setPanel] = useState(existing?.suhuPanel ?? "");
   const [kiri, setKiri] = useState(existing?.statusAktifKiri ?? true);
   const [kanan, setKanan] = useState(existing?.statusAktifKanan ?? true);
-  const [p12kiri, setP12kiri] = useState(existing?.pantau12jamKiri ?? "");
-  const [p12kanan, setP12kanan] = useState(existing?.pantau12jamKanan ?? "");
+  // Tanpa data existing → default "Normal"; bila sudah ada, pakai nilai tersimpan.
+  const [p12kiri, setP12kiri] = useState(
+    existing ? existing.pantau12jamKiri ?? "" : PEMANTAUAN_DEFAULT
+  );
+  const [p12kanan, setP12kanan] = useState(
+    existing ? existing.pantau12jamKanan ?? "" : PEMANTAUAN_DEFAULT
+  );
 
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -227,18 +258,22 @@ function AcCheckRow({
           value={waktu}
           onChange={(e) => setWaktu(e.target.value)}
         />
-        <Input
+        <Select
           label="Suhu Room Server"
           value={room}
           onChange={(e) => setRoom(e.target.value)}
-          placeholder="cth. 22°C"
-        />
-        <Input
+        >
+          <option value="">— Pilih suhu —</option>
+          <OptionList options={SUHU_OPTIONS} value={room} />
+        </Select>
+        <Select
           label="Suhu Ruangan Panel"
           value={panel}
           onChange={(e) => setPanel(e.target.value)}
-          placeholder="cth. 24°C"
-        />
+        >
+          <option value="">— Pilih suhu —</option>
+          <OptionList options={SUHU_OPTIONS} value={panel} />
+        </Select>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
@@ -254,18 +289,22 @@ function AcCheckRow({
           </span>
           <StatusToggle value={kanan} onChange={setKanan} />
         </div>
-        <Input
+        <Select
           label="Pemantauan 12 jam (Kiri)"
           value={p12kiri}
           onChange={(e) => setP12kiri(e.target.value)}
-          placeholder="cth. Normal"
-        />
-        <Input
+        >
+          {!p12kiri && <option value="">— Pilih status —</option>}
+          <OptionList options={PEMANTAUAN_STATUS_OPTIONS} value={p12kiri} />
+        </Select>
+        <Select
           label="Pemantauan 12 jam (Kanan)"
           value={p12kanan}
           onChange={(e) => setP12kanan(e.target.value)}
-          placeholder="cth. Normal"
-        />
+        >
+          {!p12kanan && <option value="">— Pilih status —</option>}
+          <OptionList options={PEMANTAUAN_STATUS_OPTIONS} value={p12kanan} />
+        </Select>
       </div>
 
       {error && (

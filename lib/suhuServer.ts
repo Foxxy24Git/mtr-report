@@ -23,6 +23,22 @@ export const SERVER_STATUS_OPTIONS = [
   "Gangguan",
 ] as const;
 
+/** Batas pilihan suhu AC (°C) pada dropdown pengecekan. */
+export const SUHU_MIN = 15;
+export const SUHU_MAX = 30;
+
+/** Pilihan suhu 15°C–30°C (kelipatan 1°C) untuk Room Server & Ruangan Panel. */
+export const SUHU_OPTIONS: string[] = Array.from(
+  { length: SUHU_MAX - SUHU_MIN + 1 },
+  (_, i) => `${SUHU_MIN + i}°C`
+);
+
+/** Status pemantauan berkala 12 jam AC (kiri & kanan). */
+export const PEMANTAUAN_STATUS_OPTIONS = ["Normal", "Tidak Normal"] as const;
+
+/** Nilai default pemantauan 12 jam saat form dibuka tanpa data existing. */
+export const PEMANTAUAN_DEFAULT: string = PEMANTAUAN_STATUS_OPTIONS[0];
+
 /** AC dicek 3x per shift. */
 export const AC_URUTAN = [1, 2, 3] as const;
 export type AcUrutan = (typeof AC_URUTAN)[number];
