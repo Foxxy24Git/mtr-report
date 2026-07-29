@@ -317,11 +317,9 @@ export async function buildLengkapWorkbook(data: LengkapReportData): Promise<Buf
     ws.getCell(`K${r}`).value = t.metodePenanganan || "-";
     ws.getCell(`L${r}`).value = t.vendor || "-";
 
-    // M = waktu tiap entri (kosong utk baris tindak lanjut), N = teks kegiatan
+    // M = waktu tiap entri (termasuk baris tindak lanjut), N = teks kegiatan
     // (penanda tindak lanjut dicetak bold seperti laporan harian).
-    const mText = t.activities
-      .map((a) => (a.isTindakLanjut ? "" : fmtJamWIB(a.waktu)))
-      .join("\n");
+    const mText = t.activities.map((a) => fmtJamWIB(a.waktu)).join("\n");
     ws.getCell(`M${r}`).value = mText || "-";
 
     if (t.activities.length > 0) {
