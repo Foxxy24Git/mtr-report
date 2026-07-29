@@ -185,6 +185,42 @@ const COL_WIDTHS: Record<string, number> = {
 const TTD_W = 130;
 const TTD_H = 56;
 
+/** Teks penanda entri tindak lanjut (dicetak bold di kolom L). */
+const TINDAK_LANJUT_TEKS = "TINDAK LANJUT MONITORING SELANJUTNYA";
+
+/**
+ * Perkiraan kapasitas karakter per baris visual kolom L (lebar 35.43, font 9).
+ * Kapasitas sebenarnya ±41 karakter (35.43 satuan ≈ 253px, font 9pt ≈ 5px per
+ * karakter, dikurangi sisa ragged akibat wrap per kata). Dipakai 33 = sedikit
+ * konservatif supaya tinggi baris cenderung berlebih tipis ketimbang memotong
+ * teks, tanpa membuat tiket panjang mentok cap tinggi baris.
+ */
+const L_CHARS_PER_LINE = 33;
+
+/** Batas tinggi baris Excel ≈ 409pt; sisakan margin kecil. */
+const MAX_ROW_HEIGHT = 400;
+
+/**
+ * Perkiraan jumlah baris visual satu paragraf teks setelah wrapText pada kolom
+ * selebar `charsPerLine` karakter. Newline eksplisit dihitung sebagai pemisah
+ * paragraf, tiap paragraf minimal 1 baris.
+ *
+ * Sengaja diimplementasikan lokal (kembar dengan helper senama di
+ * lib/excelReportLengkap.ts) supaya generator laporan harian ini tetap berdiri
+ * sendiri, tidak bergantung pada modul rekap lengkap.
+ */
+function estimateWrappedLines(text: string, charsPerLine: number): number {
+  if (!text) return 1;
+  return text
+    .split("\n")
+    .reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / charsPerLine)), 0);
+}
+
+/** Teks kolom L satu entri kegiatan (tanpa jam — jam ada di kolom K). */
+function activityText(a: ReportActivity): string {
+  return a.isTindakLanjut ? TINDAK_LANJUT_TEKS : a.teks;
+}
+
 export async function buildReportWorkbook(data: ReportData): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   wb.creator = "mtr-Report";
@@ -425,8 +461,22 @@ export async function buildReportWorkbook(data: ReportData): Promise<Buffer> {
   }
 
   for (const t of data.tickets) {
-    const lines = Math.max(t.activities.length, 2);
-    ws.getRow(r).height = Math.min(Math.max(lines * 14 + 8, 40), 240);
+    // Teks kolom L per entri + perkiraan berapa baris visual masing-masing
+    // memakan tempat setelah wrap. `wrapCounts` adalah SATU-SATUNYA sumber
+    // angka baris: dipakai bareng untuk padding kolom K dan total tinggi baris,
+    // supaya keduanya tak pernah berbeda hitungan.
+    const activityTexts = t.activities.map(activityText);
+    const wrapCounts = activityTexts.map((teks) =>
+      estimateWrappedLines(teks, L_CHARS_PER_LINE)
+    );
+
+    // Tinggi baris mengikuti perkiraan TOTAL baris visual kolom L setelah wrap
+    // (satu kegiatan panjang bisa jadi 2–3 baris), bukan sekadar jumlah entri.
+    const lines = Math.max(
+      wrapCounts.reduce((sum, n) => sum + n, 0),
+      2
+    );
+    ws.getRow(r).height = Math.min(Math.max(lines * 14 + 8, 40), MAX_ROW_HEIGHT);
 
     ws.getCell(`B${r}`).value = t.no;
     ws.getCell(`C${r}`).value = fmtWaktuTanggal(t.waktuKejadian);
@@ -439,8 +489,17 @@ export async function buildReportWorkbook(data: ReportData): Promise<Buffer> {
     ws.getCell(`J${r}`).value = t.vendor || "-";
 
     // K = waktu tiap entri (hh:mm), L = teks log; penanda tindak lanjut bold.
+    // Jam SELALU dicetak, termasuk untuk entri tindak lanjut. Excel mem-wrap
+    // tiap kolom secara independen, jadi satu kegiatan panjang yang wrap jadi
+    // 2–3 baris visual di L akan membuat semua jam di K sesudahnya "naik" alias
+    // tak sejajar lagi. Penangkalnya: tiap entri menyumbang wrapCounts[idx]
+    // baris ke kolom K — baris pertama berisi jam, sisanya baris kosong sebagai
+    // padding. Dengan begitu jumlah baris K dan L per entri sama, dan jam selalu
+    // duduk sebaris dengan awal kegiatannya.
     const kText = t.activities
-      .map((a) => (a.isTindakLanjut ? "" : fmtJamWIB(a.waktu)))
+      .map((a, idx) =>
+        [fmtJamWIB(a.waktu), ...Array(wrapCounts[idx] - 1).fill("")].join("\n")
+      )
       .join("\n");
     ws.getCell(`K${r}`).value = kText || "-";
 
@@ -448,14 +507,10 @@ export async function buildReportWorkbook(data: ReportData): Promise<Buffer> {
       const richText: ExcelJS.RichText[] = [];
       t.activities.forEach((a, idx) => {
         if (idx > 0) richText.push({ text: "\n", font: font({ size: 9 }) });
-        if (a.isTindakLanjut) {
-          richText.push({
-            text: "TINDAK LANJUT MONITORING SELANJUTNYA",
-            font: font({ size: 9, bold: true }),
-          });
-        } else {
-          richText.push({ text: a.teks, font: font({ size: 9 }) });
-        }
+        richText.push({
+          text: activityTexts[idx],
+          font: font({ size: 9, ...(a.isTindakLanjut ? { bold: true } : {}) }),
+        });
       });
       ws.getCell(`L${r}`).value = { richText };
     } else {

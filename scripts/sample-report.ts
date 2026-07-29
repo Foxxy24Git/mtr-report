@@ -70,6 +70,48 @@ const data: ReportData = {
       waktuSelesai: null,
       keterangan: "Diteruskan ke shift berikutnya",
     },
+    // Tiket "stress test": banyak entri dengan teks panjang (>80 karakter →
+    // wrap 2-3 baris di kolom L) diselingi entri tindak lanjut, jam berbeda tiap
+    // entri. Untuk memastikan kolom K (jam) tetap sejajar & tinggi baris cukup.
+    {
+      no: 4,
+      waktuKejadian: wib("2026-05-27T16:05:00"),
+      unitKerja: "020304 – JARINGAN KANTOR CABANG SIMPANG EMPAT PASBAR",
+      waktuRespon: "16:10",
+      contactPerson: "Rani (0852-9999-1010)",
+      jenisGangguan: "Jaringan Kantor Offline",
+      sumberPenyebab: "Putus jalur fiber optik",
+      metodePenanganan: "Penanganan gangguan jaringan komunikasi pd Divisi TI",
+      vendor: "Lintasarta",
+      activities: [
+        {
+          waktu: wib("2026-05-27T16:10:00"),
+          teks: "Menerima laporan jaringan kantor cabang Simpang Empat tidak dapat diakses, dilakukan pengecekan awal status link dan perangkat router di lokasi.",
+          isTindakLanjut: false,
+        },
+        {
+          waktu: wib("2026-05-27T16:38:00"),
+          teks: "Konfirmasi ke vendor Lintasarta melalui WAG, vendor menginformasikan ada pekerjaan galian pihak ketiga yang memutus jalur fiber optik utama.",
+          isTindakLanjut: false,
+        },
+        { waktu: wib("2026-05-27T17:00:00"), teks: "Eskalasi ke NOC vendor.", isTindakLanjut: false },
+        { waktu: wib("2026-05-27T17:30:00"), teks: "", isTindakLanjut: true },
+        {
+          waktu: wib("2026-05-27T18:45:00"),
+          teks: "Vendor menyampaikan estimasi penyambungan kembali jalur fiber optik paling cepat pukul 22:00 WIB, monitoring dilanjutkan berkala setiap 30 menit.",
+          isTindakLanjut: false,
+        },
+        {
+          waktu: wib("2026-05-27T19:50:00"),
+          teks: "Cek ulang status perangkat, jaringan masih down dan belum ada perubahan dari sisi vendor.",
+          isTindakLanjut: false,
+        },
+        { waktu: wib("2026-05-27T20:15:00"), teks: "", isTindakLanjut: true },
+      ],
+      noTiketVendor: "LA-55402",
+      waktuSelesai: null,
+      keterangan: "Diteruskan ke shift berikutnya",
+    },
   ],
   acChecks: [
     { urutan: 1, waktu: wib("2026-05-27T07:30:00"), room: "21°C", panel: "24°C", kiri: true, kanan: true, p12kiri: "Normal", p12kanan: "Normal" },

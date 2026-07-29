@@ -38,6 +38,56 @@ async function main() {
   const rows = buildLogbookRows([
     t({}),
     t({ noTiket: "TKT-002", openShiftKode: "C", status: "proses", waktuSelesai: null, atm: null }),
+    // Tiket "stress test": beberapa entri dengan teks panjang (>80 karakter →
+    // wrap 2-3 baris di kolom N) diselingi entri tindak lanjut, jam berbeda tiap
+    // entri. Untuk memastikan kolom M tetap sejajar & tinggi baris cukup.
+    t({
+      noTiket: "TKT-003",
+      openShiftKode: "B",
+      status: "proses",
+      waktuSelesai: null,
+      jenisGangguan: "Jaringan Kantor Offline",
+      sumberPenyebab: "Putus jalur fiber optik",
+      vendor: "Lintasarta",
+      atm: { kodeAtm: "ATM07", namaAtm: "Kantor Cabang Simpang Empat" },
+      activities: [
+        {
+          waktu: new Date("2026-06-02T09:10:00Z"),
+          teks: "Menerima laporan jaringan kantor cabang Simpang Empat tidak dapat diakses, dilakukan pengecekan awal status link dan perangkat router di lokasi.",
+          isTindakLanjutFlag: false,
+        },
+        {
+          waktu: new Date("2026-06-02T09:38:00Z"),
+          teks: "Konfirmasi ke vendor Lintasarta melalui WAG, vendor menginformasikan ada pekerjaan galian pihak ketiga yang memutus jalur fiber optik utama.",
+          isTindakLanjutFlag: false,
+        },
+        {
+          waktu: new Date("2026-06-02T10:00:00Z"),
+          teks: "Eskalasi ke NOC vendor.",
+          isTindakLanjutFlag: false,
+        },
+        {
+          waktu: new Date("2026-06-02T10:30:00Z"),
+          teks: "TINDAK LANJUT MONITORING SELANJUTNYA",
+          isTindakLanjutFlag: true,
+        },
+        {
+          waktu: new Date("2026-06-02T11:45:00Z"),
+          teks: "Vendor menyampaikan estimasi penyambungan kembali jalur fiber optik paling cepat pukul 22:00 WIB, monitoring dilanjutkan berkala setiap 30 menit.",
+          isTindakLanjutFlag: false,
+        },
+        {
+          waktu: new Date("2026-06-02T12:50:00Z"),
+          teks: "Cek ulang status perangkat, jaringan masih down dan belum ada perubahan dari sisi vendor.",
+          isTindakLanjutFlag: false,
+        },
+        {
+          waktu: new Date("2026-06-02T13:15:00Z"),
+          teks: "TINDAK LANJUT MONITORING SELANJUTNYA",
+          isTindakLanjutFlag: true,
+        },
+      ],
+    }),
   ]);
   const data: LogbookData = {
     namaPetugas: "Kurnia Fajri",

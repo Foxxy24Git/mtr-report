@@ -87,6 +87,54 @@ async function main() {
       waktuResponInternal: new Date("2026-06-02T07:55:00+07:00"),
       waktuSelesai: new Date("2026-06-02T10:30:00+07:00"),
     }),
+    // Tiket "stress test": meniru kasus nyata di screenshot — banyak entri, teks
+    // panjang (>80 karakter → wrap 2-3 baris di kolom N), diselingi beberapa
+    // entri tindak lanjut, dengan jam berbeda-beda tiap entri.
+    tiket({
+      tanggal: "03-06-2026", shiftKode: "C", petugas: "Rian Putra",
+      atmKode: "010505", atmNama: "ATM SIMPANG EMPAT",
+      atmLokasi: "Jl. Sudirman Simpang Empat, Pasaman Barat",
+      jenisGangguan: "ATM Offline", sumberPenyebab: "Gangguan Link Utama",
+      vendor: "Lintasarta", noTiketVendor: "LTS-3391",
+      waktuOpen: new Date("2026-06-03T17:45:00+07:00"),
+      waktuResponInternal: new Date("2026-06-03T17:50:00+07:00"),
+      waktuSelesai: null,
+      activities: [
+        {
+          waktu: new Date("2026-06-03T17:45:00+07:00"),
+          teks: "Menerima informasi ATM SIMPANG EMPAT offline dari monitoring NMS, dilakukan pengecekan awal terhadap status link dan perangkat router di lokasi.",
+          petugas: "Rian Putra", isTindakLanjut: false,
+        },
+        {
+          waktu: new Date("2026-06-03T18:07:00+07:00"),
+          teks: "Konfirmasi ke vendor Lintasarta melalui WAG, vendor menginformasikan sedang ada perbaikan jalur fiber optik akibat pekerjaan galian pihak ketiga.",
+          petugas: "Rian Putra", isTindakLanjut: false,
+        },
+        {
+          waktu: new Date("2026-06-03T18:30:00+07:00"),
+          teks: "Eskalasi ke NOC vendor.",
+          petugas: "Rian Putra", isTindakLanjut: false,
+        },
+        {
+          waktu: new Date("2026-06-03T19:00:00+07:00"),
+          teks: "", petugas: "Rian Putra", isTindakLanjut: true,
+        },
+        {
+          waktu: new Date("2026-06-03T20:15:00+07:00"),
+          teks: "Vendor menyampaikan estimasi penyelesaian perbaikan jalur fiber optik paling cepat pukul 23:00 WIB, monitoring tetap dilanjutkan secara berkala setiap 30 menit.",
+          petugas: "Dina Sari", isTindakLanjut: false,
+        },
+        {
+          waktu: new Date("2026-06-03T21:40:00+07:00"),
+          teks: "Cek ulang status perangkat, ATM masih offline dan belum ada perubahan dari sisi vendor.",
+          petugas: "Dina Sari", isTindakLanjut: false,
+        },
+        {
+          waktu: new Date("2026-06-03T22:05:00+07:00"),
+          teks: "", petugas: "Dina Sari", isTindakLanjut: true,
+        },
+      ],
+    }),
   ];
 
   const dari = "2026-06-01";

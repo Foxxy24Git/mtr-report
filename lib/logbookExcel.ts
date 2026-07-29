@@ -69,6 +69,31 @@ const COLUMNS: ColDef[] = [
 const LAST_COL = "T";
 const LAST_COL_IDX = COLUMNS.length; // 20
 
+/**
+ * Perkiraan kapasitas karakter per baris visual kolom N "Uraian Kegiatan"
+ * (width 44, font 9). Kapasitas sebenarnya ±50 karakter (44 satuan ≈ 308px,
+ * font 9pt ≈ 5px per karakter, dikurangi sisa ragged akibat wrap per kata).
+ * Dipakai 41 = sedikit konservatif supaya tinggi baris cenderung berlebih tipis
+ * ketimbang memotong teks (kalibrasi setara kolom uraian di generator lain).
+ */
+const N_CHARS_PER_LINE = 41;
+
+/** Batas tinggi baris Excel ≈ 409pt; sisakan margin kecil. */
+const MAX_ROW_HEIGHT = 400;
+
+/**
+ * Perkiraan jumlah baris visual satu teks setelah wrapText pada kolom selebar
+ * `charsPerLine` karakter. Newline eksplisit dihitung sebagai pemisah paragraf,
+ * tiap paragraf minimal 1 baris. Helper lokal agar modul logbook ini tetap
+ * berdiri sendiri.
+ */
+function estimateWrappedLines(text: string, charsPerLine: number): number {
+  if (!text) return 1;
+  return text
+    .split("\n")
+    .reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / charsPerLine)), 0);
+}
+
 export async function buildLogbookWorkbook(
   data: LogbookData,
   sheetName: string
@@ -186,9 +211,36 @@ export async function buildLogbookWorkbook(
         else cell.value = "-";
       }
     }
-    // Tinggi baris menyesuaikan jumlah entri kegiatan (uraian multiline).
-    const lineCount = Math.max(1, (row.uraianKegiatan.match(/\n/g)?.length ?? 0) + 1);
-    ws.getRow(r).height = Math.min(160, Math.max(28, lineCount * 14));
+    // Kolom M (Waktu Kegiatan) & N (Uraian Kegiatan) sama-sama '\n'-joined dari
+    // `acts.map(...)` yang sama di logbookRows.ts, jadi 1 baris logis = 1 entri
+    // di kedua kolom. Tapi Excel mem-wrap tiap kolom secara independen: begitu
+    // satu uraian panjang wrap jadi 2–3 baris visual di N, semua jam di M
+    // sesudahnya ikut "naik" alias tak sejajar lagi dengan kegiatannya.
+    // Penangkalnya: tiap entri menyumbang wrapCount baris ke kolom M — baris
+    // pertama berisi jam, sisanya baris kosong sebagai padding — sehingga jumlah
+    // baris M dan N per entri sama. `wrapCounts` juga jadi dasar tinggi baris,
+    // supaya keduanya tak pernah berbeda hitungan.
+    const waktuLines = row.waktuKegiatan.split("\n");
+    const uraianLines = row.uraianKegiatan.split("\n");
+    const wrapCounts = uraianLines.map((teks) =>
+      estimateWrappedLines(teks, N_CHARS_PER_LINE)
+    );
+
+    // Guard: padding hanya aman kalau kedua kolom benar-benar sejumlah entri
+    // yang sama. Kalau tidak, biarkan nilai mentah dari COLUMNS (tanpa padding).
+    if (waktuLines.length === uraianLines.length) {
+      ws.getCell(`M${r}`).value = waktuLines
+        .map((jam, i) => [jam, ...Array(wrapCounts[i] - 1).fill("")].join("\n"))
+        .join("\n");
+    }
+
+    // Tinggi baris memakai perkiraan TOTAL baris visual kolom N setelah wrap
+    // (satu uraian panjang bisa jadi 2–3 baris), bukan sekadar jumlah entri.
+    const lineCount = Math.max(
+      1,
+      wrapCounts.reduce((sum, n) => sum + n, 0)
+    );
+    ws.getRow(r).height = Math.min(MAX_ROW_HEIGHT, Math.max(28, lineCount * 14));
     r++;
   });
 
