@@ -148,6 +148,19 @@ export async function POST(req: Request) {
     );
   }
 
+  // --- Waktu kejadian (opsional) ---
+  // Kosong → tidak di-set sama sekali, jatuh ke default skema now().
+  let waktuOpen: Date | undefined;
+  if (typeof body?.waktuKejadian === "string" && body.waktuKejadian.trim()) {
+    waktuOpen = new Date(body.waktuKejadian);
+    if (Number.isNaN(waktuOpen.getTime())) {
+      return NextResponse.json(
+        { error: "Waktu kejadian tidak valid." },
+        { status: 400 }
+      );
+    }
+  }
+
   const noTiket = await generateUniqueNoTiket(prisma);
   const shiftKode = session.shift as ShiftKode;
 
@@ -169,6 +182,7 @@ export async function POST(req: Request) {
         // Shift asal = shift saat open; immutable, dipakai untuk laporan.
         openShiftKode: shiftKode,
         ownerUserId: session.sub,
+        ...(waktuOpen ? { waktuOpen } : {}),
       },
     });
 
@@ -178,6 +192,8 @@ export async function POST(req: Request) {
         userId: session.sub,
         shiftKode,
         teks: kegiatan,
+        // Samakan jam entri pertama dengan waktu kejadian yang dikoreksi.
+        ...(waktuOpen ? { waktu: waktuOpen } : {}),
       },
     });
 

@@ -16,6 +16,7 @@ import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { cn } from "@/lib/cn";
+import { wibInputToISO } from "@/lib/format";
 
 interface AtmHit {
   id: string;
@@ -55,6 +56,8 @@ export function OpenTiketForm({ opsi }: Props) {
   const [vendor, setVendor] = useState("");
   const [noTiketVendor, setNoTiketVendor] = useState("");
   const [kegiatan, setKegiatan] = useState("");
+  // Kosong = pakai waktu sekarang (default skema).
+  const [waktuKejadian, setWaktuKejadian] = useState("");
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -112,6 +115,7 @@ export function OpenTiketForm({ opsi }: Props) {
     setVendor("");
     setNoTiketVendor("");
     setKegiatan("");
+    setWaktuKejadian("");
     setError("");
   }
 
@@ -147,6 +151,9 @@ export function OpenTiketForm({ opsi }: Props) {
           vendor,
           noTiketVendor,
           kegiatan,
+          waktuKejadian: waktuKejadian
+            ? wibInputToISO(waktuKejadian)
+            : undefined,
         }),
       });
       const data = await res.json();
@@ -426,8 +433,15 @@ export function OpenTiketForm({ opsi }: Props) {
               placeholder="cth. Menerima laporan ATM offline, melakukan pengecekan koneksi…"
               className="w-full px-3 py-2 text-sm rounded-md border border-gray-300 bg-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors"
             />
+            <Input
+              label="Waktu Kejadian (opsional)"
+              type="datetime-local"
+              value={waktuKejadian}
+              onChange={(e) => setWaktuKejadian(e.target.value)}
+            />
             <p className="text-xs text-gray-500">
-              Timestamp dicatat otomatis saat tiket dibuka.
+              Kosongkan untuk pakai waktu saat ini. Isi kalau gangguan sudah
+              terjadi sebelum tiket ini dibuka (mis. telat input).
             </p>
           </div>
 
