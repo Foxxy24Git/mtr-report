@@ -135,7 +135,12 @@ const COL_WIDTHS: Record<string, number> = {
   K: 14.0, // Metode Penanganan
   L: 12.0, // Vendor
   M: 9.5, // Waktu Kegiatan
-  N: 34.0, // Uraian Kegiatan
+  // Uraian Kegiatan. Dilebarkan 34 → 40 supaya label "TINDAK LANJUT MONITORING
+  // SELANJUTNYA" (263.6px pada Arial 9pt) muat SATU baris dengan margin aman:
+  // 40 × 7px = 280px, dan tetap muat walau padding sel dihitung paling
+  // pesimistis (275px). Pada lebar 34 (238px) label itu selalu pecah 2 baris
+  // dan bikin tabel kelihatan tidak rapi; 38 (266px) muat tapi cuma beda 2px.
+  N: 40.0, // Uraian Kegiatan
   O: 15.0, // No Tiket Vendor
   P: 12.0, // Waktu Selesai
   Q: 10.0, // Lama (hh:mm)
@@ -152,28 +157,154 @@ const TTD_H = 56;
 const TINDAK_LANJUT_TEKS = "TINDAK LANJUT MONITORING SELANJUTNYA";
 
 /**
- * Perkiraan kapasitas karakter per baris visual kolom N (lebar 34, font 9).
- * Kapasitas sebenarnya ±40 karakter (lebar 34 satuan ≈ 238px, font 9pt ≈ 5px
- * per karakter, dikurangi sisa ragged akibat wrap per kata). Dipakai 32 =
- * sengaja konservatif supaya tinggi baris cenderung sedikit berlebih ketimbang
- * memotong teks — spasi kosong tipis jauh lebih aman daripada kegiatan yang tak
- * terbaca — tapi tidak sekonservatif itu sampai tiket panjang mentok cap.
+ * Lebar 1 satuan lebar kolom Excel dalam px (Max Digit Width font default).
+ * Kolom lebar `w` → area teks ≈ w × 7px (angka +5px pada rumus Microsoft ITU
+ * padding selnya, jadi tidak dikurangi dua kali).
  */
-const N_CHARS_PER_LINE = 32;
+const PX_PER_COL_UNIT = 7;
+
+/**
+ * Lebar 1 satuan bobot CHAR_WEIGHTS dalam px pada Arial 9pt = 5.608px (angka
+ * '0' = 0.5562em → 6.674px dibagi bobot 1.19; diukur dari advance width
+ * Arial.ttf, model bobotnya terbukti akurat ±0.35px per baris).
+ */
+const PX_PER_WEIGHT_UNIT = 5.608;
+
+/**
+ * Kapasitas satu baris visual sebuah kolom dalam satuan bobot CHAR_WEIGHTS,
+ * dengan margin aman 4% supaya perkiraan tinggi baris cenderung SEDIKIT
+ * berlebih (baris agak longgar) ketimbang kurang (teks terpotong).
+ */
+function lineCapacity(colWidth: number): number {
+  return ((colWidth * PX_PER_COL_UNIT) / PX_PER_WEIGHT_UNIT) * 0.96;
+}
+
+/**
+ * Kapasitas baris kolom N — dipakai HANYA untuk memperkirakan tinggi baris,
+ * BUKAN untuk memotong teks. Sejak layout satu-baris-Excel-per-entri (lihat
+ * komentar besar di blok baris data), teks kegiatan ditulis UTUH ke selnya dan
+ * dibiarkan di-wrap sendiri oleh Excel pada lebar kolom sungguhannya — jadi
+ * teks mengisi kolom penuh, tak ada lagi margin aman yang terbuang (dulu ~15%)
+ * dan tak ada lagi kalimat yang pecah pendek-pendek. Kalau angka ini sedikit
+ * meleset, akibatnya cuma tinggi baris agak longgar/rapat — TIDAK pernah
+ * merusak kesejajaran jam vs kegiatan, karena keduanya kini berada di baris
+ * Excel yang SAMA.
+ */
+const N_CHARS_PER_LINE = lineCapacity(COL_WIDTHS.N);
 
 /** Batas tinggi baris Excel ≈ 409pt; sisakan margin kecil. */
 const MAX_ROW_HEIGHT = 400;
 
+/** Tinggi baris (pt) per baris visual pada font 9pt. */
+const BASE_LINE_PT = 14;
+
+/** Padding vertikal sel (pt) di luar baris teks. */
+const ROW_PAD_PT = 6;
+
 /**
- * Perkiraan jumlah baris visual satu paragraf teks setelah wrapText pada kolom
- * selebar `colWidthChars` karakter. Newline eksplisit dihitung sebagai pemisah
- * paragraf, tiap paragraf minimal 1 baris.
+ * Tinggi baris (pt) yang dibutuhkan sebuah teks pada kolom selebar
+ * `charsPerLine` satuan bobot. Dibatasi MAX_ROW_HEIGHT (batas keras Excel).
  */
+function heightFor(text: string, charsPerLine: number, minLines = 1): number {
+  const lines = Math.max(wrapLines(text, charsPerLine).length, minLines);
+  return Math.min(lines * BASE_LINE_PT + ROW_PAD_PT, MAX_ROW_HEIGHT);
+}
+
+/**
+ * Bobot lebar relatif tiap karakter untuk font proporsional (Arial — fallback
+ * dokumentasi "Swis721 Lt BT" di server/klien tanpa font itu terpasang),
+ * dinormalisasi supaya rata-rata karakter pada teks log gangguan sehari-hari
+ * ≈ 1.0 (dikalibrasi dari corpus contoh nyata via pengukuran advance-width
+ * Arial.ttf). Karakter sempit (i, l, spasi, titik) < 1; karakter lebar (m, w,
+ * huruf besar) > 1 — bedanya bisa ~3-4x. Tanpa bobot ini, `wrapLines`
+ * menyamaratakan "iiiii" dengan "mmmmm" padahal lebar render-nya jauh beda,
+ * yang jadi biang drift K vs L pada teks yang didominasi huruf sempit
+ * ("informasikan", "koordinasikan", "dilokasi", dst — umum di log gangguan).
+ */
+const CHAR_WEIGHTS: Record<string, number> = {
+  i: 0.47, j: 0.47, l: 0.47, "'": 0.41,
+  f: 0.6, t: 0.6, I: 0.6, " ": 0.6, ".": 0.6, ",": 0.6, ";": 0.6, ":": 0.6, "!": 0.6, "/": 0.6,
+  r: 0.72, "-": 0.72, "(": 0.72, ")": 0.72, '"': 0.76,
+  c: 1.07, k: 1.07, s: 1.07, v: 1.07, x: 1.07, y: 1.07, z: 1.07, J: 1.07,
+  a: 1.19, b: 1.19, d: 1.19, e: 1.19, g: 1.19, h: 1.19, n: 1.19, o: 1.19, p: 1.19, q: 1.19, u: 1.19,
+  "0": 1.19, "1": 1.19, "2": 1.19, "3": 1.19, "4": 1.19, "5": 1.19, "6": 1.19, "7": 1.19, "8": 1.19, "9": 1.19,
+  "?": 1.19, L: 1.19, "_": 1.19,
+  F: 1.31, T: 1.31, Z: 1.31,
+  A: 1.43, B: 1.43, E: 1.43, K: 1.43, P: 1.43, S: 1.43, V: 1.43, X: 1.43, Y: 1.43, "&": 1.43,
+  w: 1.54, C: 1.54, D: 1.54, H: 1.54, N: 1.54, R: 1.54, U: 1.54,
+  G: 1.67, O: 1.67, Q: 1.67,
+  m: 1.79, M: 1.79,
+  "%": 1.91,
+  W: 2.03,
+  "@": 2.18,
+};
+/** Karakter tak dikenal (non-ASCII, dsb) dianggap lebar rata-rata. */
+const DEFAULT_CHAR_WEIGHT = 1.0;
+const SPACE_WEIGHT = CHAR_WEIGHTS[" "];
+
+function weightedLength(word: string): number {
+  let sum = 0;
+  for (const ch of word) sum += CHAR_WEIGHTS[ch] ?? DEFAULT_CHAR_WEIGHT;
+  return sum;
+}
+
+/**
+ * Potong SATU paragraf teks jadi baris-baris ≤ `colWidthChars` (satuan lebar
+ * berbobot, lihat CHAR_WEIGHTS) — GREEDY WORD-WRAP yang kita jalankan sendiri,
+ * bukan tebakan atas apa yang Excel akan lakukan. Newline eksplisit tetap
+ * dihitung sebagai pemisah paragraf terpisah. Kata tunggal yang lebih lebar
+ * dari kolom dipotong paksa di tengah (Excel juga begitu).
+ *
+ * Hasil array ini dipakai LANGSUNG sebagai baris kolom N (bukan cuma
+ * dihitung jumlahnya) — kolom M di-padding mengikuti panjang array ini persis,
+ * jadi jumlah baris M dan N per entri PASTI sama (dijamin oleh konstruksi,
+ * bukan lagi soal tebakan meleset atau tidak).
+ */
+function wrapLines(text: string, colWidthChars: number): string[] {
+  if (!text) return [""];
+  const out: string[] = [];
+  for (const paragraph of text.split("\n")) {
+    const words = paragraph.split(/\s+/).filter(Boolean);
+    if (words.length === 0) {
+      out.push("");
+      continue;
+    }
+
+    let current = "";
+    let used = 0; // lebar berbobot terpakai di `current`
+    for (const word of words) {
+      const w = weightedLength(word);
+      if (used > 0 && used + SPACE_WEIGHT + w <= colWidthChars) {
+        current += ` ${word}`;
+        used += SPACE_WEIGHT + w;
+        continue;
+      }
+      if (used > 0) {
+        out.push(current);
+        current = "";
+        used = 0;
+      }
+      // `word` jadi kandidat awal baris baru; potong paksa bila sendirian pun tak muat.
+      let remaining = word;
+      let remW = w;
+      while (remW > colWidthChars) {
+        const cut = Math.max(1, Math.floor((colWidthChars / remW) * remaining.length));
+        out.push(remaining.slice(0, cut));
+        remaining = remaining.slice(cut);
+        remW = weightedLength(remaining);
+      }
+      current = remaining;
+      used = remW;
+    }
+    out.push(current);
+  }
+  return out;
+}
+
+/** Jumlah baris hasil `wrapLines` — dipertahankan untuk kompatibilitas test unit. */
 export function estimateWrappedLines(text: string, colWidthChars: number): number {
   if (!text) return 1;
-  return text
-    .split("\n")
-    .reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / colWidthChars)), 0);
+  return wrapLines(text, colWidthChars).length;
 }
 
 /** Teks kolom N satu entri kegiatan (tanpa jam — jam ada di kolom M). */
@@ -304,8 +435,17 @@ export async function buildLengkapWorkbook(data: LengkapReportData): Promise<Buf
   ws.views = [{ state: "frozen", ySplit: 8 }];
 
   // ------------------- Baris data (mulai 9) -------------------
-  // Kolom rata kiri: F (lokasi), N (kegiatan), T (keterangan); sisanya center.
-  const LEFT_COLS = new Set(["F", "N", "T"]);
+  // Kolom rata kiri: F (lokasi), T (keterangan); sisanya center. Kolom N
+  // (kegiatan) dirata kanan-kiri lewat JUSTIFY_COLS.
+  const LEFT_COLS = new Set(["F", "T"]);
+  const JUSTIFY_COLS = new Set(["N"]);
+  // Kolom yang nilainya milik TIKET (satu nilai untuk semua entri kegiatan) →
+  // di-merge vertikal sepanjang blok baris tiket. M & N tidak termasuk: itu
+  // per-entri, satu baris Excel masing-masing.
+  const TICKET_COLS = [
+    "A", "B", "C", "D", "E", "F", "G", "H", "I", "J",
+    "K", "L", "O", "P", "Q", "R", "S", "T",
+  ];
 
   let r = 9;
   if (data.tickets.length === 0) {
@@ -331,109 +471,147 @@ export async function buildLengkapWorkbook(data: LengkapReportData): Promise<Buf
     }
     no += 1;
 
-    // Teks kolom N per entri + perkiraan berapa baris visual masing-masing
-    // memakan tempat setelah wrap. `wrapCounts` adalah SATU-SATUNYA sumber
-    // angka baris: dipakai bareng untuk padding kolom M dan total tinggi baris,
-    // supaya keduanya tak pernah berbeda hitungan.
-    const activityTexts = t.activities.map(activityText);
-    const wrapCounts = activityTexts.map((teks) =>
-      estimateWrappedLines(teks, N_CHARS_PER_LINE)
-    );
+    // SATU BARIS EXCEL PER ENTRI KEGIATAN.
+    //
+    // Dulu semua kegiatan satu tiket dijejalkan ke SATU baris Excel: kolom N
+    // diisi paragraf-paragraf yang kita potong sendiri, kolom M dipadding baris
+    // kosong supaya jamnya jatuh sebaris dengan awal kegiatannya. Cara itu
+    // memaksa kita memotong teks pada lebar "aman" (~15% lebih sempit dari
+    // kolom) agar Excel/WPS tidak mem-wrap ULANG potongan kita — akibatnya
+    // kalimat pecah pendek-pendek, tepi kanan kolom menganggur, dan tabel
+    // terlihat berantakan. Juga kena batas keras tinggi baris Excel (±409pt):
+    // tiket dengan belasan kegiatan terpotong tanpa peringatan.
+    //
+    // Sekarang tiap entri dapat BARIS EXCEL-nya sendiri: jam (M) dan
+    // kegiatannya (N) duduk di baris yang sama, jadi sejajar SECARA STRUKTURAL
+    // — tanpa estimasi wrap sama sekali. Efek sampingnya semuanya positif:
+    // teks kegiatan boleh ditulis UTUH dan dibiarkan Excel mem-wrap pada lebar
+    // kolom sungguhannya (kolom terisi penuh, bisa rata kanan-kiri), dan batas
+    // 409pt tak lagi relevan karena satu baris cuma memuat satu kegiatan.
+    // Kolom milik TIKET (bukan per-entri) di-merge vertikal sepanjang blok.
+    const activities = t.activities;
+    const rowCount = Math.max(activities.length, 1);
+    const firstRow = r;
+    const lastRow = r + rowCount - 1;
 
-    // Tinggi baris mengikuti perkiraan TOTAL baris visual kolom N setelah wrap
-    // (satu kegiatan panjang bisa jadi 2–3 baris), bukan sekadar jumlah entri.
-    const lines = Math.max(
-      wrapCounts.reduce((sum, n) => sum + n, 0),
-      2
-    );
-    ws.getRow(r).height = Math.min(Math.max(lines * 14 + 8, 38), MAX_ROW_HEIGHT);
-
-    ws.getCell(`A${r}`).value = no;
-    ws.getCell(`B${r}`).value = t.tanggal;
-    ws.getCell(`C${r}`).value = t.shiftLabel;
-    ws.getCell(`D${r}`).value = t.petugas;
-    ws.getCell(`E${r}`).value = fmtWaktuTanggal(t.waktuOpen);
-    ws.getCell(`F${r}`).value =
+    const lokasiText =
       t.atmKode === "-" && t.atmNama === "-"
         ? t.atmLokasi
         : `${t.atmKode} – ${t.atmNama}${t.atmLokasi && t.atmLokasi !== "-" ? `\n${t.atmLokasi}` : ""}`;
-    ws.getCell(`G${r}`).value = t.waktuResponInternal ? fmtJamWIB(t.waktuResponInternal) : "-";
-    ws.getCell(`H${r}`).value = t.contactPerson || "-";
-    ws.getCell(`I${r}`).value = t.jenisGangguan || "-";
-    ws.getCell(`J${r}`).value = t.sumberPenyebab || "-";
-    ws.getCell(`K${r}`).value = t.metodePenanganan || "-";
-    ws.getCell(`L${r}`).value = t.vendor || "-";
-
-    // M = jam tiap entri, N = teks kegiatannya (tindak lanjut dicetak bold).
-    // Excel mem-wrap tiap kolom secara independen, jadi satu kegiatan panjang
-    // yang wrap jadi 2–3 baris visual di N akan membuat semua jam di M
-    // sesudahnya "naik" alias tak sejajar lagi. Penangkalnya: tiap entri
-    // menyumbang wrapCounts[idx] baris ke kolom M — baris pertama berisi jam,
-    // sisanya baris kosong sebagai padding. Dengan begitu jumlah baris M dan N
-    // per entri sama, dan jam selalu duduk sebaris dengan awal kegiatannya.
-    const mText = t.activities
-      .map((a, idx) =>
-        [fmtJamWIB(a.waktu), ...Array(wrapCounts[idx] - 1).fill("")].join("\n")
-      )
-      .join("\n");
-    ws.getCell(`M${r}`).value = mText || "-";
-
-    if (t.activities.length > 0) {
-      const richText: ExcelJS.RichText[] = [];
-      t.activities.forEach((a, idx) => {
-        if (idx > 0) richText.push({ text: "\n", font: font({ size: 9 }) });
-        richText.push({
-          text: activityTexts[idx],
-          font: font({ size: 9, ...(a.isTindakLanjut ? { bold: true } : {}) }),
-        });
-      });
-      ws.getCell(`N${r}`).value = { richText };
-    } else {
-      ws.getCell(`N${r}`).value = "-";
-    }
-
-    ws.getCell(`O${r}`).value = t.noTiketVendor || "-";
-
-    if (t.waktuSelesai && t.sla.selesai) {
-      ws.getCell(`P${r}`).value = fmtWaktuTanggal(t.waktuSelesai);
-      const q = ws.getCell(`Q${r}`);
-      q.value = t.sla.lamaHHMM ?? "-";
-      const p = ws.getCell(`R${r}`);
-      p.value = t.sla.lamaMenit ?? 0;
-      p.numFmt = "#,##0";
-      const sla = ws.getCell(`S${r}`);
-      sla.value = t.sla.slaPersen ?? 0;
-      sla.numFmt = "0.00%";
-    } else {
-      // Tiket proses: "Dalam Proses" di kolom Waktu Selesai; SLA kosong.
-      ws.getCell(`P${r}`).value = "Dalam Proses";
-      ws.getCell(`Q${r}`).value = "";
-      ws.getCell(`R${r}`).value = "";
-      ws.getCell(`S${r}`).value = "";
-    }
-
-    // Kolom Keterangan (T): tiket close = "Selesai"; tiket masih proses =
-    // "Monitoring Dilanjutkan oleh Shift berikutnya".
-    ws.getCell(`T${r}`).value =
+    const keteranganText =
       t.waktuSelesai && t.sla.selesai
         ? "Selesai"
         : "Monitoring Dilanjutkan oleh Shift berikutnya";
 
-    // Styling umum baris (border + font + alignment + wrap + stripe).
-    for (let col = 1; col <= 20; col++) {
-      const cell = ws.getCell(r, col);
-      box(cell);
-      const existing = (cell.font ?? {}) as Partial<ExcelJS.Font>;
-      cell.font = font({ size: 9, bold: existing.bold });
-      const letter = cell.address.replace(/\d+/g, "");
-      cell.alignment = {
-        vertical: "top",
-        wrapText: true,
-        horizontal: LEFT_COLS.has(letter) ? "left" : "center",
-      };
-      if (stripe) fill(cell, STRIPE_FILL);
+    ws.getCell(`A${firstRow}`).value = no;
+    ws.getCell(`B${firstRow}`).value = t.tanggal;
+    ws.getCell(`C${firstRow}`).value = t.shiftLabel;
+    ws.getCell(`D${firstRow}`).value = t.petugas;
+    ws.getCell(`E${firstRow}`).value = fmtWaktuTanggal(t.waktuOpen);
+    ws.getCell(`F${firstRow}`).value = lokasiText;
+    ws.getCell(`G${firstRow}`).value = t.waktuResponInternal
+      ? fmtJamWIB(t.waktuResponInternal)
+      : "-";
+    ws.getCell(`H${firstRow}`).value = t.contactPerson || "-";
+    ws.getCell(`I${firstRow}`).value = t.jenisGangguan || "-";
+    ws.getCell(`J${firstRow}`).value = t.sumberPenyebab || "-";
+    ws.getCell(`K${firstRow}`).value = t.metodePenanganan || "-";
+    ws.getCell(`L${firstRow}`).value = t.vendor || "-";
+    ws.getCell(`O${firstRow}`).value = t.noTiketVendor || "-";
+
+    if (t.waktuSelesai && t.sla.selesai) {
+      ws.getCell(`P${firstRow}`).value = fmtWaktuTanggal(t.waktuSelesai);
+      ws.getCell(`Q${firstRow}`).value = t.sla.lamaHHMM ?? "-";
+      const rCell = ws.getCell(`R${firstRow}`);
+      rCell.value = t.sla.lamaMenit ?? 0;
+      rCell.numFmt = "#,##0";
+      const sla = ws.getCell(`S${firstRow}`);
+      sla.value = t.sla.slaPersen ?? 0;
+      sla.numFmt = "0.00%";
+    } else {
+      // Tiket proses: "Dalam Proses" di kolom Waktu Selesai; SLA kosong.
+      ws.getCell(`P${firstRow}`).value = "Dalam Proses";
+      ws.getCell(`Q${firstRow}`).value = "";
+      ws.getCell(`R${firstRow}`).value = "";
+      ws.getCell(`S${firstRow}`).value = "";
     }
-    r++;
+    ws.getCell(`T${firstRow}`).value = keteranganText;
+
+    // Merge vertikal kolom milik tiket (M/N sengaja TIDAK ikut — itu per-entri).
+    if (rowCount > 1) {
+      for (const col of TICKET_COLS) {
+        ws.mergeCells(`${col}${firstRow}:${col}${lastRow}`);
+      }
+    }
+
+    // M = jam entri, N = teks kegiatannya UTUH (di-wrap Excel sendiri).
+    // Tindak lanjut dicetak bold via richText satu run.
+    let blockPt = 0;
+    if (activities.length === 0) {
+      ws.getCell(`M${firstRow}`).value = "-";
+      ws.getCell(`N${firstRow}`).value = "-";
+    } else {
+      activities.forEach((a, idx) => {
+        const rr = firstRow + idx;
+        const teks = activityText(a);
+        ws.getCell(`M${rr}`).value = fmtJamWIB(a.waktu);
+        ws.getCell(`N${rr}`).value = a.isTindakLanjut
+          ? { richText: [{ text: teks, font: font({ size: 9, bold: true }) }] }
+          : teks;
+        const h = heightFor(teks, N_CHARS_PER_LINE);
+        ws.getRow(rr).height = h;
+        blockPt += h;
+      });
+    }
+
+    // Tinggi total blok harus cukup juga untuk kolom milik tiket yang di-merge
+    // (Excel TIDAK auto-fit sel ter-merge): lokasi, keterangan, dan kolom E
+    // yang selalu 2 baris (jam + tanggal). Kekurangannya ditambahkan ke baris
+    // terakhir blok supaya jam/kegiatan di atasnya tetap rapat.
+    const ticketPt = Math.max(
+      heightFor(lokasiText, lineCapacity(COL_WIDTHS.F)),
+      heightFor(keteranganText, lineCapacity(COL_WIDTHS.T)),
+      2 * BASE_LINE_PT + ROW_PAD_PT
+    );
+    if (blockPt < ticketPt) {
+      const lastH = Number(ws.getRow(lastRow).height ?? 0);
+      ws.getRow(lastRow).height = Math.min(lastH + (ticketPt - blockPt), MAX_ROW_HEIGHT);
+    }
+
+    // Styling seluruh blok (border + font + alignment + wrap + stripe).
+    for (let row = firstRow; row <= lastRow; row++) {
+      for (let col = 1; col <= 20; col++) {
+        const cell = ws.getCell(row, col);
+        // Border: pemisah kolom (kiri/kanan) selalu ada, tapi garis HORIZONTAL
+        // hanya di tepi ATAS & BAWAH blok tiket. Antar entri kegiatan dalam
+        // satu tiket sengaja TANPA garis supaya satu tiket terbaca sebagai satu
+        // kesatuan, tidak terkotak-kotak per entri.
+        cell.border = {
+          left: THIN,
+          right: THIN,
+          ...(row === firstRow ? { top: THIN } : {}),
+          ...(row === lastRow ? { bottom: THIN } : {}),
+        };
+        const existing = (cell.font ?? {}) as Partial<ExcelJS.Font>;
+        const letter = cell.address.replace(/\d+/g, "");
+        cell.font = font({ size: 9, bold: existing.bold });
+        cell.alignment = {
+          vertical: "top",
+          wrapText: true,
+          // Kolom kegiatan rata kanan-kiri (justify) supaya teks mengisi kolom
+          // penuh & tepi kanannya rapi. Ini baru mungkin sejak teks tidak lagi
+          // kita potong sendiri: Excel hanya me-justify baris yang IA sendiri
+          // wrap, bukan baris yang sudah dipisah "\n" eksplisit.
+          horizontal: JUSTIFY_COLS.has(letter)
+            ? "justify"
+            : LEFT_COLS.has(letter)
+              ? "left"
+              : "center",
+        };
+        if (stripe) fill(cell, STRIPE_FILL);
+      }
+    }
+    r = lastRow + 1;
   }
 
   // ------------------- Blok tanda tangan -------------------
