@@ -12,6 +12,7 @@ import {
   Crown,
   Users,
   Database,
+  ListTree,
   type LucideIcon,
 } from "lucide-react";
 import type { Role } from "@/lib/roles";
@@ -81,6 +82,13 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/data-atm",
     icon: Server,
     description: "Master data ATM & jaringan",
+    roles: ["superadmin", "user"],
+  },
+  {
+    label: "Data Gangguan",
+    href: "/data-gangguan",
+    icon: ListTree,
+    description: "Master pilihan jenis, penyebab & metode penanganan gangguan",
     roles: ["superadmin", "user"],
   },
   {

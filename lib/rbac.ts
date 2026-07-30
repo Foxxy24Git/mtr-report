@@ -7,6 +7,8 @@ const RESTRICTED: { prefix: string; roles: Role[] }[] = [
   { prefix: "/daily-monitoring", roles: ["user"] },
   { prefix: "/open-tiket", roles: ["user"] },
   { prefix: "/data-atm", roles: ["superadmin", "user"] },
+  // Master data dropdown Open Tiket — Super Admin & Monitoring (bukan Supervisi).
+  { prefix: "/data-gangguan", roles: ["superadmin", "user"] },
   { prefix: "/suhu-server", roles: ["user"] },
   { prefix: "/supervisi", roles: ["supervisi"] },
   // Menu Leader: kelola pimpinan — hanya Super Admin (PRD §4.G).

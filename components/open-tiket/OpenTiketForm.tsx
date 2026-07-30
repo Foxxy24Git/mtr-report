@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Search,
@@ -38,6 +39,8 @@ type Kategori = "atm" | "jaringan";
 type CpTipe = "pic" | "wag";
 
 export function OpenTiketForm({ opsi }: Props) {
+  const router = useRouter();
+
   // ATM autocomplete
   const [atmQuery, setAtmQuery] = useState("");
   const [atmHits, setAtmHits] = useState<AtmHit[]>([]);
@@ -163,6 +166,8 @@ export function OpenTiketForm({ opsi }: Props) {
       }
       setCreated(data.item.noTiket);
       resetForm();
+      router.push("/daily-monitoring");
+      router.refresh();
     } catch {
       setError("Terjadi kesalahan jaringan.");
     } finally {
