@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
-import { Select } from "@/components/ui/Select";
+import { Combobox } from "@/components/ui/Combobox";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { cn } from "@/lib/cn";
@@ -366,45 +366,30 @@ export function OpenTiketForm({ opsi }: Props) {
 
           {/* 4-6. Dropdown master */}
           <div className="grid grid-cols-1 gap-4">
-            <Select
+            <Combobox
               label="Jenis Gangguan"
               required
               value={jenisGangguan}
-              onChange={(e) => setJenisGangguan(e.target.value)}
-            >
-              <option value="">— Pilih jenis gangguan —</option>
-              {opsi.jenis_gangguan.map((v) => (
-                <option key={v} value={v}>
-                  {v}
-                </option>
-              ))}
-            </Select>
-            <Select
+              onChange={setJenisGangguan}
+              options={opsi.jenis_gangguan}
+              placeholder="— Pilih jenis gangguan —"
+            />
+            <Combobox
               label="Sumber Penyebab Gangguan"
               required
               value={sumberPenyebab}
-              onChange={(e) => setSumberPenyebab(e.target.value)}
-            >
-              <option value="">— Pilih sumber penyebab —</option>
-              {opsi.sumber_penyebab.map((v) => (
-                <option key={v} value={v}>
-                  {v}
-                </option>
-              ))}
-            </Select>
-            <Select
+              onChange={setSumberPenyebab}
+              options={opsi.sumber_penyebab}
+              placeholder="— Pilih sumber penyebab —"
+            />
+            <Combobox
               label="Metode Penanganan Gangguan"
               required
               value={metodePenanganan}
-              onChange={(e) => setMetodePenanganan(e.target.value)}
-            >
-              <option value="">— Pilih metode penanganan —</option>
-              {opsi.jenis_penanganan.map((v) => (
-                <option key={v} value={v}>
-                  {v}
-                </option>
-              ))}
-            </Select>
+              onChange={setMetodePenanganan}
+              options={opsi.jenis_penanganan}
+              placeholder="— Pilih metode penanganan —"
+            />
           </div>
 
           {/* 7-8. Vendor opsional */}
