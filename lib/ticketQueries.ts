@@ -415,6 +415,8 @@ export interface TicketDetail {
   pimpinanDivisiId: string | null;
   pimpinanInfraNama: string | null;
   pimpinanDivisiNama: string | null;
+  /** Id master ATM — dipakai form override Super Admin (ganti lokasi). */
+  atmId: string | null;
   atm: {
     kodeAtm: string;
     namaAtm: string;
@@ -475,6 +477,7 @@ export async function getTicketDetail(id: string): Promise<TicketDetail | null> 
     pimpinanDivisiId: t.pimpinanDivisiId,
     pimpinanInfraNama: t.pimpinanInfra?.nama ?? null,
     pimpinanDivisiNama: t.pimpinanDivisi?.nama ?? null,
+    atmId: t.atmId,
     atm: t.atm
       ? {
           kodeAtm: t.atm.kodeAtm,

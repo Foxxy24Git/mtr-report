@@ -312,6 +312,144 @@ function activityText(a: LengkapTicket["activities"][number]): string {
   return a.isTindakLanjut ? TINDAK_LANJUT_TEKS : a.teks;
 }
 
+// ----------------------------- Paginasi cetak -----------------------------
+//
+// Dua masalah saat file ini DICETAK (bukan dibaca di layar):
+//
+// 1. Header tabel biru (baris 7–8) cuma ikut di halaman pertama → halaman 2 dst
+//    isinya kolom tanpa judul. Diatasi dengan pageSetup.printTitlesRow "7:8".
+// 2. Satu tiket = beberapa baris Excel dengan kolom A–L & O–T di-merge vertikal
+//    sepanjang blok. Page break OTOMATIS Excel tidak tahu soal merge itu dan
+//    bisa jatuh di TENGAH blok, jadi sisa baris kegiatan nyangkut di halaman
+//    berikutnya tanpa No/Tanggal/Lokasi (sel merge-nya tertinggal di halaman
+//    sebelumnya). Diatasi dengan page break MANUAL sebelum tiket yang tidak
+//    muat utuh, dihitung dari geometri kertas di bawah.
+
+/** A4 (paperSize 9) dalam inci — sisi pendek & sisi panjang. */
+const A4_SHORT_IN = 8.27;
+const A4_LONG_IN = 11.69;
+
+const PT_PER_INCH = 72;
+const PX_PER_INCH = 96;
+
+/**
+ * Margin cetak sheet REKAP. Dipakai DUA kali: sebagai pageSetup.margins dan
+ * sebagai bahan hitungan tinggi halaman — jadi satu sumber kebenaran, tidak
+ * bisa lagi ada margin yang diubah tapi hitungan page break-nya ketinggalan.
+ */
+const PAGE_MARGINS = {
+  left: 0.3,
+  right: 0.3,
+  top: 0.4,
+  bottom: 0.4,
+  header: 0.2,
+  footer: 0.2,
+};
+
+/** Baris header tabel biru yang diulang tiap halaman (printTitlesRow "7:8"). */
+const TITLE_ROW_FIRST = 7;
+const TITLE_ROW_LAST = 8;
+
+/** Tinggi baris default sheet (properties.defaultRowHeight) untuk baris tanpa height eksplisit. */
+const DEFAULT_ROW_PT = 15;
+
+/**
+ * Margin aman 3% pada tinggi halaman. Skala fitToWidth dihitung dari model
+ * piksel kolom Excel (w × 7 + 5) yang bisa meleset beberapa piksel, dan Excel
+ * membulatkan skalanya ke persen bulat. Kalau perkiraan kita KEBESARAN, page
+ * break manual jatuh terlambat dan Excel menyisipkan break otomatis di tengah
+ * blok — persis masalah yang mau dihindari. Kalau KEKECILAN, halaman cuma agak
+ * lowong. Jadi sengaja dicondongkan ke sisi yang aman.
+ */
+const PAGE_FILL_SAFETY = 0.97;
+
+/** Lebar kolom Excel (satuan karakter) → piksel: w × 7 + 5 padding sel. */
+function colWidthPx(width: number): number {
+  return width * PX_PER_COL_UNIT + 5;
+}
+
+/** Total lebar kolom A–T dalam pt (yang harus muat 1 halaman karena fitToWidth: 1). */
+function contentWidthPt(): number {
+  let px = 0;
+  for (const w of Object.values(COL_WIDTHS)) px += colWidthPx(w);
+  return (px * PT_PER_INCH) / PX_PER_INCH;
+}
+
+/**
+ * Tinggi satu halaman cetak DALAM SATUAN TINGGI BARIS WORKSHEET (pt).
+ *
+ * fitToWidth: 1 membuat Excel menyusutkan seluruh sheet dengan skala
+ * `lebar cetak / lebar konten` — dan skala itu berlaku VERTIKAL juga. Jadi
+ * tinggi kertas yang tersedia harus DIBAGI skala untuk tahu berapa pt tinggi
+ * baris worksheet yang muat dalam satu halaman. Contoh pada layout sekarang:
+ * lebar konten ≈ 1529pt, lebar cetak ≈ 798pt → skala ≈ 0.52, tinggi cetak
+ * ≈ 538pt → ≈ 1030pt tinggi baris worksheet per halaman.
+ *
+ * Margin header/footer (0.2) lebih kecil dari margin atas/bawah (0.4) dan
+ * sheet ini tidak memakai header/footer, jadi tidak memakan tinggi tambahan.
+ */
+function usablePageHeightPt(): number {
+  const printableWidthPt =
+    (A4_LONG_IN - PAGE_MARGINS.left - PAGE_MARGINS.right) * PT_PER_INCH;
+  const printableHeightPt =
+    (A4_SHORT_IN - PAGE_MARGINS.top - PAGE_MARGINS.bottom) * PT_PER_INCH;
+  const scale = Math.min(1, printableWidthPt / contentWidthPt());
+  return (printableHeightPt / scale) * PAGE_FILL_SAFETY;
+}
+
+/** Jumlah tinggi baris `from`..`to` (pt); baris tanpa height eksplisit = default sheet. */
+function rowsHeightPt(ws: ExcelJS.Worksheet, from: number, to: number): number {
+  let sum = 0;
+  for (let row = from; row <= to; row++) {
+    sum += Number(ws.getRow(row).height ?? DEFAULT_ROW_PT);
+  }
+  return sum;
+}
+
+/** Rentang baris satu tiket (blok yang tidak boleh terbelah antar halaman). */
+interface TicketBlock {
+  firstRow: number;
+  lastRow: number;
+}
+
+/**
+ * Sisipkan page break manual supaya tidak ada blok tiket yang terbelah.
+ *
+ * Simulasikan pengisian halaman: kalau blok tiket berikutnya tidak muat pada
+ * sisa halaman, dorong SELURUH blok ke halaman berikutnya (halaman sebelumnya
+ * boleh lowong — itu jauh lebih baik daripada baris kegiatan yatim tanpa
+ * No/Tanggal/Lokasi). Halaman pertama memuat baris 1–8 (kop + header tabel);
+ * halaman berikutnya cuma kena baris 7–8 yang diulang printTitlesRow.
+ *
+ * Catatan: Row.addPageBreak() menyisipkan break DI BAWAH baris itu (lihat
+ * README ExcelJS), jadi break dipasang di `firstRow - 1`. Blok pertama tidak
+ * pernah dikasih break (guard `used > 0`) supaya data tidak malah terlempar
+ * ke halaman 2. Tiket yang blok-nya sendirian saja lebih tinggi dari satu
+ * halaman tetap akan dipecah otomatis oleh Excel — tidak ada cara menghindari
+ * itu; setidaknya ia mulai dari batas halaman.
+ */
+function applyTicketPageBreaks(ws: ExcelJS.Worksheet, blocks: TicketBlock[]) {
+  if (blocks.length === 0) return;
+
+  const pageHeightPt = usablePageHeightPt();
+  const titlesPt = rowsHeightPt(ws, TITLE_ROW_FIRST, TITLE_ROW_LAST);
+  const firstPageHeaderPt = rowsHeightPt(ws, 1, TITLE_ROW_LAST);
+
+  let capacity = pageHeightPt - firstPageHeaderPt;
+  let used = 0;
+
+  for (const b of blocks) {
+    const blockPt = rowsHeightPt(ws, b.firstRow, b.lastRow);
+    if (used > 0 && used + blockPt > capacity) {
+      ws.getRow(b.firstRow - 1).addPageBreak();
+      capacity = pageHeightPt - titlesPt;
+      used = blockPt;
+    } else {
+      used += blockPt;
+    }
+  }
+}
+
 export async function buildLengkapWorkbook(data: LengkapReportData): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   wb.creator = "mtr-Report";
@@ -324,12 +462,18 @@ export async function buildLengkapWorkbook(data: LengkapReportData): Promise<Buf
   const ws = wb.addWorksheet("REKAP LAPORAN", {
     pageSetup: {
       orientation: "landscape",
+      // A4 di-set EKSPLISIT (default ExcelJS = Letter/printer default): tinggi
+      // halaman ikut jadi bahan hitungan page break di applyTicketPageBreaks,
+      // jadi ukuran kertasnya tidak boleh bergantung printer pembuka file.
+      paperSize: 9,
       fitToPage: true,
       fitToWidth: 1,
       fitToHeight: 0,
-      margins: { left: 0.3, right: 0.3, top: 0.4, bottom: 0.4, header: 0.2, footer: 0.2 },
+      // Header tabel biru (baris 7–8) diulang di SETIAP halaman cetak.
+      printTitlesRow: `${TITLE_ROW_FIRST}:${TITLE_ROW_LAST}`,
+      margins: { ...PAGE_MARGINS },
     },
-    properties: { defaultRowHeight: 15 },
+    properties: { defaultRowHeight: DEFAULT_ROW_PT },
   });
 
   for (const [col, width] of Object.entries(COL_WIDTHS)) {
@@ -462,6 +606,10 @@ export async function buildLengkapWorkbook(data: LengkapReportData): Promise<Buf
   let prevGroup = "";
   let stripe = false;
   let no = 0;
+
+  // Rentang baris tiap tiket, dipakai applyTicketPageBreaks SETELAH loop (tinggi
+  // baris baru final setelah penyesuaian tinggi blok di bawah).
+  const ticketBlocks: TicketBlock[] = [];
 
   for (const t of data.tickets) {
     const group = `${t.tanggal}|${t.shiftKode}`;
@@ -611,8 +759,12 @@ export async function buildLengkapWorkbook(data: LengkapReportData): Promise<Buf
         if (stripe) fill(cell, STRIPE_FILL);
       }
     }
+    ticketBlocks.push({ firstRow, lastRow });
     r = lastRow + 1;
   }
+
+  // Page break manual: cegah blok tiket terbelah antar halaman cetak.
+  applyTicketPageBreaks(ws, ticketBlocks);
 
   // ------------------- Blok tanda tangan -------------------
   // Sumber: pilihan modal (Fase 1), BUKAN shift_reports. Tiga blok:
@@ -772,6 +924,11 @@ function addSummarySheet(
   const ws = wb.addWorksheet("RINGKASAN", {
     pageSetup: {
       orientation: "portrait",
+      // A4 eksplisit, samakan dengan sheet REKAP. printTitlesRow TIDAK dipakai
+      // di sini: sheet ini bukan tabel panjang berheader (empat kartu statistik,
+      // masing-masing punya header sendiri) dan praktis selalu muat 1 halaman —
+      // mengulang baris judul/periode di halaman berikutnya justru mubazir.
+      paperSize: 9,
       fitToPage: true,
       fitToWidth: 1,
       fitToHeight: 0,

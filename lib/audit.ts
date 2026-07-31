@@ -5,8 +5,18 @@ import { prisma } from "@/lib/prisma";
  * Jejak audit Database Studio. Setiap edit/hapus baris dicatat ke tabel
  * audit_logs (lihat model AuditLog). before/after dinormalisasi ke JSON murni
  * (Date → string ISO) agar valid sebagai kolom Json Prisma.
+ *
+ * Dipakai juga oleh aksi override Super Admin pada tiket:
+ * - "reopen"            → tiket selesai dibuka kembali (status → proses).
+ * - "superadmin_update" → edit field yang hanya boleh diubah Super Admin
+ *   (kategori, ATM/lokasi, contact person, waktu kejadian).
+ * Kolom `action` di DB bertipe String, jadi nilai baru tidak butuh migrasi.
  */
-export type AuditAction = "update" | "delete";
+export type AuditAction =
+  | "update"
+  | "delete"
+  | "reopen"
+  | "superadmin_update";
 
 export interface AuditEntry {
   userId: string;

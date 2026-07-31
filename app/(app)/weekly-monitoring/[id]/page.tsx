@@ -34,7 +34,14 @@ export default async function WeeklyTicketDetailPage({ params }: Params) {
       role={session.role}
       currentUserId={session.sub}
       currentSessionShift={session.shift}
-      readOnly
+      /**
+       * Weekly Monitoring pada dasarnya menu tinjauan (read-only). Super Admin
+       * dikecualikan agar punya satu tempat untuk override human error:
+       * reopen tiket yang salah di-close, koreksi detail, dan hapus tiket.
+       * Role lain (user & supervisi) tetap read-only penuh di menu ini —
+       * mereka mengelola tiket lewat Daily Monitoring.
+       */
+      readOnly={session.role !== "superadmin"}
       backHref="/weekly-monitoring"
       backLabel="Kembali ke Weekly Monitoring"
     />

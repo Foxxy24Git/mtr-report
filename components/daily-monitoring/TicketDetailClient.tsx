@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
@@ -15,6 +15,10 @@ import {
   Send,
   Gauge,
   AlertTriangle,
+  RotateCcw,
+  Search,
+  Loader2,
+  ShieldAlert,
 } from "lucide-react";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -45,8 +49,17 @@ interface Props {
   /**
    * Mode read-only (mis. Weekly Monitoring): sembunyikan semua aksi
    * edit/hapus/close/approve/tambah & edit kegiatan. Murni lihat riwayat.
+   * Weekly Monitoring mengirim false khusus Super Admin agar bisa override.
    */
   readOnly?: boolean;
+}
+
+/** Hasil pencarian master ATM (endpoint /api/atm). */
+interface AtmHit {
+  id: string;
+  kodeAtm: string;
+  namaAtm: string;
+  vendorAtm: string | null;
 }
 
 /** Tambahkan `value` ke daftar opsi bila belum ada (agar nilai lama tetap muncul). */
@@ -83,6 +96,14 @@ export function TicketDetailClient({
       ticket.ownerId === currentUserId ||
       isShiftAktifPemegang);
   const isSelesai = ticket.status === "selesai";
+  /**
+   * Override Super Admin (koreksi human error): buka kembali tiket yang salah
+   * di-close serta edit field yang terkunci bagi petugas (kategori,
+   * ATM/lokasi, contact person, waktu kejadian). Backend tetap memvalidasi
+   * role — UI ini hanya menyembunyikan kontrolnya.
+   */
+  const isSuperadmin = role === "superadmin";
+  const canOverride = canMutate && isSuperadmin;
 
   /**
    * Hanya petugas shift aktif (atau Super Admin) yang boleh menambah kegiatan.
@@ -182,14 +203,52 @@ export function TicketDetailClient({
     vendor: "",
     noTiketVendor: "",
     keterangan: "",
+    // Field berikut hanya dikirim ke server bila role superadmin.
+    kategori: "atm",
+    cpTipe: "pic",
+    cpNama: "",
+    cpTelp: "",
+    waktuOpen: "",
   });
   const [savingEdit, setSavingEdit] = useState(false);
   const [editErr, setEditErr] = useState("");
 
-  // --- Modal close & delete ---
+  // --- Pencarian ATM (override lokasi, superadmin) ---
+  const [selectedAtm, setSelectedAtm] = useState<{
+    id: string;
+    kodeAtm: string;
+    namaAtm: string;
+  } | null>(null);
+  const [atmQuery, setAtmQuery] = useState("");
+  const [atmHits, setAtmHits] = useState<AtmHit[]>([]);
+  const [atmSearching, setAtmSearching] = useState(false);
+
+  useEffect(() => {
+    if (!editOpen || !isSuperadmin) return;
+    const q = atmQuery.trim();
+    if (!q) {
+      setAtmHits([]);
+      return;
+    }
+    const handle = setTimeout(async () => {
+      setAtmSearching(true);
+      try {
+        const res = await fetch(`/api/atm?q=${encodeURIComponent(q)}&limit=10`);
+        const data = await res.json().catch(() => ({}));
+        setAtmHits(data.items ?? []);
+      } finally {
+        setAtmSearching(false);
+      }
+    }, 250);
+    return () => clearTimeout(handle);
+  }, [atmQuery, editOpen, isSuperadmin]);
+
+  // --- Modal close, reopen & delete ---
   const [closeOpen, setCloseOpen] = useState(false);
   const [closeBusy, setCloseBusy] = useState(false);
   const [closeWaktu, setCloseWaktu] = useState("");
+  const [reopenOpen, setReopenOpen] = useState(false);
+  const [reopenBusy, setReopenBusy] = useState(false);
   const [delOpen, setDelOpen] = useState(false);
   const [delBusy, setDelBusy] = useState(false);
   const [actionErr, setActionErr] = useState("");
@@ -233,7 +292,23 @@ export function TicketDetailClient({
       vendor: ticket.vendor ?? "",
       noTiketVendor: ticket.noTiketVendor ?? "",
       keterangan: ticket.keterangan ?? "",
+      kategori: ticket.kategori,
+      cpTipe: ticket.cpTipe ?? "pic",
+      cpNama: ticket.cpNama ?? "",
+      cpTelp: ticket.cpTelp ?? "",
+      waktuOpen: toWibInputValue(ticket.waktuOpen),
     });
+    setSelectedAtm(
+      ticket.atmId && ticket.atm
+        ? {
+            id: ticket.atmId,
+            kodeAtm: ticket.atm.kodeAtm,
+            namaAtm: ticket.atm.namaAtm,
+          }
+        : null
+    );
+    setAtmQuery("");
+    setAtmHits([]);
     setEditErr("");
     setEditOpen(true);
   }
@@ -241,12 +316,46 @@ export function TicketDetailClient({
   async function submitEdit(e: React.FormEvent) {
     e.preventDefault();
     setEditErr("");
+
+    // Field dasar — boleh diubah pemilik/petugas shift pemegang & superadmin.
+    const payload: Record<string, unknown> = {
+      jenisGangguan: editForm.jenisGangguan,
+      sumberPenyebab: editForm.sumberPenyebab,
+      metodePenanganan: editForm.metodePenanganan,
+      vendor: editForm.vendor,
+      noTiketVendor: editForm.noTiketVendor,
+      keterangan: editForm.keterangan,
+    };
+
+    // Field override — hanya dikirim untuk superadmin; server menolak 403
+    // bila role lain nekat mengirimnya lewat pemanggilan API langsung.
+    if (isSuperadmin) {
+      if (!selectedAtm) {
+        return setEditErr("ATM/lokasi wajib dipilih dari pencarian.");
+      }
+      if (!editForm.waktuOpen) {
+        return setEditErr("Waktu kejadian wajib diisi.");
+      }
+      if (editForm.cpTipe === "pic" && (!editForm.cpNama || !editForm.cpTelp)) {
+        return setEditErr("No PIC wajib mengisi nama dan nomor telepon.");
+      }
+      if (editForm.cpTipe === "wag" && !editForm.cpNama) {
+        return setEditErr("Nama WAG (WhatsApp Group) wajib diisi.");
+      }
+      payload.kategori = editForm.kategori;
+      payload.atmId = selectedAtm.id;
+      payload.cpTipe = editForm.cpTipe;
+      payload.cpNama = editForm.cpNama;
+      payload.cpTelp = editForm.cpTipe === "pic" ? editForm.cpTelp : "";
+      payload.waktuOpen = wibInputToISO(editForm.waktuOpen);
+    }
+
     setSavingEdit(true);
     try {
       const res = await fetch(`/api/tickets/${ticket.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(editForm),
+        body: JSON.stringify(payload),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -281,6 +390,32 @@ export function TicketDetailClient({
       await reload();
     } finally {
       setCloseBusy(false);
+    }
+  }
+
+  /**
+   * Buka kembali tiket yang sudah ditutup (override Super Admin).
+   * Endpoint hanya mengubah status → proses & mengosongkan waktu selesai;
+   * detail tiket lain tidak tersentuh.
+   */
+  async function confirmReopen() {
+    setActionErr("");
+    setReopenBusy(true);
+    try {
+      const res = await fetch(`/api/tickets/${ticket.id}/reopen`, {
+        method: "POST",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setActionErr(data.error ?? "Gagal membuka kembali tiket.");
+        return;
+      }
+      setReopenOpen(false);
+      await reload();
+      // Segarkan halaman server (daftar tiket & badge status ikut berubah).
+      router.refresh();
+    } finally {
+      setReopenBusy(false);
     }
   }
 
@@ -384,6 +519,18 @@ export function TicketDetailClient({
                 }}
               >
                 <CheckCircle2 className="w-4 h-4" /> Close Tiket
+              </Button>
+            )}
+            {canOverride && isSelesai && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setActionErr("");
+                  setReopenOpen(true);
+                }}
+              >
+                <RotateCcw className="w-4 h-4" /> Buka Kembali Tiket
               </Button>
             )}
             <Button
@@ -599,10 +746,187 @@ export function TicketDetailClient({
         open={editOpen}
         onClose={() => setEditOpen(false)}
         title="Ubah Detail Gangguan"
-        description="Perbarui klasifikasi gangguan & vendor."
+        description={
+          isSuperadmin
+            ? "Perbarui klasifikasi gangguan, vendor, dan data dasar tiket."
+            : "Perbarui klasifikasi gangguan & vendor."
+        }
         size="lg"
       >
         <form onSubmit={submitEdit} className="space-y-4">
+          <div className="space-y-4 max-h-[65vh] overflow-y-auto pr-1">
+          {isSuperadmin && (
+            <div className="rounded-md border border-amber-200 bg-amber-50/60 p-3 space-y-4">
+              <div className="flex items-start gap-2">
+                <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <p className="text-xs text-amber-800">
+                  Override Super Admin — data dasar berikut terkunci bagi
+                  petugas. Perubahan dicatat pada jejak audit (tabel
+                  <span className="font-mono"> audit_logs</span>).
+                </p>
+              </div>
+
+              {/* ATM / lokasi */}
+              <div>
+                <label className="text-sm font-medium text-gray-700">
+                  ATM / Lokasi
+                </label>
+                {selectedAtm ? (
+                  <div className="mt-1 flex items-center justify-between gap-3 rounded-md border border-gray-200 bg-white px-3 py-2">
+                    <div className="text-sm text-gray-900">
+                      <span className="font-mono">{selectedAtm.kodeAtm}</span> —{" "}
+                      {selectedAtm.namaAtm}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedAtm(null);
+                        setAtmQuery("");
+                        setAtmHits([]);
+                      }}
+                      className="text-xs text-primary hover:underline shrink-0"
+                    >
+                      Ganti
+                    </button>
+                  </div>
+                ) : (
+                  <div className="relative mt-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      value={atmQuery}
+                      onChange={(e) => setAtmQuery(e.target.value)}
+                      placeholder="Ketik kode atau nama ATM…"
+                      className="w-full pl-9 pr-9 py-2 text-sm rounded-md border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+                    />
+                    {atmSearching && (
+                      <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 animate-spin" />
+                    )}
+                    {atmHits.length > 0 && (
+                      <div className="absolute z-20 mt-1 w-full max-h-56 overflow-auto rounded-md border border-gray-200 bg-white shadow-card-lg">
+                        {atmHits.map((hit) => (
+                          <button
+                            key={hit.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedAtm(hit);
+                              setAtmQuery("");
+                              setAtmHits([]);
+                            }}
+                            className="w-full text-left px-3 py-2 hover:bg-primary-50 transition-colors border-b border-gray-50 last:border-0"
+                          >
+                            <div className="text-sm font-medium text-gray-900">
+                              <span className="font-mono">{hit.kodeAtm}</span> —{" "}
+                              {hit.namaAtm}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              Vendor ATM: {hit.vendorAtm ?? "—"}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {!atmSearching &&
+                      atmQuery.trim() &&
+                      atmHits.length === 0 && (
+                        <p className="mt-1 text-xs text-gray-500">
+                          Tidak ditemukan. Tambahkan dulu di menu Data ATM.
+                        </p>
+                      )}
+                  </div>
+                )}
+              </div>
+
+              {/* Kategori */}
+              <div>
+                <label className="text-sm font-medium text-gray-700">
+                  Kategori Tiket
+                </label>
+                <div className="mt-1.5 flex gap-2">
+                  {(["atm", "jaringan"] as const).map((k) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => setEditForm({ ...editForm, kategori: k })}
+                      className={cn(
+                        "flex-1 px-4 py-2 rounded-md border text-sm font-medium transition-all",
+                        editForm.kategori === k
+                          ? "border-primary bg-primary text-white shadow-sm"
+                          : "border-gray-300 bg-white text-gray-600 hover:border-primary/50"
+                      )}
+                    >
+                      {k === "atm" ? "ATM" : "Jaringan Kantor"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Contact Person */}
+              <div>
+                <label className="text-sm font-medium text-gray-700">
+                  Contact Person
+                </label>
+                <div className="mt-1.5 flex gap-4">
+                  {(
+                    [
+                      ["pic", "No PIC"],
+                      ["wag", "WAG (WhatsApp Group)"],
+                    ] as const
+                  ).map(([val, label]) => (
+                    <label
+                      key={val}
+                      className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer"
+                    >
+                      <input
+                        type="radio"
+                        name="editCpTipe"
+                        checked={editForm.cpTipe === val}
+                        onChange={() =>
+                          setEditForm({ ...editForm, cpTipe: val })
+                        }
+                        className="accent-primary"
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+                <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <Input
+                    label={editForm.cpTipe === "pic" ? "Nama PIC" : "Nama WAG"}
+                    value={editForm.cpNama}
+                    onChange={(e) =>
+                      setEditForm({ ...editForm, cpNama: e.target.value })
+                    }
+                  />
+                  {editForm.cpTipe === "pic" && (
+                    <Input
+                      label="Nomor Telepon"
+                      value={editForm.cpTelp}
+                      onChange={(e) =>
+                        setEditForm({ ...editForm, cpTelp: e.target.value })
+                      }
+                      placeholder="08xxxxxxxxxx"
+                    />
+                  )}
+                </div>
+              </div>
+
+              {/* Waktu kejadian */}
+              <div>
+                <Input
+                  label="Waktu Kejadian (Open)"
+                  type="datetime-local"
+                  value={editForm.waktuOpen}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, waktuOpen: e.target.value })
+                  }
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  Mengubah waktu ini ikut mengubah perhitungan SLA tiket.
+                </p>
+              </div>
+            </div>
+          )}
+
           <Select
             label="Jenis Gangguan"
             value={editForm.jenisGangguan}
@@ -675,6 +999,7 @@ export function TicketDetailClient({
               }
               className="w-full px-3 py-2 text-sm rounded-md border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
             />
+          </div>
           </div>
 
           {editErr && (
@@ -777,6 +1102,44 @@ export function TicketDetailClient({
           </Button>
           <Button loading={closeBusy} onClick={confirmClose}>
             <CheckCircle2 className="w-4 h-4" /> Ya, Tutup
+          </Button>
+        </div>
+      </Modal>
+
+      {/* ---- Modal buka kembali (reopen) ---- */}
+      <Modal
+        open={reopenOpen}
+        onClose={() => setReopenOpen(false)}
+        title="Buka Kembali Tiket?"
+        size="sm"
+      >
+        <div className="flex items-start gap-2 text-sm text-gray-600">
+          <RotateCcw className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+          <p>
+            Tiket{" "}
+            <span className="font-mono font-semibold text-gray-900">
+              {ticket.noTiket}
+            </span>{" "}
+            akan kembali berstatus{" "}
+            <span className="font-semibold">Proses</span> dan Waktu Selesai
+            dikosongkan (SLA dihitung ulang saat tiket ditutup lagi). Detail
+            gangguan, vendor, shift, dan riwayat kegiatan tidak diubah.
+          </p>
+        </div>
+        <p className="mt-3 text-xs text-gray-500">
+          Aksi khusus Super Admin — tercatat pada jejak audit.
+        </p>
+        {actionErr && (
+          <p className="mt-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+            {actionErr}
+          </p>
+        )}
+        <div className="flex justify-end gap-2 pt-4">
+          <Button variant="secondary" onClick={() => setReopenOpen(false)}>
+            Batal
+          </Button>
+          <Button loading={reopenBusy} onClick={confirmReopen}>
+            <RotateCcw className="w-4 h-4" /> Ya, Buka Kembali
           </Button>
         </div>
       </Modal>
