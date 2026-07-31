@@ -77,8 +77,14 @@ export async function POST(req: Request) {
     { activities: { some: { isTindakLanjutFlag: true } } },
   ];
 
+  // Scoped ke shift asal, sama seperti serah terima. Penanda "tindak lanjut"
+  // hanya untuk tiket yang memang berada di shift yang sedang ditutup — bukan
+  // tiket shift lain yang kebetulan masih terbuka bersamaan (shift lembur D/E
+  // overlap penuh dengan A/B/C). Tanpa ini route ini kontradiktif dengan
+  // dirinya sendiri: ticket.updateMany di bawah sudah scoped ke shift ini,
+  // tetapi penandaannya menyapu seluruh tiket proses di sistem.
   const openTickets = await prisma.ticket.findMany({
-    where: { status: TicketStatus.proses },
+    where: { status: TicketStatus.proses, shiftKode: fromShift as ShiftKode },
     select: { id: true },
   });
 

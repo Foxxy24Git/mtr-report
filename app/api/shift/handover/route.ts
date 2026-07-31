@@ -76,8 +76,16 @@ export async function POST(req: Request) {
   }
   const toShift = nextShift(fromShift as ShiftCode);
 
+  // Scoped ke shift asal: HANYA tiket shift ini yang diserahterimakan. Tanpa
+  // `shiftKode`, serah terima satu petugas ikut menyapu tiket proses milik
+  // petugas lain di shift manapun — termasuk shift lembur D/E yang jam kerjanya
+  // overlap dengan A/B/C (lib/constants.ts SHIFT_LABELS). Tiket mereka ikut
+  // dirotasi ke shift tujuan petugas ini, sementara cookie sesi mereka tidak
+  // ikut di-refresh, sehingga tiketnya lenyap dari Daily Monitoring miliknya
+  // (lib/ticketQueries.ts memfilter shiftKode = shift sesi). Rotasi lintas
+  // siklus juga melanggar NEXT_SHIFT yang memisahkan A→B→C→A dari D→E→D.
   const openTickets = await prisma.ticket.findMany({
-    where: { status: TicketStatus.proses },
+    where: { status: TicketStatus.proses, shiftKode: fromShift as ShiftKode },
     select: { id: true },
   });
 
@@ -136,7 +144,10 @@ export async function POST(req: Request) {
       // Setiap tiket di-handover diikat ke supervisi pilihan modal (PRD revisi
       // §2/§3): supervisi tsb yang berhak meng-approve tiket ini nantinya.
       await tx.ticket.updateMany({
-        where: { status: TicketStatus.proses },
+        where: {
+          status: TicketStatus.proses,
+          shiftKode: fromShift as ShiftKode,
+        },
         data: { shiftKode: toShift, supervisiId },
       });
     }

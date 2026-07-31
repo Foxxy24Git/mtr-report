@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
@@ -98,6 +98,27 @@ export function TicketDetailClient({
 
   // --- Edit entri kegiatan ---
   type Activity = TicketDetail["activities"][number];
+
+  /**
+   * Timeline ditampilkan terbalik: kegiatan terbaru di atas.
+   * Entri "TINDAK LANJUT MONITORING SELANJUTNYA" (isTindakLanjutFlag) tidak
+   * punya relasi eksplisit ke kegiatan induknya — ia hanya baris berikutnya
+   * pada urutan ascending. Karena itu activities dikelompokkan dulu menjadi
+   * blok (satu kegiatan + flag yang mengikutinya), lalu urutan BLOK saja yang
+   * dibalik; urutan di dalam blok tetap (kegiatan dulu, baru tindak lanjutnya).
+   */
+  const orderedActivities = useMemo(() => {
+    const blocks: Activity[][] = [];
+    for (const a of ticket.activities) {
+      if (!a.isTindakLanjutFlag || blocks.length === 0) {
+        blocks.push([a]);
+      } else {
+        blocks[blocks.length - 1].push(a);
+      }
+    }
+    return blocks.reverse().flat();
+  }, [ticket.activities]);
+
   const [editAct, setEditAct] = useState<Activity | null>(null);
   const [editActTeks, setEditActTeks] = useState("");
   const [editActWaktu, setEditActWaktu] = useState("");
@@ -168,6 +189,7 @@ export function TicketDetailClient({
   // --- Modal close & delete ---
   const [closeOpen, setCloseOpen] = useState(false);
   const [closeBusy, setCloseBusy] = useState(false);
+  const [closeWaktu, setCloseWaktu] = useState("");
   const [delOpen, setDelOpen] = useState(false);
   const [delBusy, setDelBusy] = useState(false);
   const [actionErr, setActionErr] = useState("");
@@ -244,6 +266,10 @@ export function TicketDetailClient({
     try {
       const res = await fetch(`/api/tickets/${ticket.id}/close`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          waktuSelesai: closeWaktu ? wibInputToISO(closeWaktu) : undefined,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -251,6 +277,7 @@ export function TicketDetailClient({
         return;
       }
       setCloseOpen(false);
+      setCloseWaktu("");
       await reload();
     } finally {
       setCloseBusy(false);
@@ -352,6 +379,7 @@ export function TicketDetailClient({
                 size="sm"
                 onClick={() => {
                   setActionErr("");
+                  setCloseWaktu("");
                   setCloseOpen(true);
                 }}
               >
@@ -485,7 +513,7 @@ export function TicketDetailClient({
 
           <ol className="relative border-l-2 border-gray-100 ml-2 space-y-4">
             <AnimatePresence initial={false}>
-              {ticket.activities.map((a) =>
+              {orderedActivities.map((a) =>
                 a.isTindakLanjutFlag ? (
                   <motion.li
                     key={a.id}
@@ -726,6 +754,18 @@ export function TicketDetailClient({
           Tiket akan ditandai <span className="font-semibold">Selesai</span> dan
           Waktu Selesai Gangguan dicatat otomatis. SLA akan dihitung.
         </p>
+        <div className="mt-4 flex flex-col gap-1">
+          <Input
+            label="Waktu Close (opsional)"
+            type="datetime-local"
+            value={closeWaktu}
+            onChange={(e) => setCloseWaktu(e.target.value)}
+          />
+          <p className="text-xs text-gray-500">
+            Kosongkan untuk pakai waktu saat ini. Isi kalau gangguan sudah
+            selesai sebelum tiket ini ditutup (mis. telat close).
+          </p>
+        </div>
         {actionErr && (
           <p className="mt-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
             {actionErr}

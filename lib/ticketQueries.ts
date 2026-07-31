@@ -87,14 +87,28 @@ export async function listTickets(
       mineWhere.waktuOpen = { gte: startedAt };
     }
 
-    // Tampilkan tiket (proses & selesai) di shift aktif yang menjadi tanggung
-    // jawab user — tiket sendiri pada sesi ini ATAU tiket tindak lanjut dari
-    // shift sebelumnya. Tidak ada filter status: tiket close tetap tampil
-    // selama shift masih berjalan.
+    // Tampilkan tiket di shift aktif yang menjadi tanggung jawab user — tiket
+    // sendiri pada sesi ini (proses & selesai, agar tiket yang baru saja
+    // ditutup tetap tampil selama shift berjalan) ATAU tiket warisan tindak
+    // lanjut dari shift sebelumnya.
+    //
+    // Cabang tindak lanjut WAJIB dibatasi status=proses: kode shift hanya
+    // berputar A–E dan dipakai ulang setiap hari (lib/shift.ts), sedangkan
+    // shiftKode tiket berhenti berubah begitu tiket selesai (handover hanya
+    // meng-update tiket proses). Tanpa batasan ini, tiket lama yang sudah
+    // selesai & pernah ditandai tindak lanjut akan muncul lagi setiap kali
+    // huruf shift-nya aktif kembali di hari berikutnya. Secara bisnis pun
+    // tiket selesai tidak perlu ditindaklanjuti lagi.
+    // Catatan: bila nanti ada fitur "reopen tiket" (superadmin), tiket yang
+    // di-reopen kembali berstatus proses sehingga otomatis eligible muncul
+    // lagi di sini — perilaku ini memang disengaja.
     where.shiftKode = f.currentShift;
     where.OR = [
       mineWhere,
-      { activities: { some: { isTindakLanjutFlag: true } } },
+      {
+        status: TicketStatus.proses,
+        activities: { some: { isTindakLanjutFlag: true } },
+      },
     ];
   } else {
     if (f.shift && SHIFTS.includes(f.shift)) where.shiftKode = f.shift;

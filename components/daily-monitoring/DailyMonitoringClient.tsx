@@ -690,6 +690,11 @@ function TicketSection({
                   ) : (
                     <span className="text-gray-400">—</span>
                   )}
+                  <div className="mt-0.5 text-xs text-red-600">
+                    {t.lastWaktu
+                      ? `Terakhir diupdate: ${fmtDateTime(t.lastWaktu)}`
+                      : "Belum ada update"}
+                  </div>
                 </Td>
                 <Td className="whitespace-nowrap text-xs text-gray-500">
                   {t.lastPic ?? "—"}
