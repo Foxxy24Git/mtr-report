@@ -73,7 +73,12 @@ export function DailyMonitoringClient({
 
   // --- Serah terima shift (batch, global) ---
   const hasShift = shifts.includes(currentShift);
-  const toShift = hasShift ? nextShift(currentShift as ShiftCode) : null;
+  // Waktu acuan penentuan shift tujuan. Shift C & E melewati tengah malam,
+  // sehingga tujuannya bergantung hari saat serah terima terjadi (lib/shift.ts).
+  // Di-refresh tiap modal dibuka agar label tetap sama dengan yang dieksekusi
+  // backend walau halaman dibiarkan terbuka melewati tengah malam WIB.
+  const [hoNow, setHoNow] = useState(() => new Date());
+  const toShift = hasShift ? nextShift(currentShift as ShiftCode, hoNow) : null;
   const [hoOpen, setHoOpen] = useState(false);
   // Langkah modal: "confirm" = peringatan pastikan data benar, "select" = pemilihan supervisi & pimpinan.
   const [hoStep, setHoStep] = useState<"confirm" | "select">("confirm");
@@ -253,6 +258,7 @@ export function DailyMonitoringClient({
               onClick={() => {
                 setHoErr("");
                 resetHandoverPick();
+                setHoNow(new Date());
                 setHoStep("confirm");
                 setHoOpen(true);
               }}

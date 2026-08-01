@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 /**
  * Regresi: serah terima & tutup laporan shift TIDAK boleh menyentuh tiket
@@ -30,6 +30,14 @@ interface FakeTicket {
 }
 
 const SHIFT_START = new Date("2026-07-31T00:00:00Z");
+
+/**
+ * Waktu serah terima dibekukan pada hari kerja WIB (Jumat 06:00 WIB) karena
+ * tujuan shift C/E kini bergantung hari — lihat nextShift() di lib/shift.ts.
+ * Berkas ini menguji *scoping* tiket, bukan aturan hari, sehingga fixture
+ * C→A dipertahankan dengan mengunci jamnya agar tidak flaky di akhir pekan.
+ */
+const WAKTU_HANDOVER = new Date("2026-07-30T23:00:00Z");
 
 let tickets: FakeTicket[] = [];
 let activities: FakeActivity[] = [];
@@ -142,6 +150,8 @@ function punyaTindakLanjut(ticketId: string) {
 }
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(WAKTU_HANDOVER);
   activities = [];
   tickets = [
     // Tiket User A pada shift C (shift pelaku handover) — HARUS dirotasi.
@@ -172,6 +182,10 @@ beforeEach(() => {
       supervisiId: null,
     },
   ];
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("POST /api/shift/handover — scoping per-shift", () => {

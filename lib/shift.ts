@@ -6,6 +6,11 @@ export const ALL_SHIFTS: ShiftCode[] = ["A", "B", "C", "D", "E"];
 /**
  * Aturan transisi shift otomatis untuk serah terima.
  * Siklus A→B→C→A dan D→E→D dipertahankan agar mapping next-shift jelas.
+ *
+ * Berlaku apa adanya HANYA untuk shift yang berakhir di hari yang sama dengan
+ * awalnya (A, B, D). Untuk C dan E — satu-satunya shift yang melewati tengah
+ * malam — tujuan ditentukan {@link nextShift} berdasarkan hari saat serah
+ * terima terjadi; nilai di sini adalah tujuan hari-kerja/akhir-pekannya.
  */
 export const NEXT_SHIFT: Record<ShiftCode, ShiftCode> = {
   A: "B",
@@ -15,8 +20,42 @@ export const NEXT_SHIFT: Record<ShiftCode, ShiftCode> = {
   E: "D",
 };
 
-/** Shift berikutnya dari shift aktif saat ini. */
-export function nextShift(shift: ShiftCode): ShiftCode {
+const TZ = "Asia/Jakarta";
+const WEEKEND = new Set(["Sat", "Sun"]);
+
+/**
+ * True bila `now` jatuh pada Sabtu/Minggu menurut jam dinding WIB.
+ *
+ * Memakai WIB (Asia/Jakarta) — bukan jam lokal server — agar tetap benar walau
+ * kontainer berjalan di UTC (pola sama dengan bolehKirimNotif di
+ * lib/telegramNotif.ts).
+ */
+function isAkhirPekanWIB(now: Date): boolean {
+  const weekday = new Intl.DateTimeFormat("en-US", {
+    timeZone: TZ,
+    weekday: "short",
+  }).format(now);
+  return WEEKEND.has(weekday);
+}
+
+/**
+ * Shift berikutnya dari shift aktif saat ini.
+ *
+ * Shift C (Malam, 23:00–07:00) dan E (Lembur Malam, 19:00–07:00) berakhir pada
+ * HARI BERIKUTNYA, sehingga tujuannya tidak bisa statis: yang menentukan adalah
+ * hari yang baru dimulai saat serah terima (WIB).
+ * - Berakhir di Sabtu/Minggu → siklus akhir pekan, lanjut ke D (Lembur Pagi).
+ *   Contoh: C Jumat malam berakhir Sabtu 07:00 → D.
+ * - Berakhir di hari kerja → kembali ke siklus hari kerja, lanjut ke A (Pagi).
+ *   Contoh: E Minggu malam berakhir Senin 07:00 → A.
+ *
+ * Shift A, B, dan D berakhir di hari yang sama dengan awalnya sehingga tetap
+ * memakai NEXT_SHIFT statis.
+ */
+export function nextShift(shift: ShiftCode, now: Date = new Date()): ShiftCode {
+  if (shift === "C" || shift === "E") {
+    return isAkhirPekanWIB(now) ? "D" : "A";
+  }
   return NEXT_SHIFT[shift];
 }
 

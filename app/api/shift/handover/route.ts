@@ -74,6 +74,9 @@ export async function POST(req: Request) {
       { status: 400 }
     );
   }
+  // Tanpa argumen `now`: tujuan dihitung dari waktu server saat serah terima
+  // terjadi. Penting untuk shift C & E yang melewati tengah malam — tujuannya
+  // bergantung hari (WIB) yang baru dimulai, lihat lib/shift.ts.
   const toShift = nextShift(fromShift as ShiftCode);
 
   // Scoped ke shift asal: HANYA tiket shift ini yang diserahterimakan. Tanpa

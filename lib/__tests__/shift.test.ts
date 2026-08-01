@@ -8,14 +8,58 @@ describe("ALL_SHIFTS", () => {
 });
 
 describe("nextShift", () => {
+  // Semua acuan waktu ditulis eksplisit dalam UTC + padanan WIB (UTC+7) agar
+  // hasil tidak bergantung hari saat test dijalankan maupun TZ mesin.
+  const RABU = new Date("2026-07-29T00:00:00.000Z"); // Rabu 07:00 WIB
+  const SABTU = new Date("2026-08-01T00:00:00.000Z"); // Sabtu 07:00 WIB
+  const MINGGU = new Date("2026-08-02T00:00:00.000Z"); // Minggu 07:00 WIB
+  const SENIN = new Date("2026-08-03T00:00:00.000Z"); // Senin 07:00 WIB
+
   it("siklus hari kerja A→B→C→A", () => {
-    expect(nextShift("A")).toBe("B");
-    expect(nextShift("B")).toBe("C");
-    expect(nextShift("C")).toBe("A");
+    expect(nextShift("A", RABU)).toBe("B");
+    expect(nextShift("B", RABU)).toBe("C");
+    expect(nextShift("C", RABU)).toBe("A");
   });
+
   it("siklus akhir pekan D→E→D", () => {
-    expect(nextShift("D")).toBe("E");
-    expect(nextShift("E")).toBe("D");
+    expect(nextShift("D", SABTU)).toBe("E");
+    expect(nextShift("E", SABTU)).toBe("D");
+  });
+
+  it("A, B, D tidak melewati tengah malam sehingga tujuannya tidak tergantung hari", () => {
+    for (const now of [RABU, SABTU, MINGGU, SENIN]) {
+      expect(nextShift("A", now)).toBe("B");
+      expect(nextShift("B", now)).toBe("C");
+      expect(nextShift("D", now)).toBe("E");
+    }
+  });
+
+  it("C (Malam Jumat) berakhir Sabtu → masuk siklus akhir pekan (D)", () => {
+    expect(nextShift("C", SABTU)).toBe("D");
+  });
+
+  it("C berakhir Minggu → tetap siklus akhir pekan (D)", () => {
+    expect(nextShift("C", MINGGU)).toBe("D");
+  });
+
+  it("C berakhir di hari kerja → siklus hari kerja (A)", () => {
+    expect(nextShift("C", RABU)).toBe("A");
+    expect(nextShift("C", SENIN)).toBe("A");
+  });
+
+  it("E (Lembur Malam Sabtu) berakhir Minggu → tetap D", () => {
+    expect(nextShift("E", MINGGU)).toBe("D");
+  });
+
+  it("E (Lembur Malam Minggu) berakhir Senin → kembali ke A", () => {
+    expect(nextShift("E", SENIN)).toBe("A");
+  });
+
+  it("memakai hari WIB, bukan hari UTC", () => {
+    // Jumat 18:00 UTC = Sabtu 01:00 WIB → sudah akhir pekan.
+    expect(nextShift("C", new Date("2026-07-31T18:00:00.000Z"))).toBe("D");
+    // Minggu 18:00 UTC = Senin 01:00 WIB → sudah hari kerja.
+    expect(nextShift("E", new Date("2026-08-02T18:00:00.000Z"))).toBe("A");
   });
 });
 
