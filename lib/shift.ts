@@ -117,3 +117,43 @@ export function resumableShiftSession(
 
   return { shift: currentShift, shiftStartedAt: shiftStartedAt.toISOString() };
 }
+
+export interface ShiftSessionStart {
+  /** Awal sesi shift yang berlaku setelah pemilihan shift. */
+  startedAt: Date;
+  /** True bila sesi shift yang sudah berjalan dipertahankan (bukan mulai baru). */
+  lanjutan: boolean;
+}
+
+/**
+ * Tentukan awal sesi shift saat petugas memilih shift di Dashboard.
+ *
+ * Memilih shift yang SAMA dengan sesi yang sedang berjalan bukan berarti shift
+ * itu baru dimulai — sesi shift hanya berakhir lewat serah terima / tutup
+ * laporan shift (lihat resumableShiftSession & lib/ticketQueries.ts §4.B).
+ * Karena cookie sesi terikat per-origin, petugas yang membuka aplikasi lewat
+ * origin berbeda (mis. IP lokal vs domain) memilih shift lagi di origin baru;
+ * mereset shiftStartedAt di situ akan menggeser batas `waktuOpen >=
+ * shiftStartedAt` sehingga tiket yang sudah dibuka lebih awal pada shift yang
+ * sama lenyap dari Daily Monitoring di origin tersebut.
+ *
+ * Sesi dipertahankan hanya bila masih layak dipulihkan (belum melewati
+ * SHIFT_RESUME_MAX_AGE_MS dan waktunya masuk akal) — syarat yang sama dengan
+ * pemulihan sesi saat login, agar kedua jalur tidak berbeda aturan.
+ */
+export function shiftSessionStart(
+  requestedShift: ShiftCode,
+  currentShift: string | null | undefined,
+  shiftStartedAt: Date | null | undefined,
+  now: Date = new Date()
+): ShiftSessionStart {
+  const lanjutan =
+    currentShift === requestedShift &&
+    Boolean(resumableShiftSession(currentShift, shiftStartedAt, now).shift);
+
+  // shiftStartedAt dijamin non-null saat lanjutan: resumableShiftSession
+  // mengembalikan shift kosong bila nilainya tidak ada / tidak masuk akal.
+  return lanjutan
+    ? { startedAt: shiftStartedAt as Date, lanjutan: true }
+    : { startedAt: now, lanjutan: false };
+}

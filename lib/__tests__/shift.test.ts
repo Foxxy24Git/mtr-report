@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { ALL_SHIFTS, nextShift, resumableShiftSession } from "../shift";
+import {
+  ALL_SHIFTS,
+  nextShift,
+  resumableShiftSession,
+  shiftSessionStart,
+} from "../shift";
 
 describe("ALL_SHIFTS", () => {
   it("berisi 5 kode shift A–E", () => {
@@ -121,5 +126,61 @@ describe("resumableShiftSession", () => {
   it("kosong bila waktu mulai di masa depan (jam server bergeser)", () => {
     const mulai = new Date("2026-07-27T17:00:00.000Z");
     expect(resumableShiftSession("B", mulai, now)).toEqual(KOSONG);
+  });
+});
+
+describe("shiftSessionStart", () => {
+  const now = new Date("2026-07-27T16:00:00.000Z");
+
+  it("mempertahankan awal sesi bila shift yang dipilih sama dengan yang berjalan", () => {
+    // Kasus nyata: petugas membuka aplikasi lewat origin lain (IP lokal vs
+    // domain). Cookie sesi terpisah per-origin sehingga origin baru memilih
+    // shift lagi — awal sesi TIDAK boleh ikut bergeser, karena Daily Monitoring
+    // menyaring tiket sendiri dengan `waktuOpen >= shiftStartedAt`.
+    const mulai = new Date("2026-07-27T08:00:00.000Z");
+    expect(shiftSessionStart("B", "B", mulai, now)).toEqual({
+      startedAt: mulai,
+      lanjutan: true,
+    });
+  });
+
+  it("memulai sesi baru bila shift yang dipilih berbeda", () => {
+    const mulai = new Date("2026-07-27T08:00:00.000Z");
+    expect(shiftSessionStart("C", "B", mulai, now)).toEqual({
+      startedAt: now,
+      lanjutan: false,
+    });
+  });
+
+  it("memulai sesi baru bila belum ada shift aktif", () => {
+    expect(shiftSessionStart("B", null, null, now)).toEqual({
+      startedAt: now,
+      lanjutan: false,
+    });
+  });
+
+  it("memulai sesi baru bila shift sama tetapi sesi lama sudah kedaluwarsa", () => {
+    // Lewat batas 16 jam (resumableShiftSession) — petugas lupa menutup shift,
+    // pilihan shift hari ini memang harus menjadi sesi yang benar-benar baru.
+    const mulai = new Date("2026-07-25T03:00:00.000Z");
+    expect(shiftSessionStart("B", "B", mulai, now)).toEqual({
+      startedAt: now,
+      lanjutan: false,
+    });
+  });
+
+  it("memulai sesi baru bila shift sama tetapi awal sesi tidak tercatat", () => {
+    expect(shiftSessionStart("B", "B", null, now)).toEqual({
+      startedAt: now,
+      lanjutan: false,
+    });
+  });
+
+  it("memulai sesi baru bila awal sesi tercatat di masa depan (jam server bergeser)", () => {
+    const mulai = new Date("2026-07-27T17:00:00.000Z");
+    expect(shiftSessionStart("B", "B", mulai, now)).toEqual({
+      startedAt: now,
+      lanjutan: false,
+    });
   });
 });
