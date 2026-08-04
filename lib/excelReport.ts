@@ -32,6 +32,7 @@ export interface ReportActivity {
 export interface ReportTicket {
   no: number;
   waktuKejadian: Date; // C
+  tampilkanTanggal: boolean; // C: cetak tanggal hanya bila beda hari
   unitKerja: string; // D
   waktuRespon: string; // E (boleh "-")
   contactPerson: string; // F
@@ -185,8 +186,13 @@ const COL_WIDTHS: Record<string, number> = {
 const TTD_W = 130;
 const TTD_H = 56;
 
-/** Teks penanda entri tindak lanjut (dicetak bold di kolom L). */
-const TINDAK_LANJUT_TEKS = "TINDAK LANJUT MONITORING SELANJUTNYA";
+/**
+ * Teks penanda entri tindak lanjut (dicetak bold di kolom L). Konstanta
+ * TAMPILAN — mengikuti kapitalisasi lembar manual Form OPS-001; sengaja
+ * berbeda dari teks yang TERSIMPAN di database (app/api/shift/handover &
+ * close), jadi jangan disamakan dengan konstanta bernama sama di sana.
+ */
+const TINDAK_LANJUT_TEKS = "Tindak lanjut monitoring selanjutnya";
 
 /**
  * Lebar 1 satuan lebar kolom Excel dalam px (Max Digit Width font default).
@@ -614,12 +620,19 @@ export async function buildReportWorkbook(data: ReportData): Promise<Buffer> {
     const rowCount = Math.max(activities.length, 1);
     const firstRow = r;
     const lastRow = r + rowCount - 1;
+    // Kolom S mengikuti lembar manual: tiket selesai = "Selesai"; tiket masih
+    // proses = keterangan bebas petugas ("menunggu perbaikan NCR", dst).
+    // Bukan lagi salinan kolom Q.
     const keteranganText = t.waktuSelesai
       ? "Selesai"
-      : "Monitoring Dilanjutkan oleh Shift berikutnya";
+      : (t.keterangan?.trim() || "-");
 
     ws.getCell(`B${firstRow}`).value = t.no;
-    ws.getCell(`C${firstRow}`).value = fmtWaktuTanggal(t.waktuKejadian);
+    // Tanggal hanya dicetak bila kejadiannya beda hari dari tanggal laporan
+    // (konvensi lembar manual); selain itu cukup jam.
+    ws.getCell(`C${firstRow}`).value = t.tampilkanTanggal
+      ? fmtWaktuTanggal(t.waktuKejadian)
+      : fmtJam12WIB(t.waktuKejadian);
     ws.getCell(`D${firstRow}`).value = t.unitKerja;
     ws.getCell(`E${firstRow}`).value = t.waktuRespon || "-";
     ws.getCell(`F${firstRow}`).value = t.contactPerson || "-";
@@ -629,7 +642,7 @@ export async function buildReportWorkbook(data: ReportData): Promise<Buffer> {
     ws.getCell(`J${firstRow}`).value = t.vendor || "-";
     ws.getCell(`M${firstRow}`).value = t.noTiketVendor || "-";
     // Kolom Keterangan (S): tiket close = "Selesai"; tiket masih proses =
-    // "Monitoring Dilanjutkan oleh Shift berikutnya" (waktuSelesai null = proses).
+    // keterangan bebas tiket (waktuSelesai null = proses).
     ws.getCell(`S${firstRow}`).value = keteranganText;
 
     for (const col of TICKET_COLS) {
@@ -677,7 +690,10 @@ export async function buildReportWorkbook(data: ReportData): Promise<Buffer> {
       activities.forEach((a, idx) => {
         const rr = firstRow + idx;
         const teks = activityText(a);
-        ws.getCell(`K${rr}`).value = fmtJamWIB(a.waktu);
+        // Baris marker tidak punya jam di lembar manual: kolom K langsung
+        // mulai dari kegiatan pertama shift itu. Setelah stripClosingMarker,
+        // satu-satunya marker yang tersisa adalah marker PEMBUKA.
+        ws.getCell(`K${rr}`).value = a.isTindakLanjut ? null : fmtJamWIB(a.waktu);
         ws.getCell(`L${rr}`).value = a.isTindakLanjut
           ? { richText: [{ text: teks, font: font({ size: 9, bold: true }) }] }
           : teks;

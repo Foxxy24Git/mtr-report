@@ -16,6 +16,7 @@ const data: ReportData = {
     {
       no: 1,
       waktuKejadian: wib("2026-05-27T08:15:00"),
+      tampilkanTanggal: false,
       unitKerja: "010101 – ATM CAPEM IBUH PYK",
       waktuRespon: "08:20",
       contactPerson: "Budi (0812-3456-7890)",
@@ -35,6 +36,7 @@ const data: ReportData = {
     {
       no: 2,
       waktuKejadian: wib("2026-05-27T11:40:00"),
+      tampilkanTanggal: false,
       unitKerja: "010205 – ATM KANTOR KAS BUKITTINGGI",
       waktuRespon: "-",
       contactPerson: "WAG",
@@ -54,6 +56,7 @@ const data: ReportData = {
     {
       no: 3,
       waktuKejadian: wib("2026-05-27T14:10:00"),
+      tampilkanTanggal: false,
       unitKerja: "020110 – JARINGAN KANTOR CABANG PAYAKUMBUH",
       waktuRespon: "14:12",
       contactPerson: "Andi (0813-1111-2222)",
@@ -76,6 +79,7 @@ const data: ReportData = {
     {
       no: 4,
       waktuKejadian: wib("2026-05-27T16:05:00"),
+      tampilkanTanggal: false,
       unitKerja: "020304 – JARINGAN KANTOR CABANG SIMPANG EMPAT PASBAR",
       waktuRespon: "16:10",
       contactPerson: "Rani (0852-9999-1010)",

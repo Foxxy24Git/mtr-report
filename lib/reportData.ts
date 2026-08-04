@@ -3,7 +3,14 @@ import { ShiftKode } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { SHIFT_LABELS } from "@/lib/constants";
 import { SERVERS } from "@/lib/suhuServer";
-import { buildReportTicketWhere, filterActivitiesForShiftReport } from "@/lib/reportQuery";
+import {
+  buildReportTicketWhere,
+  isNativeToShiftReport,
+  resolveReportDateWindow,
+  resolveShiftReportSegment,
+  resolveWaktuSelesaiForShiftReport,
+  stripClosingMarker,
+} from "@/lib/reportQuery";
 import { resolveSender, resolveAcknowledger, resolveLeaderName } from "@/lib/reportSignatures";
 import { resolveShiftReportSignatures } from "@/lib/shiftReport";
 import { resolveReportLogoPath } from "@/lib/appSettings";
@@ -24,6 +31,8 @@ export interface GatherParams {
   ownerUserId?: string | null;
   /** Opt-in: ikut sertakan tiket warisan tindak lanjut shift sebelumnya (Download Harian). */
   includeCarryOver?: boolean;
+  /** Opt-in: jendela satu SESI shift, bukan satu hari kalender (Download Harian). */
+  useShiftSessionWindow?: boolean;
 }
 
 export interface GatherResult {
@@ -71,14 +80,22 @@ function uniqueJoin(values: (string | null | undefined)[]): string {
 
 /** Gabung data laporan untuk satu tanggal (+ shift / owner opsional). */
 export async function gatherReportData(p: GatherParams): Promise<GatherResult> {
-  const startWib = new Date(`${p.tanggal}T00:00:00+07:00`);
-  const endWib = new Date(startWib.getTime() + 24 * 60 * 60 * 1000);
+  // URUTAN PENTING: `shift` dihitung DULU karena jendela waktunya bergantung
+  // pada shift — shift malam (C/E) melewati tengah malam, jadi satu sesi kerja
+  // BUKAN satu hari kalender.
+  const shift = p.shift && SHIFTS.includes(p.shift) ? (p.shift as ShiftKode) : null;
+  const { startWib, endWib } = resolveReportDateWindow(
+    p.tanggal,
+    shift,
+    Boolean(p.useShiftSessionWindow)
+  );
 
+  // `tanggalDate` sengaja tetap dari p.tanggal MENTAH (kolom AcTempLog.tanggal
+  // / ServerLog.tanggal bertipe @db.Date, bukan instant) — lihat blok Suhu AC
+  // & Log Server di bawah. `jumlahHari` tidak berkaitan dengan jendela.
   const [y, m, d] = p.tanggal.split("-").map(Number);
   const jumlahHari = new Date(y, m, 0).getDate();
   const tanggalDate = new Date(Date.UTC(y, m - 1, d));
-
-  const shift = p.shift && SHIFTS.includes(p.shift) ? (p.shift as ShiftKode) : null;
 
   // ----------------------- Tiket -----------------------
   const ticketRows = await prisma.ticket.findMany({
@@ -102,24 +119,59 @@ export async function gatherReportData(p: GatherParams): Promise<GatherResult> {
     },
   });
 
-  // Urutan baris laporan (PRD §4.D revisi): tiket SELESAI tampil lebih dulu,
-  // lalu tiket DALAM PROSES (yang diteruskan ke shift berikutnya) di bawah.
-  // Query sudah orderBy waktuOpen asc, jadi partisi stabil ini menjaga urutan
-  // waktu_open ASC di dalam masing-masing kelompok.
+  // View point-in-time per tiket: waktuSelesai HARUS mencerminkan kondisi
+  // tiket SAAT SHIFT INI BERAKHIR, bukan status terkini di database — kalau
+  // tidak, laporan shift lama berubah retroaktif setiap tiket warisannya
+  // akhirnya diselesaikan shift lain. Dihitung sebelum partisi karena partisi
+  // "selesai dulu, lalu proses" di bawah wajib ikut nilai point-in-time ini
+  // (kalau tidak, urutan barisnya tidak sinkron dengan isi kolom S).
+  const rowViews = ticketRows.map((t) => {
+    const isNative = isNativeToShiftReport(t, { shift, startWib, endWib });
+    // 1. Segmen untuk LOGIKA — marker penutup milik shift ini masih ikut.
+    const segment = resolveShiftReportSegment(t.activities, {
+      shift,
+      startWib,
+      endWib,
+      isNative,
+    });
+    // 2. Status point-in-time dihitung dari segmen LENGKAP: marker penutup
+    //    itulah sinyal "diserahkan belum selesai".
+    const waktuSelesai = resolveWaktuSelesaiForShiftReport(
+      // Pertahankan guard status: tiket yang di-reopen superadmin bisa
+      // berstatus proses walau kolom waktuSelesai lamanya masih terisi.
+      t.status === "selesai" ? t.waktuSelesai : null,
+      segment,
+      { shift, isNative }
+    );
+    // 3. Baru dipangkas untuk TAMPILAN (konvensi lembar manual: shift yang
+    //    menyerahkan tidak menulis baris tindak lanjut di akhir kegiatannya).
+    //    URUTAN 2 SEBELUM 3 WAJIB — dibalik, sinyal di atas ikut terbuang.
+    const visibleActivities = stripClosingMarker(segment, shift);
+    return { t, visibleActivities, waktuSelesai };
+  });
+
+  // Urutan baris laporan (PRD §4.D revisi): tiket SELESAI (point-in-time)
+  // tampil lebih dulu, lalu tiket DALAM PROSES (yang diteruskan ke shift
+  // berikutnya) di bawah. Query sudah orderBy waktuOpen asc, jadi partisi
+  // stabil ini menjaga urutan waktu_open ASC di dalam masing-masing kelompok.
   const orderedRows = [
-    ...ticketRows.filter((t) => t.status === "selesai"),
-    ...ticketRows.filter((t) => t.status !== "selesai"),
+    ...rowViews.filter((v) => v.waktuSelesai !== null),
+    ...rowViews.filter((v) => v.waktuSelesai === null),
   ];
 
-  // Tiket ASLI shift ini (openShiftKode), tanpa warisan carry-over — dipakai
-  // khusus resolusi Penyerah (C26) agar tidak salah ambil owner shift lain
-  // saat includeCarryOver menambahkan tiket warisan ke ticketRows. ticketRows
-  // sudah orderBy waktuOpen asc, jadi urutan tetap terjaga setelah filter.
-  const nativeTicketRows = shift
-    ? ticketRows.filter((t) => t.openShiftKode === shift)
-    : ticketRows;
+  // Tiket ASLI shift ini (openShiftKode COCOK *DAN* waktuOpen di dalam rentang
+  // hari laporan), tanpa warisan carry-over — dipakai khusus resolusi Penyerah
+  // (C26) agar tidak salah ambil owner shift lain saat includeCarryOver
+  // menambahkan tiket warisan ke ticketRows. Cek rentang hari wajib karena kode
+  // shift A-E dipakai ulang tiap hari: tiket shift B kemarin yang dirotasi
+  // kembali ke shift B hari ini bukan tiket asli laporan ini. ticketRows sudah
+  // orderBy waktuOpen asc, jadi urutan tetap terjaga setelah filter.
+  const nativeTicketRows = ticketRows.filter((t) =>
+    isNativeToShiftReport(t, { shift, startWib, endWib })
+  );
 
-  const tickets: ReportTicket[] = orderedRows.map((t, i) => {
+  const tickets: ReportTicket[] = orderedRows.map((v, i) => {
+    const t = v.t;
     const cp =
       t.cpTipe === "wag"
         ? "WAG"
@@ -127,11 +179,14 @@ export async function gatherReportData(p: GatherParams): Promise<GatherResult> {
           ? `${t.cpNama ?? "-"}${t.cpTelp ? ` (${t.cpTelp})` : ""}`
           : "-";
     const unit = t.atm ? `${t.atm.kodeAtm} – ${t.atm.namaAtm}` : "-";
-    const isCarryOver = shift ? t.openShiftKode !== shift : false;
-    const visibleActivities = filterActivitiesForShiftReport(t.activities, isCarryOver);
     return {
       no: i + 1,
       waktuKejadian: t.waktuOpen,
+      // Lembar manual hanya mencetak TANGGAL di kolom C bila kejadiannya BEDA
+      // HARI dari tanggal laporan. Patokannya murni tanggal — bukan
+      // native/carry-over (tiket warisan yang dibuka hari yang sama pun cukup
+      // menampilkan jam saja).
+      tampilkanTanggal: !(t.waktuOpen >= startWib && t.waktuOpen < endWib),
       unitKerja: unit,
       waktuRespon: t.waktuResponInternal ? fmtTimeWIB(t.waktuResponInternal) : "-",
       contactPerson: cp,
@@ -139,13 +194,13 @@ export async function gatherReportData(p: GatherParams): Promise<GatherResult> {
       sumberPenyebab: t.sumberPenyebab ?? "-",
       metodePenanganan: t.metodePenanganan ?? "-",
       vendor: t.vendor ?? "-",
-      activities: visibleActivities.map((a) => ({
+      activities: v.visibleActivities.map((a) => ({
         waktu: a.waktu,
         teks: a.teks,
         isTindakLanjut: a.isTindakLanjutFlag,
       })),
       noTiketVendor: t.noTiketVendor ?? "-",
-      waktuSelesai: t.status === "selesai" ? t.waktuSelesai : null,
+      waktuSelesai: v.waktuSelesai,
       keterangan: t.keterangan ?? "-",
     };
   });
@@ -290,8 +345,17 @@ export async function gatherReportData(p: GatherParams): Promise<GatherResult> {
   const shiftLabel = shift ? SHIFT_LABELS[shift] ?? `Shift ${shift}` : "Semua Shift";
 
   const data: ReportData = {
+    // Lembar manual Form OPS-001: baris "Hari / Tgl" di header memakai tanggal
+    // MULAI sesi, sedangkan baris "Padang, ..." di blok tanda tangan memakai
+    // tanggal SELESAI sesi. Untuk shift yang tidak melewati tengah malam
+    // keduanya sama, jadi polanya baru terlihat pada shift C/E.
     hariTgl: fmtHariTgl(startWib),
-    tanggalLabel: fmtTglLabel(startWib),
+    // endWib adalah batas EKSKLUSIF (awal slot berikutnya), jadi dikurangi 1ms
+    // dulu. Rumus ini seragam untuk kedua mode: pada jalur hari-kalender-penuh
+    // endWib jatuh TEPAT tengah malam sehingga memformatnya langsung akan
+    // meleset ke hari berikutnya, sedangkan endWib-1ms tetap di hari yang
+    // benar (identik dengan rumus lama fmtTglLabel(startWib)).
+    tanggalLabel: fmtTglLabel(new Date(endWib.getTime() - 1)),
     namaPetugas,
     shiftLabel,
     jumlahHari,

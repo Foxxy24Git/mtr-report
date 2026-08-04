@@ -45,15 +45,19 @@ interface Props {
   leaders: LeaderOpt[];
 }
 
-/** Picu unduhan file dari endpoint; tangani error JSON (400/401) dengan rapi. */
+/** Picu unduhan file dari endpoint; tangani error JSON (400/401/404/409) dengan rapi. */
 async function downloadFile(
   url: string,
   fallbackName: string
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true } | { ok: false; error: string; candidates?: string[] }> {
   const res = await fetch(url);
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    return { ok: false, error: data.error ?? `Gagal mengunduh (${res.status}).` };
+    return {
+      ok: false,
+      error: data.error ?? `Gagal mengunduh (${res.status}).`,
+      candidates: data.candidates,
+    };
   }
   const cd = res.headers.get("Content-Disposition") ?? "";
   const match = /filename="?([^"]+)"?/.exec(cd);
@@ -81,22 +85,48 @@ export function RekapLaporanClient({
 }: Props) {
   // --- Download Harian ---
   const [tglHarian, setTglHarian] = useState(today);
+  const [harianUser, setHarianUser] = useState(isSuperadmin ? "" : currentUser.id);
+  // shiftHarian: KOSONG = mode auto-detect (default). Terisi HANYA
+  // sebagai override manual setelah auto-detect gagal/ambigu (fallback).
   const [shiftHarian, setShiftHarian] = useState("");
+  // null = belum pernah gagal (form auto/normal). Array = auto-detect
+  // gagal, tampilkan dropdown shift manual berisi kandidat ini.
+  const [shiftCandidates, setShiftCandidates] = useState<string[] | null>(null);
   const [loadingHarian, setLoadingHarian] = useState(false);
   const [errHarian, setErrHarian] = useState("");
 
+  function resetHarianDeteksi() {
+    setShiftCandidates(null);
+    setShiftHarian("");
+    setErrHarian("");
+  }
+
   async function unduhHarian() {
     setErrHarian("");
-    if (!shiftHarian) {
-      setErrHarian("Pilih shift terlebih dahulu.");
+    if (isSuperadmin && !harianUser) {
+      setErrHarian("Pilih user terlebih dahulu.");
       return;
     }
     setLoadingHarian(true);
+    const params = new URLSearchParams({ mode: "harian", tanggal: tglHarian });
+    if (shiftHarian) {
+      params.set("shift", shiftHarian);
+    } else if (isSuperadmin) {
+      params.set("owner", harianUser);
+    }
+    const shiftSlug = shiftHarian ? `-Shift${shiftHarian}` : "";
     const res = await downloadFile(
-      `/api/rekap?mode=harian&tanggal=${tglHarian}&shift=${shiftHarian}`,
-      `Laporan-Harian-${tglHarian}-Shift${shiftHarian}.xlsx`
+      `/api/rekap?${params.toString()}`,
+      `Laporan-Harian-${tglHarian}${shiftSlug}.xlsx`
     );
-    if (!res.ok) setErrHarian(res.error);
+    if (res.ok) {
+      setShiftCandidates(null);
+    } else {
+      setErrHarian(res.error ?? "Gagal mengunduh.");
+      setShiftCandidates(
+        res.candidates && res.candidates.length > 0 ? res.candidates : ALL_SHIFTS
+      );
+    }
     setLoadingHarian(false);
   }
 
@@ -229,30 +259,56 @@ export function RekapLaporanClient({
             </CardTitle>
           </CardHeader>
           <p className="text-sm text-gray-500 mb-4">
-            Laporan satu shift pada tanggal tertentu (Form OPS-001) lengkap dengan
-            blok suhu AC, log server, dan tanda tangan.
+            Pilih tanggal (dan user, khusus Super Admin) — shift terdeteksi
+            otomatis dari sesi yang dijalankan. Bila ditemukan lebih dari satu
+            sesi, pilih shift secara manual.
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Input
               label="Tanggal"
               type="date"
               value={tglHarian}
-              onChange={(e) => setTglHarian(e.target.value)}
+              onChange={(e) => {
+                setTglHarian(e.target.value);
+                resetHarianDeteksi();
+              }}
             />
-            <Select
-              label="Shift"
-              required
-              value={shiftHarian}
-              onChange={(e) => setShiftHarian(e.target.value)}
-            >
-              <option value="">— Pilih shift —</option>
-              {ALL_SHIFTS.map((s) => (
-                <option key={s} value={s}>
-                  {SHIFT_LABELS[s] ?? `Shift ${s}`}
-                </option>
-              ))}
-            </Select>
+            {isSuperadmin && (
+              <Select
+                label="User"
+                required
+                value={harianUser}
+                onChange={(e) => {
+                  setHarianUser(e.target.value);
+                  resetHarianDeteksi();
+                }}
+              >
+                <option value="">— Pilih user —</option>
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.nama}
+                  </option>
+                ))}
+              </Select>
+            )}
           </div>
+          {shiftCandidates && (
+            <div className="mt-3">
+              <Select
+                label="Shift (pilih manual)"
+                required
+                value={shiftHarian}
+                onChange={(e) => setShiftHarian(e.target.value)}
+              >
+                <option value="">— Pilih shift —</option>
+                {shiftCandidates.map((s) => (
+                  <option key={s} value={s}>
+                    {SHIFT_LABELS[s] ?? `Shift ${s}`}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          )}
           {errHarian && (
             <p className="mt-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
               {errHarian}
