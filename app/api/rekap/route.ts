@@ -48,7 +48,12 @@ export async function GET(req: Request) {
     owner = null;
   }
 
-  const { data, filename } = await gatherReportData({ tanggal, shift, ownerUserId: owner });
+  const { data, filename } = await gatherReportData({
+    tanggal,
+    shift,
+    ownerUserId: owner,
+    includeCarryOver: mode === "harian",
+  });
   const buffer = await buildReportWorkbook(data);
 
   return new NextResponse(new Uint8Array(buffer), {

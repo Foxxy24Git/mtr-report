@@ -3,7 +3,7 @@ import { ShiftKode } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { SHIFT_LABELS } from "@/lib/constants";
 import { SERVERS } from "@/lib/suhuServer";
-import { buildReportTicketWhere } from "@/lib/reportQuery";
+import { buildReportTicketWhere, filterActivitiesForShiftReport } from "@/lib/reportQuery";
 import { resolveSender, resolveAcknowledger, resolveLeaderName } from "@/lib/reportSignatures";
 import { resolveShiftReportSignatures } from "@/lib/shiftReport";
 import { resolveReportLogoPath } from "@/lib/appSettings";
@@ -22,6 +22,8 @@ export interface GatherParams {
   tanggal: string; // YYYY-MM-DD (WIB)
   shift?: string | null;
   ownerUserId?: string | null;
+  /** Opt-in: ikut sertakan tiket warisan tindak lanjut shift sebelumnya (Download Harian). */
+  includeCarryOver?: boolean;
 }
 
 export interface GatherResult {
@@ -87,6 +89,7 @@ export async function gatherReportData(p: GatherParams): Promise<GatherResult> {
       endWib,
       shift,
       ownerUserId: p.ownerUserId,
+      includeCarryOver: p.includeCarryOver,
     }),
     orderBy: { waktuOpen: "asc" },
     include: {
@@ -108,6 +111,14 @@ export async function gatherReportData(p: GatherParams): Promise<GatherResult> {
     ...ticketRows.filter((t) => t.status !== "selesai"),
   ];
 
+  // Tiket ASLI shift ini (openShiftKode), tanpa warisan carry-over — dipakai
+  // khusus resolusi Penyerah (C26) agar tidak salah ambil owner shift lain
+  // saat includeCarryOver menambahkan tiket warisan ke ticketRows. ticketRows
+  // sudah orderBy waktuOpen asc, jadi urutan tetap terjaga setelah filter.
+  const nativeTicketRows = shift
+    ? ticketRows.filter((t) => t.openShiftKode === shift)
+    : ticketRows;
+
   const tickets: ReportTicket[] = orderedRows.map((t, i) => {
     const cp =
       t.cpTipe === "wag"
@@ -116,6 +127,8 @@ export async function gatherReportData(p: GatherParams): Promise<GatherResult> {
           ? `${t.cpNama ?? "-"}${t.cpTelp ? ` (${t.cpTelp})` : ""}`
           : "-";
     const unit = t.atm ? `${t.atm.kodeAtm} – ${t.atm.namaAtm}` : "-";
+    const isCarryOver = shift ? t.openShiftKode !== shift : false;
+    const visibleActivities = filterActivitiesForShiftReport(t.activities, isCarryOver);
     return {
       no: i + 1,
       waktuKejadian: t.waktuOpen,
@@ -126,7 +139,7 @@ export async function gatherReportData(p: GatherParams): Promise<GatherResult> {
       sumberPenyebab: t.sumberPenyebab ?? "-",
       metodePenanganan: t.metodePenanganan ?? "-",
       vendor: t.vendor ?? "-",
-      activities: t.activities.map((a) => ({
+      activities: visibleActivities.map((a) => ({
         waktu: a.waktu,
         teks: a.teks,
         isTindakLanjut: a.isTindakLanjutFlag,
@@ -214,11 +227,12 @@ export async function gatherReportData(p: GatherParams): Promise<GatherResult> {
 
   // Penyerah (C26): owner tiket PERTAMA shift (owner awal) — TTD selalu ikut
   // walau laporan diunduh sebelum serah terima. Fallback: fromUser handover →
-  // gabungan nama owner. ticketRows sudah orderBy waktuOpen asc → [0] = paling awal.
+  // gabungan nama owner. Pakai nativeTicketRows (bukan ticketRows gabungan)
+  // agar carry-over dari shift lain tidak salah menggeser owner awal.
   const sender = resolveSender(
-    ticketRows[0]?.owner,
+    nativeTicketRows[0]?.owner,
     handover?.fromUser,
-    uniqueJoin(ticketRows.map((t) => t.owner.nama))
+    uniqueJoin(nativeTicketRows.map((t) => t.owner.nama))
   );
 
   let signatures: ReportSignatures;
