@@ -13,6 +13,7 @@ import {
 } from "@/lib/reportQuery";
 import { resolveSender, resolveAcknowledger, resolveLeaderName } from "@/lib/reportSignatures";
 import { resolveShiftReportSignatures } from "@/lib/shiftReport";
+import { shiftPakaiSupervisiNext } from "@/lib/shiftReportApproval";
 import { resolveReportLogoPath } from "@/lib/appSettings";
 import type {
   ReportData,
@@ -251,6 +252,7 @@ export async function gatherReportData(p: GatherParams): Promise<GatherResult> {
           pimpinanInfra: { select: { nama: true, tipe: true, namaPjs: true } },
           pimpinanDivisi: { select: { nama: true, tipe: true, namaPjs: true } },
           supervisi: { select: { nama: true, ttdUrl: true } },
+          supervisiNext: { select: { nama: true, ttdUrl: true } },
           fromUser: { select: { nama: true, ttdUrl: true } },
           toUser: { select: { nama: true, ttdUrl: true } },
         },
@@ -271,6 +273,7 @@ export async function gatherReportData(p: GatherParams): Promise<GatherResult> {
           ownerUser: { select: { nama: true, ttdUrl: true } },
           receiverUser: { select: { nama: true, ttdUrl: true } },
           supervisi: { select: { nama: true, ttdUrl: true } },
+          supervisiNext: { select: { nama: true, ttdUrl: true } },
           pimpinanInfra: { select: { nama: true, tipe: true, namaPjs: true } },
           pimpinanDivisi: { select: { nama: true, tipe: true, namaPjs: true } },
         },
@@ -303,6 +306,10 @@ export async function gatherReportData(p: GatherParams): Promise<GatherResult> {
       supervisi: s.supervisi,
       supervisiApproved: s.supervisiApproved,
       supervisiTtdPath: s.supervisiTtdPath,
+      showSupervisiNext: s.showSupervisiNext,
+      supervisiNext: s.supervisiNext,
+      supervisiNextApproved: s.supervisiNextApproved,
+      supervisiNextTtdPath: s.supervisiNextTtdPath,
       pimpinanInfra: s.pimpinanInfra,
       pimpinanDivisi: s.pimpinanDivisi,
     };
@@ -326,6 +333,12 @@ export async function gatherReportData(p: GatherParams): Promise<GatherResult> {
       supervisiTtdPath: supervisiApproved
         ? handover?.supervisi?.ttdUrl ?? approver?.approver?.ttdUrl ?? null
         : null,
+      // Data lama tanpa ShiftReport: nama dari handover, TTD selalu null —
+      // tanpa record approval tidak ada dasar untuk menempelkan tanda tangan.
+      showSupervisiNext: shift ? shiftPakaiSupervisiNext(shift) : false,
+      supervisiNext: handover?.supervisiNext?.nama ?? "",
+      supervisiNextApproved: false,
+      supervisiNextTtdPath: null,
       // O26/R26: pimpinan pilihan handover → fallback pimpinan tingkat tiket.
       // Tanpa default — kosong sampai dipilih saat serah terima (PART 4).
       // Nama yang dicetak mengikuti tipe: PJS → nama_pjs (PART 5).

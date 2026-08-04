@@ -137,6 +137,11 @@ const data: ReportData = {
     supervisi: "Tio Rahmayunda",
     supervisiApproved: true,
     supervisiTtdPath: null,
+    // Sample memakai Shift A → blok Supervisi Selanjutnya (khusus C/E) tidak tampil.
+    showSupervisiNext: false,
+    supervisiNext: "",
+    supervisiNextApproved: false,
+    supervisiNextTtdPath: null,
     pimpinanInfra: "Pimpinan Bag. Infrastruktur TI",
     pimpinanDivisi: "Pemimpin Divisi TI",
   },

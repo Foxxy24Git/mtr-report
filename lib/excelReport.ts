@@ -75,6 +75,13 @@ export interface ReportSignatures {
   supervisiApproved: boolean;
   /** Path file TTD digital supervisi relatif terhadap /public (mis. "/ttd/x.png"). */
   supervisiTtdPath: string | null;
+  /** True untuk shift C & E → blok TTD kolom L "Supervisi Selanjutnya" dicetak. */
+  showSupervisiNext: boolean;
+  supervisiNext: string;
+  /** True bila supervisi selanjutnya sudah approve → TTD-nya boleh muncul. */
+  supervisiNextApproved: boolean;
+  /** Path TTD digital supervisi selanjutnya relatif /public. */
+  supervisiNextTtdPath: string | null;
   pimpinanInfra: string;
   pimpinanDivisi: string;
 }
@@ -767,7 +774,8 @@ export async function buildReportWorkbook(data: ReportData): Promise<Buffer> {
   padang.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
 
   const sig = data.signatures;
-  // Kolom blok TTD: penyerah C:D, penerima F:G, supervisi I:J, infra O:P, divisi R:S.
+  // Kolom blok TTD: penyerah C:D, penerima F:G, supervisi I:J, supervisi
+  // selanjutnya L (1 kolom, khusus shift C/E), infra O:P, divisi R:S.
   const blocks: {
     c1: string;
     c2: string;
@@ -782,6 +790,9 @@ export async function buildReportWorkbook(data: ReportData): Promise<Buffer> {
     { c1: "C", c2: "D", imgCol: 2, title: "Petugas Monitoring yang menyerahkan", nama: sig.penyerah, ttdPath: sig.penyerahTtdPath, signer: true, show: true },
     { c1: "F", c2: "G", imgCol: 5, title: "Petugas Monitoring yang Menerima", nama: sig.penerima, ttdPath: sig.penerimaTtdPath, signer: true, show: true },
     { c1: "I", c2: "J", imgCol: 8, title: "Supervisi", nama: sig.supervisi, ttdPath: sig.supervisiTtdPath, signer: true, show: sig.supervisiApproved },
+    ...(sig.showSupervisiNext
+      ? [{ c1: "L", c2: "L", imgCol: 11, title: "Supervisi Selanjutnya", nama: sig.supervisiNext, ttdPath: sig.supervisiNextTtdPath, signer: true, show: sig.supervisiNextApproved }]
+      : []),
     { c1: "O", c2: "P", imgCol: 14, title: "Mengetahui,\nBag. Infrastruktur TI", nama: sig.pimpinanInfra, ttdPath: null, signer: false, show: true },
     { c1: "R", c2: "S", imgCol: 17, title: "Mengetahui,\nPemimpin Divisi", nama: sig.pimpinanDivisi, ttdPath: null, signer: false, show: true },
   ];
@@ -798,7 +809,12 @@ export async function buildReportWorkbook(data: ReportData): Promise<Buffer> {
     label.alignment = { horizontal: "center", vertical: "top", wrapText: true };
 
     // Nama dalam kurung (merge X31:Y31).
-    ws.mergeCells(`${b.c1}${nameRow}:${b.c2}${nameRow}`);
+    // Blok "Supervisi Selanjutnya" hanya 1 kolom (c1 === c2, mengikuti lembar
+    // manual L25:L27 / L30). Merge 1 sel adalah range degenerate — lewati saja,
+    // nilainya tetap ditulis. Merge label (L26:L28) tetap valid: 3 baris.
+    if (b.c1 !== b.c2) {
+      ws.mergeCells(`${b.c1}${nameRow}:${b.c2}${nameRow}`);
+    }
     const name = ws.getCell(`${b.c1}${nameRow}`);
     name.value = `( ${b.nama || "…………………………"} )`;
     name.font = font({ size: 10 });
@@ -825,7 +841,10 @@ export async function buildReportWorkbook(data: ReportData): Promise<Buffer> {
         const EMU_PX = 9525;
         const colPx = (w: number) => Math.round(w * 7 + 5);
         const w1 = colPx(COL_WIDTHS[b.c1]);
-        let leftPx = Math.max(0, (w1 + colPx(COL_WIDTHS[b.c2]) - TTD_W) / 2);
+        // Blok 1 kolom (c1 === c2) tidak boleh menghitung lebarnya dua kali —
+        // TTD-nya akan meleset ke kanan dan meluber ke kolom sebelahnya.
+        const w2 = b.c2 === b.c1 ? 0 : colPx(COL_WIDTHS[b.c2]);
+        let leftPx = Math.max(0, (w1 + w2 - TTD_W) / 2);
         let nativeCol = b.imgCol;
         if (leftPx > w1) {
           leftPx -= w1; // gambar mulai dari kolom kedua (c2)
