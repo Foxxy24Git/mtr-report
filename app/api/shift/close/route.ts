@@ -7,6 +7,7 @@ import { signSession, COOKIE_NAME, SESSION_MAX_AGE, isSecureCookie } from "@/lib
 import { ALL_SHIFTS, type ShiftCode } from "@/lib/shift";
 import { getShiftLabel } from "@/lib/shiftReport";
 import { notifyReportPending } from "@/lib/telegramScheduler";
+import { shiftPakaiSupervisiNext } from "@/lib/shiftReportApproval";
 
 const TINDAK_LANJUT_TEKS = "TINDAK LANJUT MONITORING SELANJUTNYA";
 
@@ -63,6 +64,18 @@ export async function POST(req: Request) {
       { status: 400 }
     );
   }
+  // Shift malam (C/E) melewati tengah malam → laporannya punya blok tanda
+  // tangan "Supervisi Selanjutnya" (Form OPS-001, kolom L). Shift lain tidak
+  // punya kolom itu, jadi nilainya DIPAKSA null walau klien mengirimnya —
+  // laporan lama shift A/B/D yang terlanjur terisi tidak boleh bertambah.
+  const wajibNext = shiftPakaiSupervisiNext(fromShift);
+  const supervisiNextFinal = wajibNext ? supervisiNextId : null;
+  if (wajibNext && !supervisiNextFinal) {
+    return NextResponse.json(
+      { error: "Shift malam (C/E) wajib memilih Supervisi Selanjutnya." },
+      { status: 400 }
+    );
+  }
 
   // Lingkup tiket "shift ini" — sama dengan serah terima (PRD revisi §4.B).
   const startedAt = session.shiftStartedAt
@@ -98,7 +111,7 @@ export async function POST(req: Request) {
         pimpinanInfraId,
         pimpinanDivisiId,
         supervisiId,
-        supervisiNextId,
+        supervisiNextId: supervisiNextFinal,
       },
     });
 
@@ -128,7 +141,7 @@ export async function POST(req: Request) {
         ownerUserId: session.sub,
         receiverUserId: null,
         supervisiId,
-        supervisiNextId,
+        supervisiNextId: supervisiNextFinal,
         pimpinanInfraId,
         pimpinanDivisiId,
         handoverId: handover.id,

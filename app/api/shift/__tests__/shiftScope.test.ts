@@ -135,6 +135,7 @@ const BODY = {
   pimpinanInfraId: "infra-1",
   pimpinanDivisiId: "divisi-1",
   supervisiId: "supervisi-1",
+  supervisiNextId: "supervisi-2",
   receiverUserId: "user-b",
 };
 
@@ -225,6 +226,7 @@ describe("POST /api/shift/close — scoping per-shift", () => {
         pimpinanInfraId: "infra-1",
         pimpinanDivisiId: "divisi-1",
         supervisiId: "supervisi-1",
+        supervisiNextId: "supervisi-2",
       })
     );
     expect(res.status).toBe(200);
@@ -240,6 +242,7 @@ describe("POST /api/shift/close — scoping per-shift", () => {
         pimpinanInfraId: "infra-1",
         pimpinanDivisiId: "divisi-1",
         supervisiId: "supervisi-1",
+        supervisiNextId: "supervisi-2",
       })
     );
 
@@ -254,6 +257,7 @@ describe("POST /api/shift/close — scoping per-shift", () => {
         pimpinanInfraId: "infra-1",
         pimpinanDivisiId: "divisi-1",
         supervisiId: "supervisi-1",
+        supervisiNextId: "supervisi-2",
       })
     );
     expect(await res.json()).toMatchObject({ ok: true, shift: "C", count: 1 });
