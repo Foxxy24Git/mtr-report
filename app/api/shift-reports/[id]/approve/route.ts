@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
+import {
+  resolvePeranApproval,
+  hitungStatusLaporan,
+} from "@/lib/shiftReportApproval";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -40,28 +44,53 @@ export async function POST(req: Request, { params }: Params) {
       { status: 404 }
     );
   }
-  if (report.supervisiId !== session.sub) {
+  const peran = resolvePeranApproval(report, session.sub);
+  if (!peran) {
     return NextResponse.json(
       { error: "Laporan ini bukan tanggung jawab supervisi Anda." },
       { status: 403 }
     );
   }
-  if (report.status === "approved") {
+
+  const utamaSudah = report.approvedAt !== null;
+  const nextSudah = report.supervisiNextApprovedAt !== null;
+  const perluUtama = peran === "utama" || peran === "keduanya";
+  const perluNext = peran === "selanjutnya" || peran === "keduanya";
+
+  // Konflik dihitung PER PERAN, bukan per laporan: pada shift C/E laporan yang
+  // sudah di-approve supervisi utama masih menunggu supervisi selanjutnya.
+  if ((!perluUtama || utamaSudah) && (!perluNext || nextSudah)) {
     return NextResponse.json(
-      { error: "Laporan shift sudah disetujui." },
+      { error: "Anda sudah menyetujui laporan shift ini." },
       { status: 409 }
     );
   }
 
-  await prisma.shiftReport.update({
-    where: { id },
-    data: {
-      status: "approved",
-      approvedAt: new Date(),
-      approvedById: session.sub,
-      catatanSupervisi: catatan,
-    },
+  const now = new Date();
+  const patch: Record<string, unknown> = {};
+  if (perluUtama && !utamaSudah) {
+    patch.approvedAt = now;
+    patch.approvedById = session.sub;
+    patch.catatanSupervisi = catatan;
+  }
+  if (perluNext && !nextSudah) {
+    patch.supervisiNextApprovedAt = now;
+    patch.supervisiNextApprovedById = session.sub;
+    patch.catatanSupervisiNext = catatan;
+  }
+
+  // Status dihitung dari nilai BARU (bukan nilai lama hasil findUnique) supaya
+  // approve terakhir langsung menutup laporan dalam satu update.
+  patch.status = hitungStatusLaporan({
+    shiftKode: report.shiftKode,
+    supervisiNextId: report.supervisiNextId,
+    approvedAt: (patch.approvedAt as Date | undefined) ?? report.approvedAt,
+    supervisiNextApprovedAt:
+      (patch.supervisiNextApprovedAt as Date | undefined) ??
+      report.supervisiNextApprovedAt,
   });
 
-  return NextResponse.json({ ok: true });
+  await prisma.shiftReport.update({ where: { id }, data: patch });
+
+  return NextResponse.json({ ok: true, peran, status: patch.status });
 }
