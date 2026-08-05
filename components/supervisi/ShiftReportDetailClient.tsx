@@ -28,7 +28,7 @@ import type {
   ShiftReportDetailTicket,
 } from "@/lib/shiftReportQueries";
 import type { TicketActivityItem } from "@/lib/ticketQueries";
-import type { PeranApproval } from "@/lib/shiftReportApproval";
+import { butuhApprovalSupervisiNext, type PeranApproval } from "@/lib/shiftReportApproval";
 
 interface Props {
   report: ShiftReportDetail;
@@ -122,7 +122,10 @@ export function ShiftReportDetailClient({ report, peran }: Props) {
               (report.approvedAt ? " · sudah approve" : " · menunggu")
             }
           />
-          {report.supervisiNextId && (
+          {butuhApprovalSupervisiNext({
+            shiftKode: report.shiftKode,
+            supervisiNextId: report.supervisiNextId,
+          }) && (
             <InfoRow
               label="Supervisi Selanjutnya"
               value={
