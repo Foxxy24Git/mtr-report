@@ -3,7 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import {
   resolvePeranApproval,
-  hitungStatusLaporan,
+  cekKonflikApproval,
+  susunPatchApproval,
 } from "@/lib/shiftReportApproval";
 import { notifyReportPending } from "@/lib/telegramScheduler";
 
@@ -53,12 +54,6 @@ export async function POST(req: Request, { params }: Params) {
     );
   }
 
-  // Peran (utama/selanjutnya/keduanya) ditentukan oleh supervisiId &
-  // supervisiNextId — kolom itu tidak berubah bersamaan dengan proses approve,
-  // jadi aman dihitung dari baca `report` di atas, di luar transaksi.
-  const perluUtama = peran === "utama" || peran === "keduanya";
-  const perluNext = peran === "selanjutnya" || peran === "keduanya";
-
   // Transaksi + row lock (FOR UPDATE): supervisi utama dan supervisi selanjutnya
   // bisa menekan approve nyaris bersamaan. Tanpa lock, kedua request membaca
   // snapshot approvedAt/supervisiNextApprovedAt yang sama-sama basi — masing-
@@ -77,42 +72,16 @@ export async function POST(req: Request, { params }: Params) {
     // transaksi (yang sudah bisa basi begitu request lain commit lebih dulu).
     const fresh = await tx.shiftReport.findUniqueOrThrow({ where: { id } });
 
-    const utamaSudah = fresh.approvedAt !== null;
-    const nextSudah = fresh.supervisiNextApprovedAt !== null;
-
     // Konflik dihitung PER PERAN, bukan per laporan: pada shift C/E laporan yang
     // sudah di-approve supervisi utama masih menunggu supervisi selanjutnya.
-    if ((!perluUtama || utamaSudah) && (!perluNext || nextSudah)) {
+    if (cekKonflikApproval(peran, fresh)) {
       return { kind: "conflict" as const };
     }
 
-    const now = new Date();
-    const patch: Record<string, unknown> = {};
-    if (perluUtama && !utamaSudah) {
-      patch.approvedAt = now;
-      patch.approvedById = session.sub;
-      patch.catatanSupervisi = catatan;
-    }
-    if (perluNext && !nextSudah) {
-      patch.supervisiNextApprovedAt = now;
-      patch.supervisiNextApprovedById = session.sub;
-      patch.catatanSupervisiNext = catatan;
-    }
-
-    // Status dihitung dari nilai BARU (bukan nilai lama hasil findUnique) supaya
-    // approve terakhir langsung menutup laporan dalam satu update.
-    patch.status = hitungStatusLaporan({
-      shiftKode: fresh.shiftKode,
-      supervisiNextId: fresh.supervisiNextId,
-      approvedAt: (patch.approvedAt as Date | undefined) ?? fresh.approvedAt,
-      supervisiNextApprovedAt:
-        (patch.supervisiNextApprovedAt as Date | undefined) ??
-        fresh.supervisiNextApprovedAt,
-    });
-
+    const patch = susunPatchApproval(peran, fresh, session.sub, catatan, new Date());
     await tx.shiftReport.update({ where: { id }, data: patch });
 
-    return { kind: "ok" as const, status: patch.status as string };
+    return { kind: "ok" as const, status: patch.status };
   });
 
   if (result.kind === "conflict") {

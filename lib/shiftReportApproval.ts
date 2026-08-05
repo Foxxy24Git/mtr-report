@@ -69,6 +69,78 @@ export function hitungStatusLaporan(r: ApprovalState): "pending" | "approved" {
   return "approved";
 }
 
+/** Peran yang sudah pasti terkait laporan (hasil resolvePeranApproval bukan null). */
+export type PeranApprovalAktif = Exclude<PeranApproval, null>;
+
+/**
+ * True bila request approve ini harus ditolak sebagai konflik (409): semua
+ * kolom approval yang jadi tanggung jawab peran ini (utama/selanjutnya/
+ * keduanya) sudah terisi lebih dulu, jadi tidak ada apa pun lagi yang perlu
+ * ditulis untuk user tersebut.
+ */
+export function cekKonflikApproval(
+  peran: PeranApprovalAktif,
+  fresh: ApprovalState
+): boolean {
+  const perluUtama = peran === "utama" || peran === "keduanya";
+  const perluNext = peran === "selanjutnya" || peran === "keduanya";
+  const utamaSudah = fresh.approvedAt != null;
+  const nextSudah = fresh.supervisiNextApprovedAt != null;
+  return (!perluUtama || utamaSudah) && (!perluNext || nextSudah);
+}
+
+/** Kolom yang ditulis ke shift_reports oleh satu aksi approve. */
+export interface PatchApprovalLaporan {
+  status: "pending" | "approved";
+  approvedAt?: Date;
+  approvedById?: string;
+  catatanSupervisi?: string | null;
+  supervisiNextApprovedAt?: Date;
+  supervisiNextApprovedById?: string;
+  catatanSupervisiNext?: string | null;
+}
+
+/**
+ * Menyusun patch approval untuk satu klik approve: isi kolom utama, kolom
+ * selanjutnya, atau keduanya sekaligus (peran "keduanya") sesuai kolom mana
+ * yang belum terisi di `fresh`, lalu tentukan status akhir laporan dari nilai
+ * BARU tersebut supaya approve terakhir langsung menutup laporan.
+ */
+export function susunPatchApproval(
+  peran: PeranApprovalAktif,
+  fresh: ApprovalState,
+  userId: string,
+  catatan: string | null,
+  now: Date
+): PatchApprovalLaporan {
+  const perluUtama = peran === "utama" || peran === "keduanya";
+  const perluNext = peran === "selanjutnya" || peran === "keduanya";
+  const utamaSudah = fresh.approvedAt != null;
+  const nextSudah = fresh.supervisiNextApprovedAt != null;
+
+  const patch: PatchApprovalLaporan = { status: "pending" };
+  if (perluUtama && !utamaSudah) {
+    patch.approvedAt = now;
+    patch.approvedById = userId;
+    patch.catatanSupervisi = catatan;
+  }
+  if (perluNext && !nextSudah) {
+    patch.supervisiNextApprovedAt = now;
+    patch.supervisiNextApprovedById = userId;
+    patch.catatanSupervisiNext = catatan;
+  }
+
+  patch.status = hitungStatusLaporan({
+    shiftKode: fresh.shiftKode,
+    supervisiNextId: fresh.supervisiNextId,
+    approvedAt: patch.approvedAt ?? fresh.approvedAt,
+    supervisiNextApprovedAt:
+      patch.supervisiNextApprovedAt ?? fresh.supervisiNextApprovedAt,
+  });
+
+  return patch;
+}
+
 export type LabelApproval =
   | "Menunggu Approval"
   | "Menunggu Supervisi Utama"
