@@ -27,6 +27,7 @@ export async function GET(req: Request) {
 
   const items = await listShiftReports({
     supervisiId: session.role === "supervisi" ? session.sub : null,
+    viewerId: session.sub,
     status,
     from,
     to,

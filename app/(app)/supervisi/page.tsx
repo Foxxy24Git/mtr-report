@@ -14,6 +14,7 @@ export default async function SupervisiPage() {
   // Supervisi melihat laporan shift miliknya; superadmin (override) melihat semua.
   const items = await listShiftReports({
     supervisiId: session.role === "supervisi" ? session.sub : null,
+    viewerId: session.sub,
   });
 
   return (

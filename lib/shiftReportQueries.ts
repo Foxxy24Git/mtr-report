@@ -2,6 +2,13 @@ import "server-only";
 import { ShiftKode, TicketKategori, TicketStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { resolveLeaderName } from "@/lib/reportSignatures";
+import {
+  butuhApprovalSupervisiNext,
+  labelApproval,
+  resolvePeranApproval,
+  type LabelApproval,
+  type PeranApproval,
+} from "@/lib/shiftReportApproval";
 
 const TZ = "Asia/Jakarta";
 
@@ -42,6 +49,56 @@ export async function countTicketsForShiftDay(
   });
 }
 
+/** Satu tiket lanjutan untuk notif & badge (bentuk ringkas). */
+export interface TiketLanjutanItem {
+  noTiket: string;
+  kodeAtm: string;
+  namaAtm: string;
+}
+
+/**
+ * Tiket shift ini yang ditandai diteruskan ke shift berikutnya.
+ *
+ * Kriterianya penanda aktivitas `isTindakLanjutFlag` pada shift yang SAMA —
+ * bukan `status`, karena tiket bisa selesai di shift berikutnya namun tetap
+ * merupakan lanjutan dari shift ini.
+ */
+export async function listTiketLanjutan(
+  shiftKode: ShiftKode,
+  tanggal: Date
+): Promise<TiketLanjutanItem[]> {
+  const { start, end } = wibDayRange(tanggal);
+  const rows = await prisma.ticket.findMany({
+    where: {
+      openShiftKode: shiftKode,
+      waktuOpen: { gte: start, lt: end },
+      activities: { some: { isTindakLanjutFlag: true, shiftKode } },
+    },
+    orderBy: { waktuOpen: "asc" },
+    include: { atm: { select: { kodeAtm: true, namaAtm: true } } },
+  });
+  return rows.map((t) => ({
+    noTiket: t.noTiket,
+    kodeAtm: t.atm?.kodeAtm ?? "—",
+    namaAtm: t.atm?.namaAtm ?? "—",
+  }));
+}
+
+/** Jumlah tiket lanjutan — kriteria sama dengan {@link listTiketLanjutan}. */
+export async function countTiketLanjutan(
+  shiftKode: ShiftKode,
+  tanggal: Date
+): Promise<number> {
+  const { start, end } = wibDayRange(tanggal);
+  return prisma.ticket.count({
+    where: {
+      openShiftKode: shiftKode,
+      waktuOpen: { gte: start, lt: end },
+      activities: { some: { isTindakLanjutFlag: true, shiftKode } },
+    },
+  });
+}
+
 // ----------------------------- Daftar laporan shift -----------------------------
 
 export interface ShiftReportListItem {
@@ -54,11 +111,28 @@ export interface ShiftReportListItem {
   status: string;
   approverNama: string | null;
   jmlTiket: number;
+  supervisiNama: string | null;
+  supervisiNextNama: string | null;
+  approvedAt: Date | null;
+  supervisiNextApprovedAt: Date | null;
+  /** Peran viewer atas laporan ini — penentu tombol approve. */
+  peran: PeranApproval;
+  /** Label badge status gabungan (dual-gate). */
+  label: LabelApproval;
+  /** Jumlah tiket yang diteruskan ke shift berikutnya. */
+  jmlTiketLanjutan: number;
 }
 
 export interface ShiftReportListFilter {
   /** Scope ke supervisi tertentu; null = semua laporan (superadmin). */
   supervisiId?: string | null;
+  /**
+   * Id user yang MELIHAT daftar — hanya untuk menghitung `peran` tiap baris.
+   * Sengaja terpisah dari `supervisiId` yang mengatur SCOPING: superadmin
+   * mengirim supervisiId null + viewerId sesi, sehingga ia melihat semua
+   * laporan dengan peran null (tombol approve nonaktif).
+   */
+  viewerId?: string | null;
   /** pending | approved */
   status?: string | null;
   from?: Date | null;
@@ -69,7 +143,17 @@ export async function listShiftReports(
   f: ShiftReportListFilter
 ): Promise<ShiftReportListItem[]> {
   const where: Record<string, unknown> = {};
-  if (f.supervisiId) where.supervisiId = f.supervisiId;
+  if (f.supervisiId) {
+    // Supervisi selanjutnya juga berhak melihat laporan shift malam yang
+    // tiket lanjutannya menjadi tanggung jawab pemantauannya.
+    where.OR = [
+      { supervisiId: f.supervisiId },
+      {
+        supervisiNextId: f.supervisiId,
+        shiftKode: { in: [ShiftKode.C, ShiftKode.E] },
+      },
+    ];
+  }
   if (f.status === "pending" || f.status === "approved") where.status = f.status;
   if (f.from || f.to) {
     const range: Record<string, Date> = {};
@@ -85,6 +169,8 @@ export async function listShiftReports(
       ownerUser: { select: { nama: true } },
       receiverUser: { select: { nama: true } },
       approver: { select: { nama: true } },
+      supervisi: { select: { nama: true } },
+      supervisiNext: { select: { nama: true } },
     },
   });
 
@@ -99,6 +185,15 @@ export async function listShiftReports(
       status: r.status,
       approverNama: r.approver?.nama ?? null,
       jmlTiket: await countTicketsForShiftDay(r.shiftKode, r.tanggal),
+      supervisiNama: r.supervisi?.nama ?? null,
+      supervisiNextNama: r.supervisiNext?.nama ?? null,
+      approvedAt: r.approvedAt,
+      supervisiNextApprovedAt: r.supervisiNextApprovedAt,
+      peran: f.viewerId ? resolvePeranApproval(r, f.viewerId) : null,
+      label: labelApproval(r),
+      jmlTiketLanjutan: butuhApprovalSupervisiNext(r)
+        ? await countTiketLanjutan(r.shiftKode, r.tanggal)
+        : 0,
     }))
   );
 }
@@ -114,6 +209,8 @@ export interface ShiftReportDetailTicket {
   status: TicketStatus;
   waktuOpen: Date;
   waktuSelesai: Date | null;
+  /** True bila tiket ini diteruskan ke shift berikutnya. */
+  isLanjutan: boolean;
 }
 
 export interface ShiftReportDetail {
@@ -131,6 +228,12 @@ export interface ShiftReportDetail {
   approverNama: string | null;
   approvedAt: Date | null;
   catatanSupervisi: string | null;
+  supervisiNextId: string | null;
+  supervisiNextNama: string | null;
+  supervisiNextApproverNama: string | null;
+  supervisiNextApprovedAt: Date | null;
+  catatanSupervisiNext: string | null;
+  label: LabelApproval;
   tickets: ShiftReportDetailTicket[];
 }
 
@@ -146,6 +249,8 @@ export async function getShiftReportDetail(
       approver: { select: { nama: true } },
       pimpinanInfra: { select: { nama: true, tipe: true, namaPjs: true } },
       pimpinanDivisi: { select: { nama: true, tipe: true, namaPjs: true } },
+      supervisiNext: { select: { nama: true } },
+      supervisiNextApprover: { select: { nama: true } },
     },
   });
   if (!r) return null;
@@ -154,7 +259,14 @@ export async function getShiftReportDetail(
   const tickets = await prisma.ticket.findMany({
     where: { openShiftKode: r.shiftKode, waktuOpen: { gte: start, lt: end } },
     orderBy: { waktuOpen: "asc" },
-    include: { atm: { select: { kodeAtm: true, namaAtm: true } } },
+    include: {
+      atm: { select: { kodeAtm: true, namaAtm: true } },
+      activities: {
+        where: { isTindakLanjutFlag: true, shiftKode: r.shiftKode },
+        select: { id: true },
+        take: 1,
+      },
+    },
   });
 
   return {
@@ -172,6 +284,12 @@ export async function getShiftReportDetail(
     approverNama: r.approver?.nama ?? null,
     approvedAt: r.approvedAt,
     catatanSupervisi: r.catatanSupervisi,
+    supervisiNextId: r.supervisiNextId,
+    supervisiNextNama: r.supervisiNext?.nama ?? null,
+    supervisiNextApproverNama: r.supervisiNextApprover?.nama ?? null,
+    supervisiNextApprovedAt: r.supervisiNextApprovedAt,
+    catatanSupervisiNext: r.catatanSupervisiNext,
+    label: labelApproval(r),
     tickets: tickets.map((t) => ({
       id: t.id,
       noTiket: t.noTiket,
@@ -181,6 +299,7 @@ export async function getShiftReportDetail(
       status: t.status,
       waktuOpen: t.waktuOpen,
       waktuSelesai: t.waktuSelesai,
+      isLanjutan: t.activities.length > 0,
     })),
   };
 }
