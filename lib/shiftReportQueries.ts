@@ -265,13 +265,23 @@ export async function getShiftReportDetail(
   if (!r) return null;
 
   const { start, end } = wibDayRange(r.tanggal);
+  // Badge "Lanjutan" per-tiket dicocokkan lewat jendela waktu sempit di
+  // sekitar penutupan laporan ini (bukan wibDayRange di atas), karena
+  // shiftKode dipakai ulang tiap hari — tanpa jendela ini, aktivitas
+  // isTindakLanjutFlag dari shiftKode yang sama di hari LAIN bisa salah
+  // tertandai sebagai lanjutan laporan ini.
+  const { start: lanjutanStart, end: lanjutanEnd } = activityMatchWindow(r.tanggal);
   const tickets = await prisma.ticket.findMany({
     where: { openShiftKode: r.shiftKode, waktuOpen: { gte: start, lt: end } },
     orderBy: { waktuOpen: "asc" },
     include: {
       atm: { select: { kodeAtm: true, namaAtm: true } },
       activities: {
-        where: { isTindakLanjutFlag: true, shiftKode: r.shiftKode },
+        where: {
+          isTindakLanjutFlag: true,
+          shiftKode: r.shiftKode,
+          waktu: { gte: lanjutanStart, lte: lanjutanEnd },
+        },
         select: { id: true },
         take: 1,
       },
