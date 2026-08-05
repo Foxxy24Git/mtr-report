@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/Table";
 import { fmtDateTime } from "@/lib/format";
 import { nextShift, type ShiftCode } from "@/lib/shift";
+import { shiftPakaiSupervisiNext } from "@/lib/shiftReportApproval";
 import { SHIFT_LABELS, SHIFT_NAMES } from "@/lib/constants";
 import type { TicketListItem } from "@/lib/ticketQueries";
 
@@ -92,18 +93,23 @@ export function DailyMonitoringClient({
   // Petugas penerima shift (WAJIB, PRD revisi §1).
   const [hoReceiver, setHoReceiver] = useState("");
 
+  // Shift malam (C/E) wajib memilih supervisi selanjutnya — laporannya punya
+  // blok tanda tangan kolom L. Shift lain: dropdown-nya tidak ditampilkan.
+  const perluSupervisiNext = shiftPakaiSupervisiNext(currentShift);
+  const supervisiNextOk = !perluSupervisiNext || Boolean(hoSupervisiNext);
+
   // --- Tutup Laporan Shift (tanpa penerima, PART 6) ---
   const [closeOpen, setCloseOpen] = useState(false);
   const [closeBusy, setCloseBusy] = useState(false);
   const [closeErr, setCloseErr] = useState("");
-  const canCloseShift = Boolean(hoInfra && hoDivisi && hoSupervisi);
+  const canCloseShift = Boolean(hoInfra && hoDivisi && hoSupervisi) && supervisiNextOk;
 
   const leadersInfra = leaders.filter((l) => l.kategori === "infrastruktur");
   const leadersDivisi = leaders.filter((l) => l.kategori === "divisi");
   // Penerima dipilih dari petugas (role=user) selain diri sendiri.
   const receiverOptions = petugasUsers.filter((u) => u.id !== currentUserId);
   const canHandover = Boolean(
-    hoInfra && hoDivisi && hoSupervisi && hoReceiver
+    hoInfra && hoDivisi && hoSupervisi && hoReceiver && supervisiNextOk
   );
 
   function resetHandoverPick() {
@@ -421,23 +427,27 @@ export function DailyMonitoringClient({
               </option>
             ))}
           </Select>
-          <div>
-            <Select
-              label="Supervisi Selanjutnya"
-              value={hoSupervisiNext}
-              onChange={(e) => setHoSupervisiNext(e.target.value)}
-            >
-              <option value="">— Tidak ada —</option>
-              {supervisiUsers.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.nama}
-                </option>
-              ))}
-            </Select>
-            <p className="mt-1 text-xs text-gray-500">
-              (opsional — hanya jika ada pergantian supervisi)
-            </p>
-          </div>
+          {perluSupervisiNext && (
+            <div>
+              <Select
+                label="Supervisi Selanjutnya"
+                required
+                value={hoSupervisiNext}
+                onChange={(e) => setHoSupervisiNext(e.target.value)}
+              >
+                <option value="">— Pilih supervisi selanjutnya —</option>
+                {supervisiUsers.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.nama}
+                  </option>
+                ))}
+              </Select>
+              <p className="mt-1 text-xs text-gray-500">
+                Wajib untuk shift malam — supervisi ini ikut approve &amp; tanda
+                tangan laporan.
+              </p>
+            </div>
+          )}
           <Select
             label="Petugas yang Menerima Shift"
             required
@@ -544,23 +554,27 @@ export function DailyMonitoringClient({
               </option>
             ))}
           </Select>
-          <div>
-            <Select
-              label="Supervisi Selanjutnya"
-              value={hoSupervisiNext}
-              onChange={(e) => setHoSupervisiNext(e.target.value)}
-            >
-              <option value="">— Tidak ada —</option>
-              {supervisiUsers.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.nama}
-                </option>
-              ))}
-            </Select>
-            <p className="mt-1 text-xs text-gray-500">
-              (opsional — hanya jika ada pergantian supervisi)
-            </p>
-          </div>
+          {perluSupervisiNext && (
+            <div>
+              <Select
+                label="Supervisi Selanjutnya"
+                required
+                value={hoSupervisiNext}
+                onChange={(e) => setHoSupervisiNext(e.target.value)}
+              >
+                <option value="">— Pilih supervisi selanjutnya —</option>
+                {supervisiUsers.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.nama}
+                  </option>
+                ))}
+              </Select>
+              <p className="mt-1 text-xs text-gray-500">
+                Wajib untuk shift malam — supervisi ini ikut approve &amp; tanda
+                tangan laporan.
+              </p>
+            </div>
+          )}
         </div>
 
         {!currentUserHasTtd && (
