@@ -58,14 +58,21 @@ export function ShiftReportListClient({ initialItems }: Props) {
     return () => clearTimeout(handle);
   }, [load]);
 
-  // "Menunggu" dihitung dari sudut pandang viewer: laporan yang PERAN-nya
-  // belum approve — bukan sekadar status laporan yang belum lengkap.
+  // "Menunggu" dihitung dari sudut pandang viewer: kalau viewer punya PERAN
+  // (utama/selanjutnya/keduanya) di laporan itu, dihitung dari peran-nya —
+  // bukan sekadar status laporan yang belum lengkap. Viewer tanpa peran
+  // (superadmin, peran null) tidak terikat ke satu sisi approval, jadi
+  // dihitung dari kelengkapan laporan itu sendiri (label !== "Sudah Diapprove")
+  // supaya counter konsisten dengan badge status per baris yang sama-sama
+  // terlihat di layar.
   const pendingCount = items.filter((r) =>
     r.peran === "selanjutnya"
       ? !r.supervisiNextApprovedAt
       : r.peran === "keduanya"
         ? !r.approvedAt || !r.supervisiNextApprovedAt
-        : !r.approvedAt
+        : r.peran === null
+          ? r.label !== "Sudah Diapprove"
+          : !r.approvedAt
   ).length;
 
   return (
