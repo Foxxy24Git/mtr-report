@@ -2,6 +2,7 @@ import "server-only";
 import { ShiftKode } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { SHIFT_LABELS } from "@/lib/constants";
+import { SHIFT_RESUME_MAX_AGE_MS } from "@/lib/shift";
 import { SERVERS } from "@/lib/suhuServer";
 import {
   buildReportTicketWhere,
@@ -265,7 +266,15 @@ export async function gatherReportData(p: GatherParams): Promise<GatherResult> {
     ? await prisma.shiftReport.findFirst({
         where: {
           shiftKode: shift,
-          tanggal: { gte: startWib, lt: endWib },
+          // Toleransi keterlambatan tutup shift (pola sama dgn matchShiftsForDate
+          // di lib/reportShiftLookup.ts): ShiftReport.tanggal diisi new Date()
+          // wall-clock saat DITUTUP, bukan jam nominal endWib. Shift yg ditutup
+          // telat (mis. jam 07:20 utk shift C) jatuh di luar endWib ketat —
+          // pakai jendela sama lebar dgn pemulihan sesi shift (16 jam).
+          tanggal: {
+            gte: startWib,
+            lt: new Date(startWib.getTime() + SHIFT_RESUME_MAX_AGE_MS),
+          },
           ...(p.ownerUserId ? { ownerUserId: p.ownerUserId } : {}),
         },
         orderBy: { createdAt: "desc" },
