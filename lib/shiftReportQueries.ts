@@ -9,6 +9,7 @@ import {
   type LabelApproval,
   type PeranApproval,
 } from "@/lib/shiftReportApproval";
+import { activityMatchWindow } from "@/lib/shiftReportWindow";
 
 const TZ = "Asia/Jakarta";
 
@@ -57,22 +58,30 @@ export interface TiketLanjutanItem {
 }
 
 /**
- * Tiket shift ini yang ditandai diteruskan ke shift berikutnya.
+ * Tiket yang ditandai diteruskan ke shift berikutnya, untuk laporan shift
+ * `shiftKode` yang ditutup pada `tanggal`.
  *
  * Kriterianya penanda aktivitas `isTindakLanjutFlag` pada shift yang SAMA —
  * bukan `status`, karena tiket bisa selesai di shift berikutnya namun tetap
- * merupakan lanjutan dari shift ini.
+ * merupakan lanjutan dari shift ini. Sengaja TIDAK memfilter lewat
+ * `openShiftKode`/`waktuOpen` tiket: `openShiftKode` adalah shift ASAL tiket
+ * dibuka dan tidak berubah walau tiket sudah diteruskan berkali-kali,
+ * sehingga tiket lanjutan-dari-lanjutan akan salah terbuang bila dipakai
+ * sebagai filter. Relasi `activities` (dibatasi jendela waktu sempit lewat
+ * {@link activityMatchWindow}) sudah cukup untuk mencocokkan aktivitas ke
+ * laporan ini, tanpa perlu asumsi hari kalender WIB penuh yang tidak berlaku
+ * untuk shift malam (C/E) yang mulai sebelum tengah malam.
  */
 export async function listTiketLanjutan(
   shiftKode: ShiftKode,
   tanggal: Date
 ): Promise<TiketLanjutanItem[]> {
-  const { start, end } = wibDayRange(tanggal);
+  const { start, end } = activityMatchWindow(tanggal);
   const rows = await prisma.ticket.findMany({
     where: {
-      openShiftKode: shiftKode,
-      waktuOpen: { gte: start, lt: end },
-      activities: { some: { isTindakLanjutFlag: true, shiftKode } },
+      activities: {
+        some: { isTindakLanjutFlag: true, shiftKode, waktu: { gte: start, lte: end } },
+      },
     },
     orderBy: { waktuOpen: "asc" },
     include: { atm: { select: { kodeAtm: true, namaAtm: true } } },
@@ -89,12 +98,12 @@ export async function countTiketLanjutan(
   shiftKode: ShiftKode,
   tanggal: Date
 ): Promise<number> {
-  const { start, end } = wibDayRange(tanggal);
+  const { start, end } = activityMatchWindow(tanggal);
   return prisma.ticket.count({
     where: {
-      openShiftKode: shiftKode,
-      waktuOpen: { gte: start, lt: end },
-      activities: { some: { isTindakLanjutFlag: true, shiftKode } },
+      activities: {
+        some: { isTindakLanjutFlag: true, shiftKode, waktu: { gte: start, lte: end } },
+      },
     },
   });
 }
