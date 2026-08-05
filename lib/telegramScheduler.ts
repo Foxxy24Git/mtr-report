@@ -15,14 +15,40 @@ import {
   sendPendingReminders,
   sendReportReminder,
   type PendingReportNotif,
+  type TiketLanjutanNotif,
 } from "./telegramNotif";
+import type { ShiftKode } from "@prisma/client";
+import { butuhApprovalSupervisiNext } from "./shiftReportApproval";
+import { listTiketLanjutan } from "./shiftReportQueries";
+
+/**
+ * Lengkapi satu laporan dengan daftar tiket lanjutannya. Query tiket HANYA
+ * dijalankan untuk laporan yang memang punya supervisi selanjutnya (shift C/E),
+ * jadi shift A/B/D tidak menambah beban query sama sekali.
+ */
+async function withTiketLanjutan(r: {
+  shiftKode: ShiftKode;
+  tanggal: Date;
+  supervisiNextId: string | null;
+}): Promise<{ tiketLanjutan: TiketLanjutanNotif[] }> {
+  const perlu = butuhApprovalSupervisiNext({
+    shiftKode: r.shiftKode,
+    supervisiNextId: r.supervisiNextId,
+  });
+  return {
+    tiketLanjutan: perlu ? await listTiketLanjutan(r.shiftKode, r.tanggal) : [],
+  };
+}
 
 /** Ambil semua laporan shift pending + relasi supervisi & owner untuk notif. */
 export async function fetchPendingReports(): Promise<PendingReportNotif[]> {
-  return prisma.shiftReport.findMany({
+  const reports = await prisma.shiftReport.findMany({
     where: { status: "pending" },
-    include: { supervisi: true, ownerUser: true },
+    include: { supervisi: true, supervisiNext: true, ownerUser: true },
   });
+  return Promise.all(
+    reports.map(async (r) => ({ ...r, ...(await withTiketLanjutan(r)) }))
+  );
 }
 
 /**
@@ -36,9 +62,11 @@ export async function notifyReportPending(reportId: string): Promise<void> {
   try {
     const report = await prisma.shiftReport.findUnique({
       where: { id: reportId },
-      include: { supervisi: true, ownerUser: true },
+      include: { supervisi: true, supervisiNext: true, ownerUser: true },
     });
-    if (report) await sendReportReminder(report);
+    if (report) {
+      await sendReportReminder({ ...report, ...(await withTiketLanjutan(report)) });
+    }
   } catch (err) {
     console.error("[telegram] Gagal kirim notif laporan baru:", err);
   }

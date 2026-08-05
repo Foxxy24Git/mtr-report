@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   bolehKirimNotif,
   buildReminderMessage,
+  buildSupervisiNextMessage,
   sendReportReminder,
   sendPendingReminders,
   type PendingReportNotif,
@@ -70,7 +71,7 @@ describe("sendReportReminder", () => {
 
     const ok = await sendReportReminder(baseReport);
 
-    expect(ok).toBe(true);
+    expect(ok).toBe(1);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe(`https://api.telegram.org/bot${TOKEN}/sendMessage`);
@@ -88,7 +89,7 @@ describe("sendReportReminder", () => {
       supervisi: { nama: "Tanpa Chat", telegramChatId: null },
     });
 
-    expect(ok).toBe(false);
+    expect(ok).toBe(0);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
@@ -135,5 +136,111 @@ describe("sendPendingReminders", () => {
 
     expect(sent).toBe(0);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+const reportC: PendingReportNotif = {
+  shiftLabel: "Shift Malam (23:00–07:00)",
+  shiftKode: "C",
+  tanggal: new Date("2026-08-05T01:00:00Z"),
+  ownerUser: { nama: "Kurnia" },
+  supervisi: { nama: "Sup Utama", telegramChatId: "111" },
+  supervisiNext: { nama: "Sup Next", telegramChatId: "222" },
+  supervisiId: "u1",
+  supervisiNextId: "u2",
+  approvedAt: null,
+  supervisiNextApprovedAt: null,
+  tiketLanjutan: [
+    { noTiket: "TKT-001", kodeAtm: "130004", namaAtm: "ATM RSUD SOLOK SELATAN" },
+    { noTiket: "TKT-002", kodeAtm: "160009", namaAtm: "ATM KTR. BUPATI AGAM" },
+  ],
+};
+
+describe("buildSupervisiNextMessage", () => {
+  it("memuat identitas shift dan daftar tiket lanjutan", () => {
+    const msg = buildSupervisiNextMessage(reportC);
+    expect(msg).toContain("Shift Malam (23:00–07:00)");
+    expect(msg).toContain("Sup Next");
+    expect(msg).toContain("Kurnia");
+    expect(msg).toContain("TKT-001");
+    expect(msg).toContain("ATM KTR. BUPATI AGAM");
+    expect(msg).toContain("(2)");
+  });
+
+  it("menyebut tidak ada tiket lanjutan bila daftarnya kosong", () => {
+    const msg = buildSupervisiNextMessage({ ...reportC, tiketLanjutan: [] });
+    expect(msg).toContain("Tidak ada tiket lanjutan");
+  });
+
+  it("memotong daftar di 10 tiket dan menyebut sisanya", () => {
+    const banyak = Array.from({ length: 13 }, (_, i) => ({
+      noTiket: `TKT-${i}`,
+      kodeAtm: `K${i}`,
+      namaAtm: `ATM ${i}`,
+    }));
+    const msg = buildSupervisiNextMessage({ ...reportC, tiketLanjutan: banyak });
+    expect(msg).toContain("TKT-9");
+    expect(msg).not.toContain("TKT-10");
+    expect(msg).toContain("dan 3 tiket lainnya");
+  });
+});
+
+describe("sendReportReminder — dua peran", () => {
+  beforeEach(() => {
+    process.env.TELEGRAM_BOT_TOKEN = TOKEN;
+  });
+  afterEach(() => {
+    delete process.env.TELEGRAM_BOT_TOKEN;
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  function mockFetch() {
+    const f = vi.fn().mockResolvedValue({ json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", f);
+    return f;
+  }
+
+  it("mengirim ke kedua supervisi saat belum ada yang approve", async () => {
+    const f = mockFetch();
+    const sent = await sendReportReminder(reportC);
+    expect(sent).toBe(2);
+    const chatIds = f.mock.calls.map((c) => JSON.parse(c[1].body).chat_id);
+    expect(chatIds.sort()).toEqual(["111", "222"]);
+  });
+
+  it("melewati peran yang sudah approve", async () => {
+    const f = mockFetch();
+    const sent = await sendReportReminder({
+      ...reportC,
+      approvedAt: new Date("2026-08-05T02:00:00Z"),
+    });
+    expect(sent).toBe(1);
+    expect(JSON.parse(f.mock.calls[0][1].body).chat_id).toBe("222");
+  });
+
+  it("dedupe: satu orang dua peran → satu pesan berisi tiket lanjutan", async () => {
+    const f = mockFetch();
+    const sent = await sendReportReminder({
+      ...reportC,
+      supervisi: { nama: "Dimas", telegramChatId: "999" },
+      supervisiNext: { nama: "Dimas", telegramChatId: "999" },
+      supervisiId: "u9",
+      supervisiNextId: "u9",
+    });
+    expect(sent).toBe(1);
+    expect(f).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(f.mock.calls[0][1].body).text).toContain("TKT-001");
+  });
+
+  it("shift A: supervisiNext diabaikan walau terisi (data lama)", async () => {
+    const f = mockFetch();
+    const sent = await sendReportReminder({
+      ...reportC,
+      shiftKode: "A",
+      shiftLabel: "Shift Pagi (07:00–15:00)",
+    });
+    expect(sent).toBe(1);
+    expect(JSON.parse(f.mock.calls[0][1].body).chat_id).toBe("111");
   });
 });

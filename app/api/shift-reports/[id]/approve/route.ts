@@ -5,6 +5,7 @@ import {
   resolvePeranApproval,
   hitungStatusLaporan,
 } from "@/lib/shiftReportApproval";
+import { notifyReportPending } from "@/lib/telegramScheduler";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -119,6 +120,16 @@ export async function POST(req: Request, { params }: Params) {
       { error: "Anda sudah menyetujui laporan shift ini." },
       { status: 409 }
     );
+  }
+
+  // Masih ada peran yang belum approve (shift malam) → ingatkan sekarang juga.
+  // Dibungkus try/catch: kegagalan Telegram tidak boleh menggagalkan approve.
+  if (result.status === "pending") {
+    try {
+      await notifyReportPending(id);
+    } catch (err) {
+      console.error("[telegram] Gagal kirim notif sisa approval:", err);
+    }
   }
 
   return NextResponse.json({ ok: true, peran, status: result.status });
