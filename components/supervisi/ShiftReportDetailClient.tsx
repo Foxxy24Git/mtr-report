@@ -28,19 +28,38 @@ import type {
   ShiftReportDetailTicket,
 } from "@/lib/shiftReportQueries";
 import type { TicketActivityItem } from "@/lib/ticketQueries";
+import type { PeranApproval } from "@/lib/shiftReportApproval";
 
 interface Props {
   report: ShiftReportDetail;
-  canApprove: boolean;
+  /** Peran viewer; null = tidak berhak approve (mis. superadmin). */
+  peran: PeranApproval;
 }
 
-export function ShiftReportDetailClient({ report, canApprove }: Props) {
+export function ShiftReportDetailClient({ report, peran }: Props) {
   const router = useRouter();
   const [catatan, setCatatan] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
-  const approved = report.status === "approved";
+  const approved = report.label === "Sudah Diapprove";
+  const utamaSudah = Boolean(report.approvedAt);
+  const nextSudah = Boolean(report.supervisiNextApprovedAt);
+  // Tombol approve muncul selama masih ada peran viewer yang belum approve.
+  const bisaApprove =
+    peran === "keduanya"
+      ? !utamaSudah || !nextSudah
+      : peran === "selanjutnya"
+        ? !nextSudah
+        : peran === "utama"
+          ? !utamaSudah
+          : false;
+  const labelTombol =
+    peran === "keduanya"
+      ? "Setujui (Supervisi & Supervisi Selanjutnya)"
+      : peran === "selanjutnya"
+        ? "Setujui sebagai Supervisi Selanjutnya"
+        : "Setujui sebagai Supervisi";
 
   async function approve() {
     setErr("");
@@ -75,10 +94,12 @@ export function ShiftReportDetailClient({ report, canApprove }: Props) {
           <h1 className="page-title">Laporan Shift</h1>
           {approved ? (
             <Badge variant="success">
-              <ShieldCheck className="w-3 h-3 mr-0.5" /> Sudah Diapprove
+              <ShieldCheck className="w-3 h-3 mr-0.5" /> {report.label}
             </Badge>
+          ) : report.label === "Menunggu Approval" ? (
+            <Badge variant="warning">{report.label}</Badge>
           ) : (
-            <Badge variant="warning">Menunggu Approval</Badge>
+            <Badge variant="info">{report.label}</Badge>
           )}
         </div>
       </div>
@@ -94,17 +115,52 @@ export function ShiftReportDetailClient({ report, canApprove }: Props) {
           />
           <InfoRow label="Petugas (Owner)" value={report.ownerNama} />
           <InfoRow label="Penerima" value={report.receiverNama ?? "—"} />
+          <InfoRow
+            label="Supervisi"
+            value={
+              (report.supervisiNama ?? "—") +
+              (report.approvedAt ? " · sudah approve" : " · menunggu")
+            }
+          />
+          {report.supervisiNextId && (
+            <InfoRow
+              label="Supervisi Selanjutnya"
+              value={
+                (report.supervisiNextNama ?? "—") +
+                (report.supervisiNextApprovedAt
+                  ? " · sudah approve"
+                  : " · menunggu")
+              }
+            />
+          )}
           <InfoRow label="Pimpinan Infrastruktur" value={report.pimpinanInfra || "—"} />
           <InfoRow label="Pimpinan Divisi" value={report.pimpinanDivisi || "—"} />
         </dl>
-        {approved && (
+        {report.approvedAt && (
           <p className="mt-3 text-xs text-emerald-700">
-            Disetujui oleh {report.approverNama ?? "Supervisi"}
-            {report.approvedAt ? ` · ${fmtDateTime(report.approvedAt)}` : ""}
+            Supervisi: disetujui oleh {report.approverNama ?? "—"} ·{" "}
+            {fmtDateTime(report.approvedAt)}
             {report.catatanSupervisi ? ` · Catatan: ${report.catatanSupervisi}` : ""}
           </p>
         )}
+        {report.supervisiNextApprovedAt && (
+          <p className="mt-1 text-xs text-emerald-700">
+            Supervisi Selanjutnya: disetujui oleh{" "}
+            {report.supervisiNextApproverNama ?? "—"} ·{" "}
+            {fmtDateTime(report.supervisiNextApprovedAt)}
+            {report.catatanSupervisiNext
+              ? ` · Catatan: ${report.catatanSupervisiNext}`
+              : ""}
+          </p>
+        )}
       </div>
+
+      {(peran === "selanjutnya" || peran === "keduanya") && (
+        <p className="rounded-lg border border-sky-200 bg-sky-50/60 px-4 py-3 text-sm text-sky-800">
+          Tiket bertanda <b>Lanjutan</b> di bawah adalah tindak lanjut dari shift
+          ini yang menjadi tanggung jawab pemantauan Anda.
+        </p>
+      )}
 
       {/* Daftar tiket shift ini */}
       <div>
@@ -132,16 +188,18 @@ export function ShiftReportDetailClient({ report, canApprove }: Props) {
               </TableRow>
             </TableHead>
             <TableBody>
-              {report.tickets.map((t) => (
-                <TicketRow key={t.id} ticket={t} />
-              ))}
+              {[...report.tickets]
+                .sort((a, b) => Number(b.isLanjutan) - Number(a.isLanjutan))
+                .map((t) => (
+                  <TicketRow key={t.id} ticket={t} />
+                ))}
             </TableBody>
           </Table>
         )}
       </div>
 
       {/* Approve */}
-      {!approved && canApprove && (
+      {bisaApprove && (
         <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-4">
           <label className="block text-sm font-medium text-gray-700">
             Catatan Supervisi (opsional)
@@ -169,7 +227,7 @@ export function ShiftReportDetailClient({ report, canApprove }: Props) {
             ) : (
               <ShieldCheck className="h-5 w-5" />
             )}
-            Approve Laporan Shift
+            {labelTombol}
           </button>
         </div>
       )}
@@ -224,6 +282,11 @@ function TicketRow({ ticket }: { ticket: ShiftReportDetailTicket }) {
             )}
             {ticket.noTiket}
           </span>
+          {ticket.isLanjutan && (
+            <div className="mt-0.5">
+              <Badge variant="info">Lanjutan</Badge>
+            </div>
+          )}
         </Td>
         <Td>
           <Badge variant={ticket.kategori === "atm" ? "info" : "neutral"}>

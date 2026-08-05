@@ -58,7 +58,15 @@ export function ShiftReportListClient({ initialItems }: Props) {
     return () => clearTimeout(handle);
   }, [load]);
 
-  const pendingCount = items.filter((r) => r.status !== "approved").length;
+  // "Menunggu" dihitung dari sudut pandang viewer: laporan yang PERAN-nya
+  // belum approve — bukan sekadar status laporan yang belum lengkap.
+  const pendingCount = items.filter((r) =>
+    r.peran === "selanjutnya"
+      ? !r.supervisiNextApprovedAt
+      : r.peran === "keduanya"
+        ? !r.approvedAt || !r.supervisiNextApprovedAt
+        : !r.approvedAt
+  ).length;
 
   return (
     <div className="space-y-4">
@@ -108,6 +116,7 @@ export function ShiftReportListClient({ initialItems }: Props) {
             <Th>Shift</Th>
             <Th>Petugas (Owner)</Th>
             <Th>Penerima</Th>
+            <Th>Peran</Th>
             <Th>Jml Tiket</Th>
             <Th>Status</Th>
             <Th>Aksi</Th>
@@ -116,7 +125,7 @@ export function ShiftReportListClient({ initialItems }: Props) {
         <TableBody>
           {items.length === 0 ? (
             <TableRow>
-              <Td colSpan={7} className="text-center text-gray-400 py-8">
+              <Td colSpan={8} className="text-center text-gray-400 py-8">
                 Tidak ada laporan shift sesuai filter.
               </Td>
             </TableRow>
@@ -131,20 +140,38 @@ export function ShiftReportListClient({ initialItems }: Props) {
                 <Td className="whitespace-nowrap text-gray-600">
                   {r.receiverNama ?? "—"}
                 </Td>
+                <Td className="whitespace-nowrap text-xs">
+                  {r.peran === "keduanya" ? (
+                    <Badge variant="primary">Utama + Selanjutnya</Badge>
+                  ) : r.peran === "selanjutnya" ? (
+                    <Badge variant="info">Supervisi Selanjutnya</Badge>
+                  ) : r.peran === "utama" ? (
+                    <Badge variant="neutral">Supervisi</Badge>
+                  ) : (
+                    <span className="text-gray-400">—</span>
+                  )}
+                  {r.jmlTiketLanjutan > 0 && (
+                    <div className="mt-0.5 text-[11px] text-gray-500">
+                      {r.jmlTiketLanjutan} tiket lanjutan
+                    </div>
+                  )}
+                </Td>
                 <Td className="text-center font-medium">{r.jmlTiket}</Td>
                 <Td>
-                  {r.status === "approved" ? (
+                  {r.label === "Sudah Diapprove" ? (
                     <Badge variant="success">
-                      <ShieldCheck className="w-3 h-3 mr-0.5" /> Sudah Diapprove
+                      <ShieldCheck className="w-3 h-3 mr-0.5" /> {r.label}
                     </Badge>
+                  ) : r.label === "Menunggu Approval" ? (
+                    <Badge variant="warning">{r.label}</Badge>
                   ) : (
-                    <Badge variant="warning">Menunggu Approval</Badge>
+                    <Badge variant="info">{r.label}</Badge>
                   )}
                 </Td>
                 <Td>
                   <Button
                     size="sm"
-                    variant={r.status === "approved" ? "secondary" : "primary"}
+                    variant={r.label === "Sudah Diapprove" ? "secondary" : "primary"}
                     onClick={() => router.push(`/supervisi/${r.id}`)}
                   >
                     <FileText className="w-4 h-4" />
