@@ -176,6 +176,7 @@ model Ticket {
   atmId               String?         @map("atm_id")
   waktuOpen           DateTime        @default(now()) @map("waktu_open")
   waktuResponInternal DateTime?       @map("waktu_respon_internal")
+  waktuLaporVendor    DateTime?       @map("waktu_lapor_vendor")
   cpTipe              CpTipe?         @map("cp_tipe")
   cpNama              String?         @map("cp_nama")
   cpTelp              String?         @map("cp_telp")
