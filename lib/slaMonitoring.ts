@@ -27,6 +27,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 // ----------------------------- Filter & rentang -----------------------------
 
 export type SlaKategori = "atm" | "jaringan" | "semua";
+export type SlaBasis = "internal" | "eksternal";
 
 export interface SlaFilter {
   dari: string; // YYYY-MM-DD (WIB), inklusif
@@ -139,6 +140,8 @@ const ticketSelect = {
   status: true,
   waktuOpen: true,
   waktuSelesai: true,
+  noTiketVendor: true,
+  waktuLaporVendor: true,
   atm: {
     select: {
       kodeAtm: true,
@@ -172,14 +175,52 @@ function atmVendor(atm: AtmInfo): string {
   return atm?.vendorAtm || atm?.vendorJaringan || "-";
 }
 
-/** Downtime (menit) satu tiket — 0 bila belum selesai (PRD §7). */
-function downtimeMenit(t: TicketRow): number {
+/**
+ * Downtime (menit) satu tiket, tergantung basis SLA:
+ * - internal: dari waktuOpen (formula lama, PRD §7).
+ * - eksternal: dari waktuLaporVendor (Lampiran IV PKS Artajasa). `null` =
+ *   N/A (tiket belum pernah lapor vendor) → dikecualikan dari grouping,
+ *   BUKAN dihitung sebagai downtime 0/100%.
+ */
+function downtimeMenit(t: TicketRow, basis: SlaBasis): number | null {
+  if (basis === "eksternal" && !t.waktuLaporVendor) return null;
   if (t.status !== "selesai") return 0;
-  return computeSla(t.waktuOpen, t.waktuSelesai).lamaMenit ?? 0;
+  const mulai = basis === "eksternal" ? t.waktuLaporVendor! : t.waktuOpen;
+  return computeSla(mulai, t.waktuSelesai).lamaMenit ?? 0;
 }
 
 function clamp01(n: number): number {
   return Math.min(1, Math.max(0, n));
+}
+
+/**
+ * Restitusi denda availability (Lampiran IV PKS ARTAJASA–Bank Nagari,
+ * No. PKS/042/DIR/11-2024). `slaPersenFrac` pecahan 0..1. Hanya relevan
+ * untuk basis SLA Eksternal (kontrak mengacu availability vendor).
+ *
+ * Batas 70,0% memakai `p > 70.0` (bukan `>=`) karena tabel sumber
+ * tumpang-tindih tepat di titik itu — dipilih supaya 70,0% jatuh ke
+ * "Bebas Biaya Bulanan" sesuai baris terakhir tabel.
+ */
+export interface RestitusiTier {
+  restitusiPersen: number | null; // null → "Bebas Biaya Bulanan"
+  label: string;
+}
+export function hitungRestitusi(slaPersenFrac: number): RestitusiTier {
+  const p = slaPersenFrac * 100;
+  if (p >= 99.5) return { restitusiPersen: 0, label: "0%" };
+  if (p >= 99.0) return { restitusiPersen: 2, label: "2%" };
+  if (p >= 98.0) return { restitusiPersen: 6, label: "6%" };
+  if (p >= 97.0) return { restitusiPersen: 9, label: "9%" };
+  if (p >= 96.0) return { restitusiPersen: 12, label: "12%" };
+  if (p >= 95.0) return { restitusiPersen: 15, label: "15%" };
+  if (p >= 94.0) return { restitusiPersen: 20, label: "20%" };
+  if (p >= 93.0) return { restitusiPersen: 25, label: "25%" };
+  if (p >= 92.0) return { restitusiPersen: 30, label: "30%" };
+  if (p >= 91.0) return { restitusiPersen: 35, label: "35%" };
+  if (p >= 90.0) return { restitusiPersen: 40, label: "40%" };
+  if (p > 70.0) return { restitusiPersen: 60, label: "60%" };
+  return { restitusiPersen: null, label: "Bebas Biaya Bulanan" };
 }
 
 // ----------------------------- 1. SLA terendah -----------------------------
@@ -195,6 +236,7 @@ export interface LowestSlaRow {
   totalDowntimeMenit: number;
   slaPersen: number; // 0..1
   slaPersenLabel: string; // "99.86%"
+  restitusi?: RestitusiTier; // hanya terisi saat basis eksternal
 }
 
 export interface LowestSlaResponse {
@@ -203,30 +245,38 @@ export interface LowestSlaResponse {
   items: LowestSlaRow[];
 }
 
-export async function getLowestSla(filter: SlaFilter): Promise<LowestSlaResponse> {
+export async function getLowestSla(
+  filter: SlaFilter,
+  basis: SlaBasis = "internal"
+): Promise<LowestSlaResponse> {
   const range = computeSlaRange(filter.dari, filter.sampai);
   const rows = await prisma.ticket.findMany({
     where: buildWhere(range, filter.kategori, true),
     select: ticketSelect,
   });
+  // Basis eksternal: ATM yang TIDAK PERNAH punya tiket dgn No Tiket Vendor
+  // terisi pada periode ini dikecualikan (N/A), bukan dihitung 100%.
+  const rowsUsed =
+    basis === "eksternal" ? rows.filter((t) => t.waktuLaporVendor !== null) : rows;
 
   const groups = new Map<
     string,
     { atm: AtmInfo; atmId: string | null; kategori: TicketKategori; tiket: number; downtime: number }
   >();
-  for (const t of rows) {
+  for (const t of rowsUsed) {
     const key = atmKey(t);
+    const dt = downtimeMenit(t, basis)!; // rowsUsed sudah dijamin non-null utk eksternal
     const g = groups.get(key);
     if (g) {
       g.tiket += 1;
-      g.downtime += downtimeMenit(t);
+      g.downtime += dt;
     } else {
       groups.set(key, {
         atm: t.atm,
         atmId: t.atmId,
         kategori: t.kategori,
         tiket: 1,
-        downtime: downtimeMenit(t),
+        downtime: dt,
       });
     }
   }
@@ -247,6 +297,7 @@ export async function getLowestSla(filter: SlaFilter): Promise<LowestSlaResponse
         totalDowntimeMenit: g.downtime,
         slaPersen: sla,
         slaPersenLabel: formatSlaPersen(sla),
+        ...(basis === "eksternal" ? { restitusi: hitungRestitusi(sla) } : {}),
       };
     })
     .sort((a, b) => a.slaPersen - b.slaPersen)
