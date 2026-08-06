@@ -46,6 +46,7 @@ interface LowestRow {
   totalDowntimeMenit: number;
   slaPersen: number;
   slaPersenLabel: string;
+  restitusi?: { restitusiPersen: number | null; label: string };
 }
 interface MostTroubleRow {
   atmId: string | null;
@@ -78,6 +79,7 @@ const SELECT_CLS =
 
 type Preset = "7d" | "30d" | "3m" | "custom";
 type Kategori = "semua" | "atm" | "jaringan";
+type SlaBasis = "internal" | "eksternal";
 
 function dateKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
@@ -112,6 +114,7 @@ export function MonitoringSlaClient() {
   const [sampai, setSampai] = useState(init.current.sampai);
   const [kategori, setKategori] = useState<Kategori>("semua");
   const [preset, setPreset] = useState<Preset>("30d");
+  const [basis, setBasis] = useState<SlaBasis>("internal");
 
   const [data, setData] = useState<SlaData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -119,7 +122,7 @@ export function MonitoringSlaClient() {
   const [modalOpen, setModalOpen] = useState(false);
 
   const load = useCallback(
-    async (f: { dari: string; sampai: string; kategori: Kategori }) => {
+    async (f: { dari: string; sampai: string; kategori: Kategori; basis: SlaBasis }) => {
       setLoading(true);
       setError(null);
       try {
@@ -128,9 +131,15 @@ export function MonitoringSlaClient() {
           sampai: f.sampai,
           kategori: f.kategori,
         }).toString();
+        const qsBasis = new URLSearchParams({
+          dari: f.dari,
+          sampai: f.sampai,
+          kategori: f.kategori,
+          basis: f.basis,
+        }).toString();
         const [summary, lowest, mostTrouble, byJenis, bySumber] = await Promise.all([
-          fetch(`/api/sla/summary?${qs}`).then(okJson),
-          fetch(`/api/sla/lowest?${qs}`).then(okJson),
+          fetch(`/api/sla/summary?${qsBasis}`).then(okJson),
+          fetch(`/api/sla/lowest?${qsBasis}`).then(okJson),
           fetch(`/api/sla/most-trouble?${qs}`).then(okJson),
           fetch(`/api/sla/by-jenis-gangguan?${qs}`).then(okJson),
           fetch(`/api/sla/by-sumber-penyebab?${qs}`).then(okJson),
@@ -153,7 +162,7 @@ export function MonitoringSlaClient() {
 
   // Muat awal.
   useEffect(() => {
-    load({ dari: init.current.dari, sampai: init.current.sampai, kategori: "semua" });
+    load({ dari: init.current.dari, sampai: init.current.sampai, kategori: "semua", basis: "internal" });
   }, [load]);
 
   function applyPreset(p: Exclude<Preset, "custom">) {
@@ -164,11 +173,16 @@ export function MonitoringSlaClient() {
     setDari(fromKey);
     setSampai(todayKey);
     setPreset(p);
-    load({ dari: fromKey, sampai: todayKey, kategori });
+    load({ dari: fromKey, sampai: todayKey, kategori, basis });
   }
 
   function applyFilter() {
-    load({ dari, sampai, kategori });
+    load({ dari, sampai, kategori, basis });
+  }
+
+  function applyBasis(b: SlaBasis) {
+    setBasis(b);
+    load({ dari, sampai, kategori, basis: b });
   }
 
   const empty = !loading && !error && data && data.summary.totalTiket === 0;
@@ -187,6 +201,15 @@ export function MonitoringSlaClient() {
             </PresetButton>
             <PresetButton active={preset === "3m"} onClick={() => applyPreset("3m")}>
               3 Bulan
+            </PresetButton>
+          </div>
+
+          <div className="flex items-center gap-1">
+            <PresetButton active={basis === "internal"} onClick={() => applyBasis("internal")}>
+              SLA Internal
+            </PresetButton>
+            <PresetButton active={basis === "eksternal"} onClick={() => applyBasis("eksternal")}>
+              SLA Eksternal
             </PresetButton>
           </div>
 
@@ -280,7 +303,7 @@ export function MonitoringSlaClient() {
           {/* 2. Kartu ringkasan */}
           <Section>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <SlaSummaryCard summary={data.summary} />
+              <SlaSummaryCard summary={data.summary} basis={basis} />
               <StatCard
                 icon={<Ticket className="h-5 w-5" />}
                 tone="primary"
@@ -307,7 +330,14 @@ export function MonitoringSlaClient() {
 
           {/* 3. SLA terendah */}
           <Section>
-            <Card title="SLA Terendah" subtitle="ATM/lokasi paling bermasalah pada periode">
+            <Card
+              title="SLA Terendah"
+              subtitle={
+                basis === "eksternal"
+                  ? "ATM/lokasi paling bermasalah pada periode (basis: Eksternal — vendor)"
+                  : "ATM/lokasi paling bermasalah pada periode"
+              }
+            >
               <Table>
                 <TableHead>
                   <TableRow>
@@ -318,12 +348,13 @@ export function MonitoringSlaClient() {
                     <Th className="text-right">Total Tiket</Th>
                     <Th className="text-right">Downtime</Th>
                     <Th className="text-right">SLA%</Th>
+                    {basis === "eksternal" && <Th className="text-right">Restitusi</Th>}
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {data.lowest.length === 0 ? (
                     <TableRow>
-                      <Td colSpan={7} className="py-8 text-center text-gray-400">
+                      <Td colSpan={basis === "eksternal" ? 8 : 7} className="py-8 text-center text-gray-400">
                         Tidak ada tiket selesai pada rentang ini.
                       </Td>
                     </TableRow>
@@ -350,6 +381,11 @@ export function MonitoringSlaClient() {
                         <Td className={`text-right font-semibold ${slaTone(r.slaPersen)}`}>
                           {r.slaPersenLabel}
                         </Td>
+                        {basis === "eksternal" && (
+                          <Td className="text-right text-gray-700">
+                            {r.restitusi?.label ?? "-"}
+                          </Td>
+                        )}
                       </TableRow>
                     ))
                   )}
@@ -770,7 +806,7 @@ function StatCard({
   );
 }
 
-function SlaSummaryCard({ summary }: { summary: SlaSummary }) {
+function SlaSummaryCard({ summary, basis }: { summary: SlaSummary; basis: SlaBasis }) {
   const tone = slaCardTone(summary.rataSlaSemua);
   return (
     <div className="flex items-center gap-3 rounded-xl border border-gray-100 bg-white px-4 py-4 shadow-sm">
@@ -781,7 +817,12 @@ function SlaSummaryCard({ summary }: { summary: SlaSummary }) {
         <div className={`text-xl font-bold leading-tight ${tone.text}`}>
           {summary.rataSlaSemuaLabel}
         </div>
-        <div className="text-xs text-gray-500">Rata-rata SLA Keseluruhan</div>
+        <div className="text-xs text-gray-500">
+          Rata-rata SLA Keseluruhan
+          <span className="ml-1 text-gray-400">
+            ({basis === "internal" ? "Internal" : "Eksternal"})
+          </span>
+        </div>
       </div>
     </div>
   );
