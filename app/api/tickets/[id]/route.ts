@@ -77,14 +77,27 @@ export async function PATCH(req: Request, { params }: Params) {
   const body = await req.json().catch(() => null);
   const isSuperadmin = session.role === "superadmin";
 
+  const noTiketVendorBaru = optStr(body?.noTiketVendor);
   const data: Prisma.TicketUncheckedUpdateInput = {
     jenisGangguan: optStr(body?.jenisGangguan),
     sumberPenyebab: optStr(body?.sumberPenyebab),
     metodePenanganan: optStr(body?.metodePenanganan),
     vendor: optStr(body?.vendor),
-    noTiketVendor: optStr(body?.noTiketVendor),
+    noTiketVendor: noTiketVendorBaru,
     keterangan: optStr(body?.keterangan),
   };
+
+  // Dasar SLA Eksternal (Lampiran IV PKS Artajasa) — dicatat sekali saja
+  // saat No Tiket Vendor pertama kali diisi, immutable sesudahnya. Pola
+  // sama seperti waktuResponInternal di
+  // app/api/tickets/[id]/activities/route.ts:74-78.
+  const perluCatatWaktu =
+    !guard.ticket.waktuLaporVendor &&
+    !guard.ticket.noTiketVendor &&
+    noTiketVendorBaru !== null;
+  if (perluCatatWaktu) {
+    data.waktuLaporVendor = new Date();
+  }
 
   // --- Field override Super Admin ---
   const sentSuperadminFields = SUPERADMIN_FIELDS.filter((f) =>
