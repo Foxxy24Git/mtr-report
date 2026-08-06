@@ -163,6 +163,7 @@ export async function POST(req: Request) {
 
   const noTiket = await generateUniqueNoTiket(prisma);
   const shiftKode = session.shift as ShiftKode;
+  const noTiketVendor = optStr(body?.noTiketVendor);
 
   const ticket = await prisma.$transaction(async (tx) => {
     const t = await tx.ticket.create({
@@ -177,12 +178,15 @@ export async function POST(req: Request) {
         sumberPenyebab,
         metodePenanganan,
         vendor: optStr(body?.vendor),
-        noTiketVendor: optStr(body?.noTiketVendor),
+        noTiketVendor,
         shiftKode,
         // Shift asal = shift saat open; immutable, dipakai untuk laporan.
         openShiftKode: shiftKode,
         ownerUserId: session.sub,
         ...(waktuOpen ? { waktuOpen } : {}),
+        // Dasar SLA Eksternal (Lampiran IV PKS Artajasa) — dicatat sekali
+        // saat No Tiket Vendor pertama kali ada, immutable sesudahnya.
+        ...(noTiketVendor ? { waktuLaporVendor: new Date() } : {}),
       },
     });
 
