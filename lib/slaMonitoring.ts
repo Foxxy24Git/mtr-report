@@ -101,6 +101,19 @@ export function parseSlaFilters(sp: URLSearchParams): ParsedSlaFilters {
   return { ok: true, filter: { dari, sampai, kategori: kategoriRaw } };
 }
 
+export type ParsedSlaBasis =
+  | { ok: true; basis: SlaBasis }
+  | { ok: false; error: string };
+
+/** Parse & validasi query param `?basis=internal|eksternal` (default "internal"). */
+export function parseSlaBasis(sp: URLSearchParams): ParsedSlaBasis {
+  const raw = sp.get("basis") ?? "internal";
+  if (raw !== "internal" && raw !== "eksternal") {
+    return { ok: false, error: "Basis harus internal | eksternal." };
+  }
+  return { ok: true, basis: raw };
+}
+
 export interface SlaRange {
   startWib: Date;
   endWib: Date; // eksklusif (sehari setelah `sampai`)
@@ -557,7 +570,7 @@ export async function getProblemReport(
       groups.set(key, g);
     }
     g.jumlah += 1;
-    g.downtime += downtimeMenit(t as unknown as TicketRow);
+    g.downtime += downtimeMenit(t as unknown as TicketRow, "internal") ?? 0;
     if (t.jenisGangguan) g.jenis.set(t.jenisGangguan, (g.jenis.get(t.jenisGangguan) ?? 0) + 1);
     if (t.sumberPenyebab)
       g.sumber.set(t.sumberPenyebab, (g.sumber.get(t.sumberPenyebab) ?? 0) + 1);
@@ -596,12 +609,20 @@ export async function getProblemReport(
   return { filter, sortBy, totalMenitPeriode: range.totalMenitPeriode, items };
 }
 
-export async function getSlaSummary(filter: SlaFilter): Promise<SlaSummary> {
+export async function getSlaSummary(
+  filter: SlaFilter,
+  basis: SlaBasis = "internal"
+): Promise<SlaSummary> {
   const range = computeSlaRange(filter.dari, filter.sampai);
   const rows = await prisma.ticket.findMany({
     where: buildWhere(range, filter.kategori, false),
     select: ticketSelect,
   });
+  // Basis eksternal: sama seperti getLowestSla, tiket tanpa waktuLaporVendor
+  // dikecualikan (N/A) — konsekuensinya Total Tiket/Downtime/ATM Bermasalah
+  // pada basis ini HANYA menghitung tiket yang punya No Tiket Vendor.
+  const rowsUsed =
+    basis === "eksternal" ? rows.filter((t) => t.waktuLaporVendor !== null) : rows;
 
   // Akumulasi downtime per-ATM, dipisah per kategori untuk rata-rata kategori.
   type Acc = { downtime: number };
@@ -619,9 +640,9 @@ export async function getSlaSummary(filter: SlaFilter): Promise<SlaSummary> {
     else m.set(key, { downtime: dt });
   };
 
-  for (const t of rows) {
+  for (const t of rowsUsed) {
     const key = atmKey(t);
-    const dt = downtimeMenit(t);
+    const dt = downtimeMenit(t, basis)!; // rowsUsed sudah dijamin non-null utk eksternal
     totalDowntime += dt;
     bump(perAtm, key, dt);
     if (t.kategori === "atm") {
@@ -651,7 +672,7 @@ export async function getSlaSummary(filter: SlaFilter): Promise<SlaSummary> {
   return {
     filter,
     totalMenitPeriode: range.totalMenitPeriode,
-    totalTiket: rows.length,
+    totalTiket: rowsUsed.length,
     totalDowntimeMenit: totalDowntime,
     rataSlaSemua,
     rataSlaSemuaLabel: formatSlaPersen(rataSlaSemua),

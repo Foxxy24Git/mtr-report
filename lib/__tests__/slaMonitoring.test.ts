@@ -108,3 +108,41 @@ describe("getLowestSla — basis eksternal", () => {
     expect(res.items[0].restitusi).toEqual({ restitusiPersen: 25, label: "25%" });
   });
 });
+
+describe("parseSlaBasis", () => {
+  it("tanpa param → default internal", async () => {
+    const { parseSlaBasis } = await import("../slaMonitoring");
+    const res = parseSlaBasis(new URLSearchParams());
+    expect(res).toEqual({ ok: true, basis: "internal" });
+  });
+  it("basis=eksternal valid", async () => {
+    const { parseSlaBasis } = await import("../slaMonitoring");
+    const res = parseSlaBasis(new URLSearchParams("basis=eksternal"));
+    expect(res).toEqual({ ok: true, basis: "eksternal" });
+  });
+  it("nilai tidak valid → error", async () => {
+    const { parseSlaBasis } = await import("../slaMonitoring");
+    const res = parseSlaBasis(new URLSearchParams("basis=lainnya"));
+    expect(res.ok).toBe(false);
+  });
+});
+
+describe("getSlaSummary — basis internal vs eksternal", () => {
+  it("basis internal: semua tiket dihitung, downtime dari waktuOpen", async () => {
+    const { getSlaSummary } = await import("../slaMonitoring");
+    const res = await getSlaSummary({ dari: "2026-08-01", sampai: "2026-08-01", kategori: "semua" });
+    expect(res.totalTiket).toBe(2);
+    expect(res.totalDowntimeMenit).toBe(180); // 60 (A1) + 120 (A2)
+  });
+
+  it("basis eksternal: hanya tiket ber-waktuLaporVendor dihitung", async () => {
+    const { getSlaSummary } = await import("../slaMonitoring");
+    const res = await getSlaSummary(
+      { dari: "2026-08-01", sampai: "2026-08-01", kategori: "semua" },
+      "eksternal"
+    );
+    expect(res.totalTiket).toBe(1); // hanya t-a2, t-a1 dikecualikan (N/A)
+    expect(res.totalDowntimeMenit).toBe(90); // dari waktuLaporVendor, bukan waktuOpen
+    expect(res.atmBermasalah).toBe(1); // A1 tidak ikut terhitung "bermasalah" di basis ini
+  });
+});
