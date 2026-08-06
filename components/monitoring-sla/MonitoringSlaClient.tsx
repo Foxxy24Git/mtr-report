@@ -185,7 +185,15 @@ export function MonitoringSlaClient() {
     load({ dari, sampai, kategori, basis: b });
   }
 
-  const empty = !loading && !error && data && data.summary.totalTiket === 0;
+  // Gate halaman-kosong memakai sinyal yang INDEPENDEN dari basis: mostTrouble
+  // diambil dari /api/sla/most-trouble tanpa param `basis`, jadi stabil saat
+  // toggle Internal/Eksternal. `summary.totalTiket` TIDAK dipakai di sini karena
+  // pada basis Eksternal nilainya hanya menghitung tiket ber-waktuLaporVendor —
+  // bisa 0 walau tiket di rentang itu ada, dan itu akan ikut menyembunyikan
+  // tabel "Paling Sering Bermasalah" + kedua donut (yang wajib tak terpengaruh
+  // basis). Basis Eksternal tanpa data cukup menampilkan kartu 0/N-A + baris
+  // "Tidak ada tiket..." di tabel SLA Terendah.
+  const empty = !loading && !error && data && data.mostTrouble.length === 0;
 
   return (
     <div className="space-y-5">

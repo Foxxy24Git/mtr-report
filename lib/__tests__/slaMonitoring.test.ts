@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { hitungRestitusi } from "../slaMonitoring";
 
 describe("hitungRestitusi", () => {
@@ -76,9 +76,23 @@ const FIXTURE_ROWS = [
   },
 ];
 
+// Baris yang dikembalikan mock Prisma. Default FIXTURE_ROWS; blok describe
+// tertentu menggantinya sementara lewat `withRows()` untuk skenario khusus.
+let mockRows: unknown[] = FIXTURE_ROWS;
+
 vi.mock("../prisma", () => ({
-  prisma: { ticket: { findMany: async () => FIXTURE_ROWS } },
+  prisma: { ticket: { findMany: async () => mockRows } },
 }));
+
+/** Pakai fixture lain untuk satu blok describe, lalu kembalikan ke default. */
+function withRows(rows: unknown[]): void {
+  beforeEach(() => {
+    mockRows = rows;
+  });
+  afterEach(() => {
+    mockRows = FIXTURE_ROWS;
+  });
+}
 
 describe("getLowestSla — basis internal (default, formula lama tidak berubah)", () => {
   it("downtime dihitung dari waktuOpen, semua ATM masuk", async () => {
@@ -144,5 +158,131 @@ describe("getSlaSummary — basis internal vs eksternal", () => {
     expect(res.totalTiket).toBe(1); // hanya t-a2, t-a1 dikecualikan (N/A)
     expect(res.totalDowntimeMenit).toBe(90); // dari waktuLaporVendor, bukan waktuOpen
     expect(res.atmBermasalah).toBe(1); // A1 tidak ikut terhitung "bermasalah" di basis ini
+  });
+});
+
+// --- Skenario: No Tiket Vendor baru diisi SETELAH tiket ditutup ---------------
+// Urutan nyata di lapangan: operator menutup tiket dulu, baru mengisi No Tiket
+// Vendor sebagai langkah administratif. Durasi laporVendor→selesai jadi negatif;
+// kalau di-clamp ke 0 menit, ATM tampak ~100% SLA & restitusi "0%" — menyesatkan
+// (restitusi adalah angka denda kontraktual). Harus N/A seperti waktuLaporVendor
+// yang null.
+const ATM3 = {
+  id: "atm-a3",
+  kodeAtm: "A3",
+  namaAtm: "ATM A3",
+  cabang: null,
+  alamat: null,
+  vendorAtm: null,
+  vendorJaringan: null,
+};
+
+const ROWS_LAPOR_SETELAH_SELESAI = [
+  {
+    id: "t-a3",
+    atmId: "atm-a3",
+    kategori: "atm",
+    status: "selesai",
+    waktuOpen: new Date("2026-08-01T01:00:00+07:00"),
+    waktuSelesai: new Date("2026-08-01T02:00:00+07:00"), // 60 menit dari open
+    noTiketVendor: "VDR-9",
+    waktuLaporVendor: new Date("2026-08-01T02:30:00+07:00"), // 30 menit SETELAH selesai
+    atm: ATM3,
+  },
+  FIXTURE_ROWS[1], // t-a2: tiket vendor "normal" sebagai pembanding
+];
+
+describe("basis eksternal — waktuLaporVendor tercatat setelah waktuSelesai", () => {
+  withRows(ROWS_LAPOR_SETELAH_SELESAI);
+
+  it("getLowestSla: tiket tsb dikecualikan (N/A), bukan downtime 0 menit", async () => {
+    const { getLowestSla } = await import("../slaMonitoring");
+    const res = await getLowestSla(
+      { dari: "2026-08-01", sampai: "2026-08-01", kategori: "semua" },
+      "eksternal"
+    );
+    expect(res.items.map((i) => i.kodeAtm)).toEqual(["A2"]);
+    expect(res.items[0].totalDowntimeMenit).toBe(90);
+  });
+
+  it("getSlaSummary: tiket tsb tidak ikut totalTiket & totalDowntime", async () => {
+    const { getSlaSummary } = await import("../slaMonitoring");
+    const res = await getSlaSummary(
+      { dari: "2026-08-01", sampai: "2026-08-01", kategori: "semua" },
+      "eksternal"
+    );
+    expect(res.totalTiket).toBe(1); // hanya t-a2
+    expect(res.totalDowntimeMenit).toBe(90); // TIDAK +0 menit dari t-a3
+    expect(res.atmBermasalah).toBe(1); // A3 tidak dihitung "bermasalah" di basis ini
+  });
+
+  it("basis internal tidak terpengaruh (tetap dari waktuOpen)", async () => {
+    const { getLowestSla } = await import("../slaMonitoring");
+    const res = await getLowestSla({
+      dari: "2026-08-01",
+      sampai: "2026-08-01",
+      kategori: "semua",
+    });
+    expect(res.items).toHaveLength(2);
+    const a3 = res.items.find((i) => i.kodeAtm === "A3")!;
+    expect(a3.totalDowntimeMenit).toBe(60);
+  });
+});
+
+// --- Skenario: satu ATM, dua tiket (pengecualian bersifat PER-TIKET) ----------
+// Pengecualian basis eksternal berlaku per-tiket, BUKAN per-ATM: ATM dengan 2
+// tiket (satu ber-vendor, satu tidak) tetap muncul, memakai downtime tiket
+// ber-vendor saja.
+const ROWS_SATU_ATM_DUA_TIKET = [
+  {
+    id: "t-b1",
+    atmId: "atm-a1",
+    kategori: "atm",
+    status: "selesai",
+    waktuOpen: new Date("2026-08-01T01:00:00+07:00"),
+    waktuSelesai: new Date("2026-08-01T02:00:00+07:00"), // 60 menit dari open
+    noTiketVendor: null,
+    waktuLaporVendor: null, // tanpa vendor → N/A di basis eksternal
+    atm: ATM1,
+  },
+  {
+    id: "t-b2",
+    atmId: "atm-a1",
+    kategori: "atm",
+    status: "selesai",
+    waktuOpen: new Date("2026-08-01T04:00:00+07:00"),
+    waktuSelesai: new Date("2026-08-01T06:00:00+07:00"), // 120 menit dari open
+    noTiketVendor: "VDR-2",
+    waktuLaporVendor: new Date("2026-08-01T05:00:00+07:00"), // 60 menit dari lapor vendor
+    atm: ATM1,
+  },
+];
+
+describe("basis eksternal — pengecualian per-tiket, bukan per-ATM", () => {
+  withRows(ROWS_SATU_ATM_DUA_TIKET);
+
+  it("getLowestSla: ATM tetap muncul, hanya memakai downtime tiket ber-vendor", async () => {
+    const { getLowestSla } = await import("../slaMonitoring");
+    const res = await getLowestSla(
+      { dari: "2026-08-01", sampai: "2026-08-01", kategori: "semua" },
+      "eksternal"
+    );
+    expect(res.items).toHaveLength(1);
+    expect(res.items[0].kodeAtm).toBe("A1"); // TIDAK dikecualikan sebagai satu ATM
+    expect(res.items[0].totalTiket).toBe(1); // hanya t-b2 yang dihitung
+    expect(res.items[0].totalDowntimeMenit).toBe(60); // bukan 180 (dua tiket) & bukan 120
+    expect(res.items[0].slaPersenLabel).toBe("95.83%"); // (1440-60)/1440
+  });
+
+  it("basis internal: kedua tiket ATM yang sama tetap diakumulasi", async () => {
+    const { getLowestSla } = await import("../slaMonitoring");
+    const res = await getLowestSla({
+      dari: "2026-08-01",
+      sampai: "2026-08-01",
+      kategori: "semua",
+    });
+    expect(res.items).toHaveLength(1);
+    expect(res.items[0].totalTiket).toBe(2);
+    expect(res.items[0].totalDowntimeMenit).toBe(180); // 60 + 120 dari waktuOpen
   });
 });

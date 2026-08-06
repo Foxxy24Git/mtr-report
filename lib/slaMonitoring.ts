@@ -189,14 +189,38 @@ function atmVendor(atm: AtmInfo): string {
 }
 
 /**
+ * Apakah tiket punya titik mulai yang sahih untuk basis SLA **Eksternal**?
+ * SATU-SATUNYA tempat aturan N/A basis eksternal didefinisikan — dipakai
+ * `downtimeMenit()` maupun filter `rowsUsed` di getLowestSla & getSlaSummary.
+ *
+ * Bernilai false (→ N/A, tiket dikecualikan) bila:
+ * - `waktuLaporVendor` null → tiket belum pernah dilaporkan ke vendor
+ *   (termasuk semua tiket pra-migrasi; sengaja TANPA backfill).
+ * - `waktuLaporVendor` SETELAH `waktuSelesai` → No Tiket Vendor baru diisi
+ *   sesudah tiket ditutup (langkah administratif). Durasinya negatif; kalau
+ *   di-clamp jadi 0 menit, ATM tampak ~100% SLA & restitusi "0%" — salah dan
+ *   berdampak uang (restitusi = denda kontraktual).
+ *   Hanya tiket `selesai` yang punya `waktuSelesai`; tiket `proses`
+ *   (`waktuSelesai` null) tidak kena aturan ini.
+ */
+function adaBasisEksternal(t: TicketRow): boolean {
+  if (!t.waktuLaporVendor) return false;
+  if (t.waktuSelesai && t.waktuLaporVendor.getTime() > t.waktuSelesai.getTime()) {
+    return false;
+  }
+  return true;
+}
+
+/**
  * Downtime (menit) satu tiket, tergantung basis SLA:
- * - internal: dari waktuOpen (formula lama, PRD §7).
- * - eksternal: dari waktuLaporVendor (Lampiran IV PKS Artajasa). `null` =
- *   N/A (tiket belum pernah lapor vendor) → dikecualikan dari grouping,
- *   BUKAN dihitung sebagai downtime 0/100%.
+ * - internal: dari waktuOpen (formula lama, PRD §7) — TIDAK terpengaruh
+ *   aturan N/A eksternal.
+ * - eksternal: dari waktuLaporVendor (Lampiran IV PKS Artajasa). Tiket yang
+ *   tidak lolos `adaBasisEksternal()` → `null` = N/A, dikecualikan dari
+ *   grouping, BUKAN dihitung sebagai downtime 0/100%.
  */
 function downtimeMenit(t: TicketRow, basis: SlaBasis): number | null {
-  if (basis === "eksternal" && !t.waktuLaporVendor) return null;
+  if (basis === "eksternal" && !adaBasisEksternal(t)) return null;
   if (t.status !== "selesai") return 0;
   const mulai = basis === "eksternal" ? t.waktuLaporVendor! : t.waktuOpen;
   return computeSla(mulai, t.waktuSelesai).lamaMenit ?? 0;
@@ -267,10 +291,11 @@ export async function getLowestSla(
     where: buildWhere(range, filter.kategori, true),
     select: ticketSelect,
   });
-  // Basis eksternal: ATM yang TIDAK PERNAH punya tiket dgn No Tiket Vendor
-  // terisi pada periode ini dikecualikan (N/A), bukan dihitung 100%.
-  const rowsUsed =
-    basis === "eksternal" ? rows.filter((t) => t.waktuLaporVendor !== null) : rows;
+  // Basis eksternal: pengecualian bersifat PER-TIKET, bukan per-ATM. Tiket yang
+  // tidak punya titik mulai vendor sahih (lihat adaBasisEksternal) dikecualikan
+  // (N/A), bukan dihitung 100%. ATM dengan 2 tiket — satu ber-vendor, satu tidak
+  // — TETAP muncul, memakai downtime tiket ber-vendor saja.
+  const rowsUsed = basis === "eksternal" ? rows.filter(adaBasisEksternal) : rows;
 
   const groups = new Map<
     string,
@@ -618,11 +643,11 @@ export async function getSlaSummary(
     where: buildWhere(range, filter.kategori, false),
     select: ticketSelect,
   });
-  // Basis eksternal: sama seperti getLowestSla, tiket tanpa waktuLaporVendor
-  // dikecualikan (N/A) — konsekuensinya Total Tiket/Downtime/ATM Bermasalah
-  // pada basis ini HANYA menghitung tiket yang punya No Tiket Vendor.
-  const rowsUsed =
-    basis === "eksternal" ? rows.filter((t) => t.waktuLaporVendor !== null) : rows;
+  // Basis eksternal: sama seperti getLowestSla, tiket tanpa titik mulai vendor
+  // sahih (lihat adaBasisEksternal) dikecualikan (N/A) — konsekuensinya Total
+  // Tiket/Downtime/ATM Bermasalah pada basis ini HANYA menghitung tiket yang
+  // punya No Tiket Vendor.
+  const rowsUsed = basis === "eksternal" ? rows.filter(adaBasisEksternal) : rows;
 
   // Akumulasi downtime per-ATM, dipisah per kategori untuk rata-rata kategori.
   type Acc = { downtime: number };
