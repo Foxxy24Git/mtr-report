@@ -79,3 +79,32 @@ describe("POST /api/tickets — auto-catat waktuLaporVendor", () => {
     expect(createData!.waktuLaporVendor).toBeUndefined();
   });
 });
+
+describe("POST /api/tickets — waktuLaporVendor manual", () => {
+  it("waktuLaporVendor manual valid di masa lalu → tersimpan persis, bukan now()", async () => {
+    const { POST } = await import("../route");
+    const manual = "2026-08-01T08:00:00.000Z";
+    const res = await POST(
+      req({ ...BASE_BODY, noTiketVendor: "VDR-002", waktuLaporVendor: manual })
+    );
+    expect(res.status).toBe(201);
+    const waktu = createData!.waktuLaporVendor as Date;
+    expect(waktu).toBeInstanceOf(Date);
+    expect(waktu.getTime()).toBe(new Date(manual).getTime());
+  });
+
+  it("waktuLaporVendor manual di masa depan → 400", async () => {
+    const { POST } = await import("../route");
+    const res = await POST(
+      req({
+        ...BASE_BODY,
+        noTiketVendor: "VDR-003",
+        waktuLaporVendor: "2099-01-01T00:00:00.000Z",
+      })
+    );
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toMatch(/masa depan/);
+    expect(createData).toBeNull();
+  });
+});

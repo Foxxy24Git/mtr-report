@@ -90,13 +90,39 @@ export async function PATCH(req: Request, { params }: Params) {
   // Dasar SLA Eksternal (Lampiran IV PKS Artajasa) — dicatat sekali saja
   // saat No Tiket Vendor pertama kali diisi, immutable sesudahnya. Pola
   // sama seperti waktuResponInternal di
-  // app/api/tickets/[id]/activities/route.ts:74-78.
+  // app/api/tickets/[id]/activities/route.ts:74-78. Prioritas: waktu
+  // manual dari petugas kalau diisi & valid, else now().
   const perluCatatWaktu =
     !guard.ticket.waktuLaporVendor &&
     !guard.ticket.noTiketVendor &&
     noTiketVendorBaru !== null;
   if (perluCatatWaktu) {
-    data.waktuLaporVendor = new Date();
+    let waktuManual: Date | undefined;
+    if (
+      typeof body?.waktuLaporVendor === "string" &&
+      body.waktuLaporVendor.trim()
+    ) {
+      waktuManual = new Date(body.waktuLaporVendor);
+      if (Number.isNaN(waktuManual.getTime())) {
+        return NextResponse.json(
+          { error: "Waktu lapor ke vendor tidak valid." },
+          { status: 400 }
+        );
+      }
+      if (waktuManual.getTime() > Date.now()) {
+        return NextResponse.json(
+          { error: "Waktu lapor ke vendor tidak boleh di masa depan." },
+          { status: 400 }
+        );
+      }
+      if (waktuManual.getTime() < guard.ticket.waktuOpen.getTime()) {
+        return NextResponse.json(
+          { error: "Waktu lapor ke vendor tidak boleh sebelum waktu kejadian." },
+          { status: 400 }
+        );
+      }
+    }
+    data.waktuLaporVendor = waktuManual ?? new Date();
   }
 
   // --- Field override Super Admin ---

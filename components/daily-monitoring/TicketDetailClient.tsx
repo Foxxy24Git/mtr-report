@@ -202,6 +202,7 @@ export function TicketDetailClient({
     metodePenanganan: "",
     vendor: "",
     noTiketVendor: "",
+    waktuLaporVendor: "",
     keterangan: "",
     // Field berikut hanya dikirim ke server bila role superadmin.
     kategori: "atm",
@@ -291,6 +292,7 @@ export function TicketDetailClient({
       metodePenanganan: ticket.metodePenanganan ?? "",
       vendor: ticket.vendor ?? "",
       noTiketVendor: ticket.noTiketVendor ?? "",
+      waktuLaporVendor: "",
       keterangan: ticket.keterangan ?? "",
       kategori: ticket.kategori,
       cpTipe: ticket.cpTipe ?? "pic",
@@ -326,6 +328,9 @@ export function TicketDetailClient({
       noTiketVendor: editForm.noTiketVendor,
       keterangan: editForm.keterangan,
     };
+    if (editForm.waktuLaporVendor) {
+      payload.waktuLaporVendor = wibInputToISO(editForm.waktuLaporVendor);
+    }
 
     // Field override — hanya dikirim untuk superadmin; server menolak 403
     // bila role lain nekat mengirimnya lewat pemanggilan API langsung.
@@ -577,6 +582,12 @@ export function TicketDetailClient({
               />
               <Field label="Vendor" value={ticket.vendor} />
               <Field label="No Tiket Vendor" value={ticket.noTiketVendor} />
+              <Field
+                label="Waktu Lapor ke Vendor"
+                value={
+                  ticket.waktuLaporVendor ? fmtDateTime(ticket.waktuLaporVendor) : null
+                }
+              />
               <Field label="Keterangan" value={ticket.keterangan} />
             </dl>
           </Card>
@@ -987,6 +998,34 @@ export function TicketDetailClient({
               }
             />
           </div>
+          {ticket.waktuLaporVendor ? (
+            <div className="flex items-center gap-2 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800">
+              <span>
+                ✅ Waktu lapor vendor terkunci: {fmtDateTime(ticket.waktuLaporVendor)}{" "}
+                — tidak bisa diubah lagi (basis SLA Eksternal sudah berjalan dari
+                titik ini).
+              </span>
+            </div>
+          ) : (
+            editForm.noTiketVendor.trim() && (
+              <div className="flex flex-col gap-1 rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5">
+                <p className="text-xs text-amber-800">
+                  ⏱️ Waktu ini jadi patokan mulai SLA Eksternal (kontrak vendor,
+                  Lampiran IV PKS Artajasa) — sekali disimpan TIDAK BISA diubah
+                  lagi. Kosongkan untuk pakai waktu sekarang, atau isi kalau Anda
+                  sudah lapor ke vendor sebelum sempat mencatatnya di sini.
+                </p>
+                <Input
+                  label="Waktu Lapor ke Vendor (opsional)"
+                  type="datetime-local"
+                  value={editForm.waktuLaporVendor}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, waktuLaporVendor: e.target.value })
+                  }
+                />
+              </div>
+            )
+          )}
           <div className="flex flex-col gap-1">
             <label className="text-sm font-medium text-gray-700">
               Keterangan

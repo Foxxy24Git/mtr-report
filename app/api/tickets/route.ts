@@ -161,6 +161,34 @@ export async function POST(req: Request) {
     }
   }
 
+  // --- Waktu lapor ke vendor (opsional, dasar SLA Eksternal) ---
+  // Kosong → fallback new Date() (perilaku lama tetap jalan).
+  let waktuLaporVendorManual: Date | undefined;
+  if (
+    typeof body?.waktuLaporVendor === "string" &&
+    body.waktuLaporVendor.trim()
+  ) {
+    waktuLaporVendorManual = new Date(body.waktuLaporVendor);
+    if (Number.isNaN(waktuLaporVendorManual.getTime())) {
+      return NextResponse.json(
+        { error: "Waktu lapor ke vendor tidak valid." },
+        { status: 400 }
+      );
+    }
+    if (waktuLaporVendorManual.getTime() > Date.now()) {
+      return NextResponse.json(
+        { error: "Waktu lapor ke vendor tidak boleh di masa depan." },
+        { status: 400 }
+      );
+    }
+    if (waktuOpen && waktuLaporVendorManual.getTime() < waktuOpen.getTime()) {
+      return NextResponse.json(
+        { error: "Waktu lapor ke vendor tidak boleh sebelum waktu kejadian." },
+        { status: 400 }
+      );
+    }
+  }
+
   const noTiket = await generateUniqueNoTiket(prisma);
   const shiftKode = session.shift as ShiftKode;
   const noTiketVendor = optStr(body?.noTiketVendor);
@@ -186,7 +214,10 @@ export async function POST(req: Request) {
         ...(waktuOpen ? { waktuOpen } : {}),
         // Dasar SLA Eksternal (Lampiran IV PKS Artajasa) — dicatat sekali
         // saat No Tiket Vendor pertama kali ada, immutable sesudahnya.
-        ...(noTiketVendor ? { waktuLaporVendor: new Date() } : {}),
+        // Prioritas: waktu manual dari petugas kalau diisi, else now().
+        ...(noTiketVendor
+          ? { waktuLaporVendor: waktuLaporVendorManual ?? new Date() }
+          : {}),
       },
     });
 

@@ -10,6 +10,7 @@ let updateData: Record<string, unknown> | null = null;
 let guardTicket: {
   id: string;
   status: "proses" | "selesai";
+  waktuOpen: Date;
   waktuSelesai: Date | null;
   noTiketVendor: string | null;
   waktuLaporVendor: Date | null;
@@ -54,6 +55,7 @@ beforeEach(() => {
   guardTicket = {
     id: "t-1",
     status: "proses",
+    waktuOpen: new Date("2026-08-01T00:00:00Z"),
     waktuSelesai: null,
     noTiketVendor: null,
     waktuLaporVendor: null,
@@ -87,6 +89,40 @@ describe("PATCH /api/tickets/[id] — auto-catat waktuLaporVendor", () => {
     const { PATCH } = await import("../[id]/route");
     const res = await PATCH(req({ keterangan: "update lain" }), params);
     expect(res.status).toBe(200);
+    expect(updateData!.waktuLaporVendor).toBeUndefined();
+  });
+});
+
+describe("PATCH /api/tickets/[id] — waktuLaporVendor manual", () => {
+  it("waktuLaporVendor manual sebelum waktuOpen tiket → 400", async () => {
+    const { PATCH } = await import("../[id]/route");
+    const res = await PATCH(
+      req({
+        noTiketVendor: "VDR-005",
+        // waktuOpen default (beforeEach) = 2026-08-01T00:00:00Z.
+        waktuLaporVendor: "2026-07-31T00:00:00.000Z",
+      }),
+      params
+    );
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toMatch(/sebelum waktu kejadian/);
+    expect(updateData).toBeNull();
+  });
+
+  it("noTiketVendor sudah pernah terisi + waktuLaporVendor baru dikirim di body → tetap diabaikan (immutability tidak bocor)", async () => {
+    guardTicket.noTiketVendor = "VDR-000";
+    guardTicket.waktuLaporVendor = new Date("2026-08-01T00:00:00Z");
+    const { PATCH } = await import("../[id]/route");
+    const res = await PATCH(
+      req({
+        noTiketVendor: "VDR-001-KOREKSI",
+        waktuLaporVendor: "2026-08-06T10:00:00.000Z",
+      }),
+      params
+    );
+    expect(res.status).toBe(200);
+    expect(updateData!.noTiketVendor).toBe("VDR-001-KOREKSI");
     expect(updateData!.waktuLaporVendor).toBeUndefined();
   });
 });

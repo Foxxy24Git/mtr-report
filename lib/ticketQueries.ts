@@ -398,6 +398,7 @@ export interface TicketDetail {
   waktuOpen: Date;
   waktuSelesai: Date | null;
   waktuResponInternal: Date | null;
+  waktuLaporVendor: Date | null;
   cpTipe: string | null;
   cpNama: string | null;
   cpTelp: string | null;
@@ -460,6 +461,7 @@ export async function getTicketDetail(id: string): Promise<TicketDetail | null> 
     waktuOpen: t.waktuOpen,
     waktuSelesai: t.waktuSelesai,
     waktuResponInternal: t.waktuResponInternal,
+    waktuLaporVendor: t.waktuLaporVendor,
     cpTipe: t.cpTipe,
     cpNama: t.cpNama,
     cpTelp: t.cpTelp,

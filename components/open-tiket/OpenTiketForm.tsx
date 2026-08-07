@@ -61,6 +61,7 @@ export function OpenTiketForm({ opsi }: Props) {
   const [kegiatan, setKegiatan] = useState("");
   // Kosong = pakai waktu sekarang (default skema).
   const [waktuKejadian, setWaktuKejadian] = useState("");
+  const [waktuLaporVendor, setWaktuLaporVendor] = useState("");
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -119,6 +120,7 @@ export function OpenTiketForm({ opsi }: Props) {
     setNoTiketVendor("");
     setKegiatan("");
     setWaktuKejadian("");
+    setWaktuLaporVendor("");
     setError("");
   }
 
@@ -156,6 +158,9 @@ export function OpenTiketForm({ opsi }: Props) {
           kegiatan,
           waktuKejadian: waktuKejadian
             ? wibInputToISO(waktuKejadian)
+            : undefined,
+          waktuLaporVendor: waktuLaporVendor
+            ? wibInputToISO(waktuLaporVendor)
             : undefined,
         }),
       });
@@ -405,6 +410,23 @@ export function OpenTiketForm({ opsi }: Props) {
               onChange={(e) => setNoTiketVendor(e.target.value)}
             />
           </div>
+
+          {noTiketVendor.trim() && (
+            <div className="flex flex-col gap-1 rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5">
+              <p className="text-xs text-amber-800">
+                ⏱️ Waktu ini jadi patokan mulai SLA Eksternal (kontrak vendor,
+                Lampiran IV PKS Artajasa) — sekali disimpan TIDAK BISA diubah
+                lagi. Kosongkan untuk pakai waktu sekarang, atau isi kalau Anda
+                sudah lapor ke vendor sebelum sempat mencatatnya di sini.
+              </p>
+              <Input
+                label="Waktu Lapor ke Vendor (opsional)"
+                type="datetime-local"
+                value={waktuLaporVendor}
+                onChange={(e) => setWaktuLaporVendor(e.target.value)}
+              />
+            </div>
+          )}
 
           {/* 9. Kegiatan pertama */}
           <div className="flex flex-col gap-1">
