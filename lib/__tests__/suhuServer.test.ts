@@ -9,6 +9,9 @@ import {
   isValidFase,
   parseTanggal,
   todayKeyWIB,
+  isAcCheckFilled,
+  isServerLogFilled,
+  findMissingSuhuServerItems,
 } from "../suhuServer";
 
 describe("SERVERS", () => {
@@ -97,5 +100,92 @@ describe("todayKeyWIB", () => {
     expect(todayKeyWIB(new Date("2026-05-27T20:00:00Z"))).toBe("2026-05-28");
     // 10:00 UTC = 17:00 WIB hari yang sama
     expect(todayKeyWIB(new Date("2026-05-27T10:00:00Z"))).toBe("2026-05-27");
+  });
+});
+
+describe("isAcCheckFilled", () => {
+  it("true hanya jika keempat field nilai terisi", () => {
+    expect(
+      isAcCheckFilled({
+        urutan: 1,
+        suhuRoomServer: "20°C",
+        suhuPanel: "22°C",
+        pantau12jamKiri: "Normal",
+        pantau12jamKanan: "Normal",
+      })
+    ).toBe(true);
+  });
+  it("false jika salah satu field kosong/null", () => {
+    expect(
+      isAcCheckFilled({
+        urutan: 1,
+        suhuRoomServer: "20°C",
+        suhuPanel: null,
+        pantau12jamKiri: "Normal",
+        pantau12jamKanan: "Normal",
+      })
+    ).toBe(false);
+  });
+  it("false jika baris tidak ada sama sekali", () => {
+    expect(isAcCheckFilled(undefined)).toBe(false);
+  });
+});
+
+describe("isServerLogFilled", () => {
+  it("true hanya jika kelima server terisi", () => {
+    expect(
+      isServerLogFilled({
+        fase: "awal",
+        npay: "Normal",
+        ajAtmb: "Normal",
+        bifast: "Normal",
+        prima: "Normal",
+        cipHost: "Normal",
+      })
+    ).toBe(true);
+  });
+  it("false jika salah satu server kosong", () => {
+    expect(
+      isServerLogFilled({
+        fase: "awal",
+        npay: "Normal",
+        ajAtmb: "Normal",
+        bifast: "Normal",
+        prima: "Normal",
+        cipHost: null,
+      })
+    ).toBe(false);
+  });
+});
+
+describe("findMissingSuhuServerItems", () => {
+  it("array kosong jika 3x AC + 2x server log lengkap semua", () => {
+    const acLogs = [1, 2, 3].map((urutan) => ({
+      urutan: urutan as 1 | 2 | 3,
+      suhuRoomServer: "20°C",
+      suhuPanel: "22°C",
+      pantau12jamKiri: "Normal",
+      pantau12jamKanan: "Normal",
+    }));
+    const serverLogs = (["awal", "akhir"] as const).map((fase) => ({
+      fase,
+      npay: "Normal",
+      ajAtmb: "Normal",
+      bifast: "Normal",
+      prima: "Normal",
+      cipHost: "Normal",
+    }));
+    expect(findMissingSuhuServerItems(acLogs, serverLogs)).toEqual([]);
+  });
+
+  it("melaporkan SEMUA item yang belum lengkap sekaligus, bukan cuma yang pertama", () => {
+    const missing = findMissingSuhuServerItems([], []);
+    expect(missing).toEqual([
+      "Suhu AC pengecekan ke-1",
+      "Suhu AC pengecekan ke-2",
+      "Suhu AC pengecekan ke-3",
+      "Log Server Awal Shift",
+      "Log Server Akhir Shift",
+    ]);
   });
 });

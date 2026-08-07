@@ -6,6 +6,7 @@ import { getSession } from "@/lib/session";
 import { signSession, COOKIE_NAME, SESSION_MAX_AGE, isSecureCookie } from "@/lib/jwt";
 import { ALL_SHIFTS, type ShiftCode } from "@/lib/shift";
 import { getShiftLabel } from "@/lib/shiftReport";
+import { findMissingSuhuServerItems, parseTanggal, todayKeyWIB } from "@/lib/suhuServer";
 import { notifyReportPending } from "@/lib/telegramScheduler";
 import { shiftPakaiSupervisiNext } from "@/lib/shiftReportApproval";
 
@@ -61,6 +62,26 @@ export async function POST(req: Request) {
   if (!ALL_SHIFTS.includes(fromShift as ShiftCode)) {
     return NextResponse.json(
       { error: "Tidak ada shift aktif untuk ditutup." },
+      { status: 400 }
+    );
+  }
+  // Wajib (PRD §4.H, aturan baru): sama seperti serah terima — lihat
+  // app/api/shift/handover/route.ts untuk penjelasan lengkap.
+  const tanggalCekLog = parseTanggal(todayKeyWIB())!;
+  const [acLogsCek, serverLogsCek] = await Promise.all([
+    prisma.acTempLog.findMany({
+      where: { tanggal: tanggalCekLog, shiftKode: fromShift as ShiftKode },
+    }),
+    prisma.serverLog.findMany({
+      where: { tanggal: tanggalCekLog, shiftKode: fromShift as ShiftKode },
+    }),
+  ]);
+  const missingSuhuServer = findMissingSuhuServerItems(acLogsCek, serverLogsCek);
+  if (missingSuhuServer.length > 0) {
+    return NextResponse.json(
+      {
+        error: `Lengkapi dulu Suhu AC & Log Server sebelum menutup laporan shift: ${missingSuhuServer.join(", ")}.`,
+      },
       { status: 400 }
     );
   }

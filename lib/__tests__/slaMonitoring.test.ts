@@ -286,3 +286,86 @@ describe("basis eksternal — pengecualian per-tiket, bukan per-ATM", () => {
     expect(res.items[0].totalDowntimeMenit).toBe(180); // 60 + 120 dari waktuOpen
   });
 });
+
+// --- getSlaDrilldownTickets ---------------------------------------------------
+// Satu ATM, dua tiket: satu vendor-tracked yang lolos adaBasisEksternal, satu
+// tidak. Jumlah baris drill-down HARUS selalu cocok dengan angka yang diklik
+// di dashboard (basis-aware utk mode sla-terendah, basis-independent utk mode
+// paling-bermasalah).
+const DRILL_ATM = { kodeAtm: "D1", namaAtm: "ATM Drilldown Uji" };
+
+const ROWS_DRILLDOWN = [
+  {
+    id: "t-d1",
+    noTiket: "TD-0001",
+    atmId: "atm-d1",
+    kategori: "atm",
+    status: "selesai",
+    waktuOpen: new Date("2026-08-01T01:00:00+07:00"),
+    waktuSelesai: new Date("2026-08-01T02:00:00+07:00"),
+    jenisGangguan: "Listrik Padam",
+    sumberPenyebab: "PLN",
+    noTiketVendor: null,
+    waktuLaporVendor: null, // tidak lolos adaBasisEksternal
+    atm: DRILL_ATM,
+  },
+  {
+    id: "t-d2",
+    noTiket: "TD-0002",
+    atmId: "atm-d1",
+    kategori: "atm",
+    status: "selesai",
+    waktuOpen: new Date("2026-08-01T03:00:00+07:00"),
+    waktuSelesai: new Date("2026-08-01T04:00:00+07:00"),
+    jenisGangguan: "Jaringan Putus",
+    sumberPenyebab: "Telkom",
+    noTiketVendor: "VDR-9",
+    waktuLaporVendor: new Date("2026-08-01T03:15:00+07:00"), // lolos adaBasisEksternal
+    atm: DRILL_ATM,
+  },
+];
+
+describe("getSlaDrilldownTickets", () => {
+  withRows(ROWS_DRILLDOWN);
+
+  const baseFilter = { dari: "2026-08-01", sampai: "2026-08-01", kategori: "semua" as const };
+
+  it("mode sla-terendah, basis eksternal: hanya tiket yang lolos adaBasisEksternal", async () => {
+    const { getSlaDrilldownTickets } = await import("../slaMonitoring");
+    const res = await getSlaDrilldownTickets({
+      ...baseFilter,
+      mode: "sla-terendah",
+      atmId: "atm-d1",
+      basis: "eksternal",
+    });
+    expect(res).toHaveLength(1);
+    expect(res[0].noTiket).toBe("TD-0002");
+  });
+
+  it("mode sla-terendah, basis internal (default): semua tiket selesai ATM itu", async () => {
+    const { getSlaDrilldownTickets } = await import("../slaMonitoring");
+    const res = await getSlaDrilldownTickets({
+      ...baseFilter,
+      mode: "sla-terendah",
+      atmId: "atm-d1",
+    });
+    expect(res).toHaveLength(2);
+  });
+
+  it("mode paling-bermasalah: selalu 2 baris terlepas dari basis yang dikirim", async () => {
+    const { getSlaDrilldownTickets } = await import("../slaMonitoring");
+    const resEksternal = await getSlaDrilldownTickets({
+      ...baseFilter,
+      mode: "paling-bermasalah",
+      atmId: "atm-d1",
+      basis: "eksternal",
+    });
+    const resInternal = await getSlaDrilldownTickets({
+      ...baseFilter,
+      mode: "paling-bermasalah",
+      atmId: "atm-d1",
+    });
+    expect(resEksternal).toHaveLength(2);
+    expect(resInternal).toHaveLength(2);
+  });
+});

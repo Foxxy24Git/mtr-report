@@ -11,6 +11,7 @@ const RESTRICTED: { prefix: string; roles: Role[] }[] = [
   { prefix: "/data-gangguan", roles: ["superadmin", "user"] },
   { prefix: "/suhu-server", roles: ["user"] },
   { prefix: "/supervisi", roles: ["supervisi"] },
+  { prefix: "/catatan-supervisi", roles: ["user"] },
   // Menu Leader: kelola pimpinan — hanya Super Admin (PRD §4.G).
   { prefix: "/leader", roles: ["superadmin"] },
   // Manajemen Akun — hanya Super Admin (PRD §3).

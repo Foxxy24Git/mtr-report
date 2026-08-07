@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   Gauge,
@@ -109,6 +110,7 @@ function slaCardTone(frac: number): { text: string; bg: string } {
 // ----------------------------- Komponen utama -----------------------------
 
 export function MonitoringSlaClient() {
+  const router = useRouter();
   const init = useRef(defaultRange());
   const [dari, setDari] = useState(init.current.dari);
   const [sampai, setSampai] = useState(init.current.sampai);
@@ -120,6 +122,15 @@ export function MonitoringSlaClient() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+
+  // Sinkron dengan rentang/kategori yang SEDANG ditampilkan di `data` (bukan
+  // draft dari/sampai/kategori mentah, yang bisa berubah sebelum user klik
+  // "Terapkan Filter"). Link drill-down WAJIB pakai ini, bukan state mentah.
+  const [appliedFilter, setAppliedFilter] = useState({
+    dari: init.current.dari,
+    sampai: init.current.sampai,
+    kategori: "semua" as Kategori,
+  });
 
   const load = useCallback(
     async (f: { dari: string; sampai: string; kategori: Kategori; basis: SlaBasis }) => {
@@ -151,6 +162,7 @@ export function MonitoringSlaClient() {
           byJenis: { total: byJenis.total ?? 0, items: byJenis.items ?? [] },
           bySumber: { total: bySumber.total ?? 0, items: bySumber.items ?? [] },
         });
+        setAppliedFilter({ dari: f.dari, sampai: f.sampai, kategori: f.kategori });
       } catch (e) {
         setError(e instanceof Error ? e.message : "Gagal memuat data SLA.");
       } finally {
@@ -370,7 +382,17 @@ export function MonitoringSlaClient() {
                     data.lowest.map((r, i) => (
                       <TableRow
                         key={(r.atmId ?? r.kodeAtm) + i}
-                        className={i < 3 ? "bg-red-50/50" : undefined}
+                        className={`${i < 3 ? "bg-red-50/50" : ""} ${
+                          r.atmId ? "cursor-pointer hover:bg-gray-50" : ""
+                        }`}
+                        onClick={
+                          r.atmId
+                            ? () =>
+                                router.push(
+                                  `/monitoring-sla/tiket?mode=sla-terendah&atmId=${r.atmId}&basis=${basis}&dari=${appliedFilter.dari}&sampai=${appliedFilter.sampai}&kategori=${appliedFilter.kategori}&label=${encodeURIComponent(`${r.kodeAtm} — ${r.lokasi}`)}`
+                                )
+                            : undefined
+                        }
                       >
                         <Td>
                           <RankBadge rank={i + 1} highlight={i < 3} />
@@ -432,7 +454,18 @@ export function MonitoringSlaClient() {
                     (() => {
                       const max = Math.max(...data.mostTrouble.map((r) => r.jumlahTiket), 1);
                       return data.mostTrouble.map((r, i) => (
-                        <TableRow key={(r.atmId ?? r.kodeAtm) + i}>
+                        <TableRow
+                          key={(r.atmId ?? r.kodeAtm) + i}
+                          className={r.atmId ? "cursor-pointer hover:bg-gray-50" : undefined}
+                          onClick={
+                            r.atmId
+                              ? () =>
+                                  router.push(
+                                    `/monitoring-sla/tiket?mode=paling-bermasalah&atmId=${r.atmId}&dari=${appliedFilter.dari}&sampai=${appliedFilter.sampai}&kategori=${appliedFilter.kategori}&label=${encodeURIComponent(`${r.kodeAtm} — ${r.lokasi}`)}`
+                                  )
+                              : undefined
+                          }
+                        >
                           <Td>
                             <RankBadge rank={i + 1} highlight={i < 3} />
                           </Td>
@@ -479,12 +512,22 @@ export function MonitoringSlaClient() {
                 <DonutChart
                   slices={data.byJenis.items.map((g) => ({ label: g.nilai, value: g.jumlah }))}
                   total={data.byJenis.total}
+                  onSliceClick={(nilai) =>
+                    router.push(
+                      `/monitoring-sla/tiket?mode=jenis&nilai=${encodeURIComponent(nilai)}&dari=${appliedFilter.dari}&sampai=${appliedFilter.sampai}&kategori=${appliedFilter.kategori}&label=${encodeURIComponent(nilai)}`
+                    )
+                  }
                 />
               </Card>
               <Card title="Distribusi per Sumber Penyebab">
                 <DonutChart
                   slices={data.bySumber.items.map((g) => ({ label: g.nilai, value: g.jumlah }))}
                   total={data.bySumber.total}
+                  onSliceClick={(nilai) =>
+                    router.push(
+                      `/monitoring-sla/tiket?mode=sumber&nilai=${encodeURIComponent(nilai)}&dari=${appliedFilter.dari}&sampai=${appliedFilter.sampai}&kategori=${appliedFilter.kategori}&label=${encodeURIComponent(nilai)}`
+                    )
+                  }
                 />
               </Card>
             </div>

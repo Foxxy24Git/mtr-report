@@ -227,6 +227,7 @@ export interface ShiftReportDetail {
   tanggal: Date;
   shiftKode: ShiftKode;
   shiftLabel: string;
+  ownerUserId: string;
   ownerNama: string;
   receiverNama: string | null;
   supervisiId: string | null;
@@ -293,6 +294,7 @@ export async function getShiftReportDetail(
     tanggal: r.tanggal,
     shiftKode: r.shiftKode,
     shiftLabel: r.shiftLabel,
+    ownerUserId: r.ownerUserId,
     ownerNama: r.ownerUser.nama,
     receiverNama: r.receiverUser?.nama ?? null,
     supervisiId: r.supervisiId,
@@ -359,4 +361,70 @@ export async function buildShiftReportStatusMap(range: {
     }
   }
   return map;
+}
+
+// ----------------------------- Catatan Supervisi (sisi petugas) -----------------------------
+
+export interface CatatanSupervisiItem {
+  id: string;
+  tanggal: Date;
+  shiftKode: ShiftKode;
+  shiftLabel: string;
+  jmlTiket: number;
+  catatanSupervisi: string | null;
+  supervisiNama: string | null;
+  approvedAt: Date | null;
+  catatanSupervisiNext: string | null;
+  supervisiNextNama: string | null;
+  supervisiNextApprovedAt: Date | null;
+}
+
+/**
+ * Laporan shift milik `ownerUserId` yang PUNYA catatan supervisi
+ * (utama dan/atau selanjutnya). Dipakai menu "Catatan Supervisi"
+ * petugas — hanya laporan yang owner-nya dirinya sendiri. Catatan
+ * diisi ATOMIK bersamaan approve (lihat susunPatchApproval di
+ * lib/shiftReportApproval.ts) sehingga approvedAt /
+ * supervisiNextApprovedAt pasti terisi tiap kali salah satu catatan
+ * ini non-null.
+ */
+export async function listCatatanSupervisiForOwner(
+  ownerUserId: string,
+  filter?: { from?: Date | null; to?: Date | null }
+): Promise<CatatanSupervisiItem[]> {
+  const where: Record<string, unknown> = {
+    ownerUserId,
+    OR: [{ catatanSupervisi: { not: null } }, { catatanSupervisiNext: { not: null } }],
+  };
+  if (filter?.from || filter?.to) {
+    const range: Record<string, Date> = {};
+    if (filter.from) range.gte = filter.from;
+    if (filter.to) range.lte = filter.to;
+    where.tanggal = range;
+  }
+
+  const rows = await prisma.shiftReport.findMany({
+    where,
+    orderBy: { tanggal: "desc" },
+    include: {
+      supervisi: { select: { nama: true } },
+      supervisiNext: { select: { nama: true } },
+    },
+  });
+
+  return Promise.all(
+    rows.map(async (r) => ({
+      id: r.id,
+      tanggal: r.tanggal,
+      shiftKode: r.shiftKode,
+      shiftLabel: r.shiftLabel,
+      jmlTiket: await countTicketsForShiftDay(r.shiftKode, r.tanggal),
+      catatanSupervisi: r.catatanSupervisi,
+      supervisiNama: r.supervisi?.nama ?? null,
+      approvedAt: r.approvedAt,
+      catatanSupervisiNext: r.catatanSupervisiNext,
+      supervisiNextNama: r.supervisiNext?.nama ?? null,
+      supervisiNextApprovedAt: r.supervisiNextApprovedAt,
+    }))
+  );
 }

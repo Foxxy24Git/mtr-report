@@ -31,9 +31,11 @@ const CX = SIZE / 2;
 export function DonutChart({
   slices,
   total,
+  onSliceClick,
 }: {
   slices: DonutSlice[];
   total: number;
+  onSliceClick?: (label: string) => void;
 }) {
   const data = slices.filter((s) => s.value > 0);
   const sum = total || data.reduce((a, s) => a + s.value, 0);
@@ -82,7 +84,10 @@ export function DonutChart({
                 strokeDasharray={`${dash} ${C - dash}`}
                 strokeDashoffset={-acc * C}
                 strokeLinecap="butt"
-                className="transition-[stroke-dasharray] duration-500"
+                onClick={() => onSliceClick?.(s.label)}
+                className={`transition-[stroke-dasharray] duration-500 ${
+                  onSliceClick ? "cursor-pointer" : ""
+                }`}
               >
                 <title>{`${s.label}: ${s.value} (${(frac * 100).toFixed(1)}%)`}</title>
               </circle>
@@ -111,7 +116,13 @@ export function DonutChart({
 
       <ul className="w-full max-w-[14rem] space-y-1.5">
         {data.map((s, i) => (
-          <li key={s.label} className="flex items-center gap-2 text-xs">
+          <li
+            key={s.label}
+            onClick={() => onSliceClick?.(s.label)}
+            className={`flex items-center gap-2 rounded px-1 py-0.5 text-xs ${
+              onSliceClick ? "cursor-pointer hover:bg-gray-50" : ""
+            }`}
+          >
             <span
               className="h-3 w-3 shrink-0 rounded-sm"
               style={{ backgroundColor: PALETTE[i % PALETTE.length] }}

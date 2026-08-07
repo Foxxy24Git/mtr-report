@@ -17,6 +17,17 @@ function optStr(v: unknown): string | null {
   return s.length ? s : null;
 }
 
+// Placeholder yang sering diketik petugas untuk "tidak ada vendor" (meniru
+// fallback tampilan Excel), tapi kalau tersimpan literal akan salah dianggap
+// nomor tiket vendor sungguhan & ikut memicu SLA Eksternal.
+const VENDOR_PLACEHOLDER_RE = /^-+$|^n\/?a$|^tidak\s*ada$/i;
+
+function optNoTiketVendor(v: unknown): string | null {
+  const s = cleanStr(v);
+  if (!s || VENDOR_PLACEHOLDER_RE.test(s)) return null;
+  return s;
+}
+
 /**
  * GET /api/tickets — daftar tiket untuk Daily Monitoring (PRD §4.B).
  * Filter query: kategori (atm|jaringan), shift (A–E),
@@ -191,7 +202,7 @@ export async function POST(req: Request) {
 
   const noTiket = await generateUniqueNoTiket(prisma);
   const shiftKode = session.shift as ShiftKode;
-  const noTiketVendor = optStr(body?.noTiketVendor);
+  const noTiketVendor = optNoTiketVendor(body?.noTiketVendor);
 
   const ticket = await prisma.$transaction(async (tx) => {
     const t = await tx.ticket.create({

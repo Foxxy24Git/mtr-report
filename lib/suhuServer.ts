@@ -92,3 +92,55 @@ export function todayKeyWIB(now: Date = new Date()): string {
     timeZone: "Asia/Jakarta",
   }).format(now);
 }
+
+export interface AcCheckFields {
+  urutan: number;
+  suhuRoomServer: string | null;
+  suhuPanel: string | null;
+  pantau12jamKiri: string | null;
+  pantau12jamKanan: string | null;
+}
+
+export interface ServerLogFields {
+  fase: ServerFaseValue;
+  npay: string | null;
+  ajAtmb: string | null;
+  bifast: string | null;
+  prima: string | null;
+  cipHost: string | null;
+}
+
+/** True bila SEMUA field nilai 1 baris pengecekan AC sudah terisi (bukan cuma waktu). */
+export function isAcCheckFilled(log: AcCheckFields | undefined): boolean {
+  if (!log) return false;
+  return Boolean(
+    log.suhuRoomServer && log.suhuPanel && log.pantau12jamKiri && log.pantau12jamKanan
+  );
+}
+
+/** True bila status kelima server pada 1 fase (awal/akhir) sudah terisi semua. */
+export function isServerLogFilled(log: ServerLogFields | undefined): boolean {
+  if (!log) return false;
+  return Boolean(log.npay && log.ajAtmb && log.bifast && log.prima && log.cipHost);
+}
+
+/**
+ * Daftar label item Suhu AC & Log Server yang BELUM lengkap untuk 1 shift.
+ * Array kosong = lengkap. Dipakai gate wajib isi sebelum serah terima/tutup
+ * laporan (lihat app/api/shift/handover/route.ts & app/api/shift/close/route.ts).
+ */
+export function findMissingSuhuServerItems(
+  acLogs: AcCheckFields[],
+  serverLogs: ServerLogFields[]
+): string[] {
+  const missing: string[] = [];
+  for (const urutan of AC_URUTAN) {
+    const log = acLogs.find((l) => l.urutan === urutan);
+    if (!isAcCheckFilled(log)) missing.push(`Suhu AC pengecekan ke-${urutan}`);
+  }
+  for (const fase of SERVER_FASES) {
+    const log = serverLogs.find((l) => l.fase === fase);
+    if (!isServerLogFilled(log)) missing.push(`Log Server ${FASE_LABELS[fase]}`);
+  }
+  return missing;
+}

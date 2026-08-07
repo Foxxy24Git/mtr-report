@@ -31,6 +31,18 @@ function optStr(v: unknown): string | null {
   const s = cleanStr(v);
   return s.length ? s : null;
 }
+
+// Placeholder yang sering diketik petugas untuk "tidak ada vendor" (meniru
+// fallback tampilan Excel), tapi kalau tersimpan literal akan salah dianggap
+// nomor tiket vendor sungguhan & ikut memicu SLA Eksternal.
+const VENDOR_PLACEHOLDER_RE = /^-+$|^n\/?a$|^tidak\s*ada$/i;
+
+function optNoTiketVendor(v: unknown): string | null {
+  const s = cleanStr(v);
+  if (!s || VENDOR_PLACEHOLDER_RE.test(s)) return null;
+  return s;
+}
+
 function hasField(body: unknown, key: string): boolean {
   return (
     typeof body === "object" &&
@@ -77,7 +89,7 @@ export async function PATCH(req: Request, { params }: Params) {
   const body = await req.json().catch(() => null);
   const isSuperadmin = session.role === "superadmin";
 
-  const noTiketVendorBaru = optStr(body?.noTiketVendor);
+  const noTiketVendorBaru = optNoTiketVendor(body?.noTiketVendor);
   const data: Prisma.TicketUncheckedUpdateInput = {
     jenisGangguan: optStr(body?.jenisGangguan),
     sumberPenyebab: optStr(body?.sumberPenyebab),

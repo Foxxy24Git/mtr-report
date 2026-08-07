@@ -108,3 +108,24 @@ describe("POST /api/tickets — waktuLaporVendor manual", () => {
     expect(createData).toBeNull();
   });
 });
+
+describe("POST /api/tickets — noTiketVendor placeholder ('-', 'n/a', 'tidak ada')", () => {
+  it.each(["-", "--", "---", "n/a", "N/A", "na", "NA", "tidak ada", "Tidak Ada"])(
+    "noTiketVendor = %j → dianggap kosong, waktuLaporVendor tidak tercatat",
+    async (placeholder) => {
+      const { POST } = await import("../route");
+      const res = await POST(req({ ...BASE_BODY, noTiketVendor: placeholder }));
+      expect(res.status).toBe(201);
+      expect(createData!.noTiketVendor).toBeNull();
+      expect(createData!.waktuLaporVendor).toBeUndefined();
+    }
+  );
+
+  it("noTiketVendor nomor vendor sungguhan yang mengandung tanda hubung tetap tersimpan apa adanya", async () => {
+    const { POST } = await import("../route");
+    const res = await POST(req({ ...BASE_BODY, noTiketVendor: "INC-51718249" }));
+    expect(res.status).toBe(201);
+    expect(createData!.noTiketVendor).toBe("INC-51718249");
+    expect(createData!.waktuLaporVendor).toBeInstanceOf(Date);
+  });
+});

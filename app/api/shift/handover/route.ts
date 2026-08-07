@@ -6,6 +6,7 @@ import { getSession } from "@/lib/session";
 import { signSession, COOKIE_NAME, SESSION_MAX_AGE, isSecureCookie } from "@/lib/jwt";
 import { ALL_SHIFTS, nextShift, type ShiftCode } from "@/lib/shift";
 import { getShiftLabel } from "@/lib/shiftReport";
+import { findMissingSuhuServerItems, parseTanggal, todayKeyWIB } from "@/lib/suhuServer";
 import { notifyReportPending } from "@/lib/telegramScheduler";
 import { shiftPakaiSupervisiNext } from "@/lib/shiftReportApproval";
 
@@ -72,6 +73,27 @@ export async function POST(req: Request) {
   if (!ALL_SHIFTS.includes(fromShift as ShiftCode)) {
     return NextResponse.json(
       { error: "Pilih shift aktif di Dashboard sebelum serah terima." },
+      { status: 400 }
+    );
+  }
+  // Wajib (PRD §4.H, aturan baru): Suhu AC (3x) & Log Server (awal+akhir)
+  // shift ini harus lengkap sebelum serah terima diizinkan — supaya Form
+  // OPS-001 tidak bolong karena petugas lupa mengisi.
+  const tanggalCekLog = parseTanggal(todayKeyWIB())!;
+  const [acLogsCek, serverLogsCek] = await Promise.all([
+    prisma.acTempLog.findMany({
+      where: { tanggal: tanggalCekLog, shiftKode: fromShift as ShiftKode },
+    }),
+    prisma.serverLog.findMany({
+      where: { tanggal: tanggalCekLog, shiftKode: fromShift as ShiftKode },
+    }),
+  ]);
+  const missingSuhuServer = findMissingSuhuServerItems(acLogsCek, serverLogsCek);
+  if (missingSuhuServer.length > 0) {
+    return NextResponse.json(
+      {
+        error: `Lengkapi dulu Suhu AC & Log Server sebelum serah terima: ${missingSuhuServer.join(", ")}.`,
+      },
       { status: 400 }
     );
   }

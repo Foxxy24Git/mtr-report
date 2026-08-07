@@ -42,6 +42,34 @@ const WAKTU_HANDOVER = new Date("2026-07-30T23:00:00Z");
 let tickets: FakeTicket[] = [];
 let activities: FakeActivity[] = [];
 
+interface FakeAcLog {
+  tanggal: string; // YYYY-MM-DD
+  shiftKode: "A" | "B" | "C" | "D" | "E";
+  urutan: 1 | 2 | 3;
+  suhuRoomServer: string | null;
+  suhuPanel: string | null;
+  pantau12jamKiri: string | null;
+  pantau12jamKanan: string | null;
+}
+interface FakeServerLog {
+  tanggal: string;
+  shiftKode: "A" | "B" | "C" | "D" | "E";
+  fase: "awal" | "akhir";
+  npay: string | null;
+  ajAtmb: string | null;
+  bifast: string | null;
+  prima: string | null;
+  cipHost: string | null;
+}
+
+let acTempLogs: FakeAcLog[] = [];
+let serverLogs: FakeServerLog[] = [];
+
+/** `tanggal` yang dikirim route sudah berupa Date (dari parseTanggal) — cocokkan via ISO date-nya saja. */
+function sameTanggal(rowTanggalKey: string, whereTanggal: Date): boolean {
+  return rowTanggalKey === whereTanggal.toISOString().slice(0, 10);
+}
+
 /** Cocokkan satu tiket dengan where-clause Prisma (subset yang dipakai route). */
 function matchTicket(t: FakeTicket, where: Record<string, unknown>): boolean {
   for (const [key, val] of Object.entries(where)) {
@@ -101,6 +129,18 @@ const prismaFake = {
       return { count: data.length };
     },
   },
+  acTempLog: {
+    findMany: async ({ where }: { where: { tanggal: Date; shiftKode: string } }) =>
+      acTempLogs.filter(
+        (l) => sameTanggal(l.tanggal, where.tanggal) && l.shiftKode === where.shiftKode
+      ),
+  },
+  serverLog: {
+    findMany: async ({ where }: { where: { tanggal: Date; shiftKode: string } }) =>
+      serverLogs.filter(
+        (l) => sameTanggal(l.tanggal, where.tanggal) && l.shiftKode === where.shiftKode
+      ),
+  },
   shiftHandover: { create: async () => ({ id: "handover-1" }) },
   shiftReport: { create: async () => ({ id: "report-1" }) },
   user: { update: async () => ({}) },
@@ -154,6 +194,25 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(WAKTU_HANDOVER);
   activities = [];
+  acTempLogs = [1, 2, 3].map((urutan) => ({
+    tanggal: "2026-07-31",
+    shiftKode: "C" as const,
+    urutan: urutan as 1 | 2 | 3,
+    suhuRoomServer: "20°C",
+    suhuPanel: "22°C",
+    pantau12jamKiri: "Normal",
+    pantau12jamKanan: "Normal",
+  }));
+  serverLogs = (["awal", "akhir"] as const).map((fase) => ({
+    tanggal: "2026-07-31",
+    shiftKode: "C" as const,
+    fase,
+    npay: "Normal",
+    ajAtmb: "Normal",
+    bifast: "Normal",
+    prima: "Normal",
+    cipHost: "Normal",
+  }));
   tickets = [
     // Tiket User A pada shift C (shift pelaku handover) — HARUS dirotasi.
     {
@@ -261,5 +320,44 @@ describe("POST /api/shift/close — scoping per-shift", () => {
       })
     );
     expect(await res.json()).toMatchObject({ ok: true, shift: "C", count: 1 });
+  });
+});
+
+describe("POST /api/shift/handover — wajib Suhu AC & Log Server lengkap", () => {
+  it("menolak (400) jika log AC/Server shift ini belum lengkap", async () => {
+    acTempLogs = [];
+    serverLogs = [];
+    const { POST } = await import("../handover/route");
+    const res = await POST(req());
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toContain("Suhu AC pengecekan ke-1");
+    expect(body.error).toContain("Log Server Awal Shift");
+  });
+
+  it("tidak membuat ShiftReport/ShiftHandover apa pun saat ditolak", async () => {
+    acTempLogs = [];
+    const { POST } = await import("../handover/route");
+    await POST(req());
+    // Tiket TIDAK dirotasi karena request ditolak sebelum transaksi jalan.
+    expect(tickets.find((t) => t.id === "t-c1")!.shiftKode).toBe("C");
+  });
+});
+
+describe("POST /api/shift/close — wajib Suhu AC & Log Server lengkap", () => {
+  it("menolak (400) jika log AC/Server shift ini belum lengkap", async () => {
+    serverLogs = [];
+    const { POST } = await import("../close/route");
+    const res = await POST(
+      req({
+        pimpinanInfraId: "infra-1",
+        pimpinanDivisiId: "divisi-1",
+        supervisiId: "supervisi-1",
+        supervisiNextId: "supervisi-2",
+      })
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toContain("Log Server Akhir Shift");
   });
 });

@@ -32,11 +32,21 @@ import { butuhApprovalSupervisiNext, type PeranApproval } from "@/lib/shiftRepor
 
 interface Props {
   report: ShiftReportDetail;
-  /** Peran viewer; null = tidak berhak approve (mis. superadmin). */
+  /** Peran viewer; null = tidak berhak approve (mis. superadmin, atau
+   * petugas pemilik laporan). */
   peran: PeranApproval;
+  /** Tujuan link "Kembali" — default ke Supervisi. */
+  backHref?: string;
+  /** Label link "Kembali" — default "Kembali ke Supervisi". */
+  backLabel?: string;
 }
 
-export function ShiftReportDetailClient({ report, peran }: Props) {
+export function ShiftReportDetailClient({
+  report,
+  peran,
+  backHref = "/supervisi",
+  backLabel = "Kembali ke Supervisi",
+}: Props) {
   const router = useRouter();
   const [catatan, setCatatan] = useState("");
   const [busy, setBusy] = useState(false);
@@ -85,10 +95,10 @@ export function ShiftReportDetailClient({ report, peran }: Props) {
     <div className="space-y-5">
       <div>
         <Link
-          href="/supervisi"
+          href={backHref}
           className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-primary"
         >
-          <ArrowLeft className="w-4 h-4" /> Kembali ke Supervisi
+          <ArrowLeft className="w-4 h-4" /> {backLabel}
         </Link>
         <div className="mt-2 flex items-center justify-between gap-3">
           <h1 className="page-title">Laporan Shift</h1>
@@ -173,6 +183,13 @@ export function ShiftReportDetailClient({ report, peran }: Props) {
             ({report.tickets.length})
           </span>
         </h2>
+        {report.tickets.some((t) => t.status !== "selesai") && (
+          <p className="mb-2 text-xs text-gray-500">
+            Tiket berstatus <b>Proses</b> ditampilkan sebagai informasi
+            transparansi — persetujuan berlaku untuk laporan shift secara
+            keseluruhan, bukan per tiket.
+          </p>
+        )}
         {report.tickets.length === 0 ? (
           <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-gray-200 bg-surface-subtle/40 py-10 text-center text-sm text-gray-500">
             <Inbox className="h-6 w-6 text-gray-300" />

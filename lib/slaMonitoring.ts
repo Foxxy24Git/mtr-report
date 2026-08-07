@@ -717,3 +717,103 @@ export async function getSlaSummary(
     },
   };
 }
+
+// ----------------------------- 7. Drill-down tiket (klik dari dashboard) -----------------------------
+
+export type SlaDrilldownMode = "sla-terendah" | "paling-bermasalah" | "jenis" | "sumber";
+
+export interface SlaDrilldownFilter {
+  dari: string;
+  sampai: string;
+  kategori: SlaKategori;
+  mode: SlaDrilldownMode;
+  atmId?: string; // wajib utk mode sla-terendah & paling-bermasalah
+  basis?: SlaBasis; // dipakai HANYA mode sla-terendah (default "internal")
+  nilai?: string; // wajib utk mode jenis & sumber
+}
+
+// Select khusus drill-down: butuh noTiket (tak ada di ticketSelect) +
+// jenisGangguan/sumberPenyebab/noTiketVendor + waktuLaporVendor (dipakai
+// adaBasisEksternal, WAJIB ikut di-select supaya castingnya valid saat
+// runtime, bukan cuma benar secara tipe).
+const drilldownSelect = {
+  id: true,
+  noTiket: true,
+  atmId: true,
+  kategori: true,
+  status: true,
+  waktuOpen: true,
+  waktuSelesai: true,
+  jenisGangguan: true,
+  sumberPenyebab: true,
+  noTiketVendor: true,
+  waktuLaporVendor: true,
+  atm: { select: { kodeAtm: true, namaAtm: true } },
+} satisfies Prisma.TicketSelect;
+
+export interface SlaDrilldownTicketRow {
+  id: string;
+  noTiket: string;
+  kodeAtm: string;
+  namaAtm: string;
+  kategori: TicketKategori;
+  status: "proses" | "selesai";
+  waktuOpen: Date;
+  waktuSelesai: Date | null;
+  jenisGangguan: string | null;
+  sumberPenyebab: string | null;
+  noTiketVendor: string | null;
+}
+
+/**
+ * Daftar tiket persis di balik satu baris/slice dashboard SLA yang diklik.
+ * Filter status HARUS identik dengan fungsi agregat yang menghasilkan angka
+ * itu, supaya jumlah baris di sini selalu cocok dengan angka yang diklik:
+ * - "sla-terendah": sama seperti getLowestSla — hanya status selesai
+ *   (onlySelesai=true), dan kalau basis eksternal, tambahan filter
+ *   adaBasisEksternal() per tiket (sama fungsi yang dipakai getLowestSla).
+ * - "paling-bermasalah": sama seperti getMostTrouble — semua status.
+ * - "jenis"/"sumber": sama seperti countByField — semua status.
+ * Validasi kelengkapan atmId/nilai per mode TIDAK dilakukan di sini —
+ * itu tanggung jawab pemanggil (page), fungsi ini percaya inputnya benar.
+ */
+export async function getSlaDrilldownTickets(
+  filter: SlaDrilldownFilter
+): Promise<SlaDrilldownTicketRow[]> {
+  const range = computeSlaRange(filter.dari, filter.sampai);
+  const onlySelesai = filter.mode === "sla-terendah";
+
+  const where: Prisma.TicketWhereInput = {
+    ...buildWhere(range, filter.kategori, onlySelesai),
+    ...(filter.mode === "sla-terendah" || filter.mode === "paling-bermasalah"
+      ? { atmId: filter.atmId }
+      : filter.mode === "jenis"
+        ? { jenisGangguan: filter.nilai }
+        : { sumberPenyebab: filter.nilai }),
+  };
+
+  const rows = await prisma.ticket.findMany({
+    where,
+    orderBy: { waktuOpen: "desc" },
+    select: drilldownSelect,
+  });
+
+  const filtered =
+    filter.mode === "sla-terendah" && filter.basis === "eksternal"
+      ? rows.filter((t) => adaBasisEksternal(t as unknown as TicketRow))
+      : rows;
+
+  return filtered.map((t) => ({
+    id: t.id,
+    noTiket: t.noTiket,
+    kodeAtm: t.atm?.kodeAtm ?? "-",
+    namaAtm: t.atm?.namaAtm ?? "Tanpa ATM/Lokasi",
+    kategori: t.kategori,
+    status: t.status,
+    waktuOpen: t.waktuOpen,
+    waktuSelesai: t.waktuSelesai,
+    jenisGangguan: t.jenisGangguan,
+    sumberPenyebab: t.sumberPenyebab,
+    noTiketVendor: t.noTiketVendor,
+  }));
+}

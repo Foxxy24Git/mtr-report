@@ -13,6 +13,7 @@ import {
   Users,
   Database,
   ListTree,
+  StickyNote,
   type LucideIcon,
 } from "lucide-react";
 import type { Role } from "@/lib/roles";
@@ -50,6 +51,13 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/weekly-monitoring",
     icon: CalendarRange,
     description: "Riwayat tiket 7 hari terakhir (read-only)",
+  },
+  {
+    label: "Catatan Supervisi",
+    href: "/catatan-supervisi",
+    icon: StickyNote,
+    description: "Catatan dari supervisi atas laporan shift Anda",
+    roles: ["user"],
   },
   {
     label: "Supervisi",

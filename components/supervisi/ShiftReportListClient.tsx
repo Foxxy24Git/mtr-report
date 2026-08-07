@@ -138,7 +138,11 @@ export function ShiftReportListClient({ initialItems }: Props) {
             </TableRow>
           ) : (
             items.map((r) => (
-              <TableRow key={r.id}>
+              <TableRow
+                key={r.id}
+                className="cursor-pointer hover:bg-surface-subtle/60 transition-colors"
+                onClick={() => router.push(`/supervisi/${r.id}`)}
+              >
                 <Td className="whitespace-nowrap">{fmtDate(r.tanggal)}</Td>
                 <Td className="whitespace-nowrap text-sm">
                   {SHIFT_NAMES[r.shiftKode] ?? `Shift ${r.shiftKode}`}
@@ -179,7 +183,10 @@ export function ShiftReportListClient({ initialItems }: Props) {
                   <Button
                     size="sm"
                     variant={r.label === "Sudah Diapprove" ? "secondary" : "primary"}
-                    onClick={() => router.push(`/supervisi/${r.id}`)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      router.push(`/supervisi/${r.id}`);
+                    }}
                   >
                     <FileText className="w-4 h-4" />
                     Lihat &amp; Approve

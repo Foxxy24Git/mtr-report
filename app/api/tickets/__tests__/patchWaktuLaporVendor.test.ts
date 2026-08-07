@@ -126,3 +126,32 @@ describe("PATCH /api/tickets/[id] — waktuLaporVendor manual", () => {
     expect(updateData!.waktuLaporVendor).toBeUndefined();
   });
 });
+
+describe("PATCH /api/tickets/[id] — noTiketVendor placeholder ('-', 'n/a', 'tidak ada')", () => {
+  it.each(["-", "--", "---", "n/a", "N/A", "na", "NA", "tidak ada", "Tidak Ada"])(
+    "noTiketVendor = %j → dianggap kosong, waktuLaporVendor tidak tercatat",
+    async (placeholder) => {
+      const { PATCH } = await import("../[id]/route");
+      const res = await PATCH(req({ noTiketVendor: placeholder }), params);
+      expect(res.status).toBe(200);
+      expect(updateData!.noTiketVendor).toBeNull();
+      expect(updateData!.waktuLaporVendor).toBeUndefined();
+    }
+  );
+
+  it("tiket lama ber-noTiketVendor='-' di guard (sebelum dibersihkan) tetap dianggap kosong saat dikirim ulang persis sama, sehingga BISA capture waktuLaporVendor kalau diedit jadi nomor sungguhan", async () => {
+    // Simulasikan record lama yang no_tiket_vendor-nya '-' TAPI belum
+    // dibersihkan di DB (guard.ticket masih baca nilai lama apa adanya).
+    guardTicket.noTiketVendor = "-";
+    const { PATCH } = await import("../[id]/route");
+    const res = await PATCH(req({ noTiketVendor: "VDR-BARU" }), params);
+    expect(res.status).toBe(200);
+    expect(updateData!.noTiketVendor).toBe("VDR-BARU");
+    // guard.ticket.noTiketVendor="-" bukan falsy secara JS (!"-"===false),
+    // jadi perluCatatWaktu tetap FALSE di sini — konsisten dgn perilaku
+    // "-" yang SUDAH tersimpan di DB sebelum normalisasi ini ada. Baris
+    // lama itu perlu dibersihkan lewat migrasi data satu kali (lihat
+    // catatan cleanup), bukan lewat logic PATCH ini.
+    expect(updateData!.waktuLaporVendor).toBeUndefined();
+  });
+});
