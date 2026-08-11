@@ -38,10 +38,17 @@ export default async function WeeklyTicketDetailPage({ params }: Params) {
        * Weekly Monitoring pada dasarnya menu tinjauan (read-only). Super Admin
        * dikecualikan agar punya satu tempat untuk override human error:
        * reopen tiket yang salah di-close, koreksi detail, dan hapus tiket.
-       * Role lain (user & supervisi) tetap read-only penuh di menu ini —
-       * mereka mengelola tiket lewat Daily Monitoring.
+       * Petugas (role user) tetap read-only penuh di menu ini — mereka
+       * mengelola tiket lewat Daily Monitoring. Supervisi JUGA dikecualikan
+       * (readOnly=false) supaya bisa menambah Kegiatan Penanganan Gangguan
+       * di sini — ini satu-satunya halaman yang bisa dibuka Supervisi untuk
+       * tiket per-item, karena /daily-monitoring dibatasi role "user" saja
+       * (lib/rbac.ts). AMAN: canMutate/canEditActivity di
+       * TicketDetailClient tetap keras memblokir role supervisi terlepas
+       * dari readOnly — hanya canAddActivity yang terbuka, dan itu pun
+       * dipagari kepemilikan ticket.supervisiId.
        */
-      readOnly={session.role !== "superadmin"}
+      readOnly={session.role === "user"}
       backHref="/weekly-monitoring"
       backLabel="Kembali ke Weekly Monitoring"
     />

@@ -91,6 +91,7 @@ export async function gatherLogbookData(
         keterangan: true,
         atm: { select: { kodeAtm: true, namaAtm: true } },
         activities: {
+          where: { isSupervisiEntry: false },
           orderBy: { waktu: "asc" },
           select: { waktu: true, teks: true, isTindakLanjutFlag: true },
         },

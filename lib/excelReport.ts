@@ -580,11 +580,11 @@ export async function buildReportWorkbook(data: ReportData): Promise<Buffer> {
   ws.getRow(13).height = 36;
 
   // ------------------- Baris data tiket (mulai 14) -------------------
-  // Kolom rata kiri (D=lokasi, S=keterangan); sisanya center. Kolom L
-  // (kegiatan) dirata kanan-kiri lewat JUSTIFY_COLS.
+  // Kolom rata kiri (D=lokasi); sisanya center — termasuk S (keterangan).
+  // Kolom L (kegiatan) dirata kanan-kiri lewat JUSTIFY_COLS.
   // E–J center+top sesuai §7 (Waktu Respon, Contact Person, Jenis/Sumber/
   // Metode gangguan, Vendor). Semua sel data wrap=true, vertical top.
-  const LEFT_COLS = new Set(["D", "S"]);
+  const LEFT_COLS = new Set(["D"]);
   const JUSTIFY_COLS = new Set(["L"]);
   // Kolom yang nilainya milik TIKET (satu nilai untuk semua entri kegiatan) →
   // di-merge vertikal sepanjang blok. K & L tidak termasuk: itu per-entri, satu

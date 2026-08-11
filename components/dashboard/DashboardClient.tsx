@@ -19,9 +19,16 @@ const REFRESH_INTERVAL_MS = 60 * 60 * 1000;
 interface Props {
   initialData: DashboardData;
   currentShift?: string;
+  currentSupervisiId?: string;
+  supervisiUsers: { id: string; nama: string }[];
 }
 
-export function DashboardClient({ initialData, currentShift }: Props) {
+export function DashboardClient({
+  initialData,
+  currentShift,
+  currentSupervisiId,
+  supervisiUsers,
+}: Props) {
   const [data, setData] = useState<DashboardData>(initialData);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
@@ -56,7 +63,11 @@ export function DashboardClient({ initialData, currentShift }: Props) {
 
   return (
     <div className="space-y-5">
-      <ShiftSelector currentShift={currentShift} />
+      <ShiftSelector
+        currentShift={currentShift}
+        currentSupervisiId={currentSupervisiId}
+        supervisiUsers={supervisiUsers}
+      />
 
       {/* Toolbar refresh */}
       <div className="flex items-center justify-end gap-3 text-sm">

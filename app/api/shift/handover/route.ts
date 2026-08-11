@@ -212,7 +212,7 @@ export async function POST(req: Request) {
     // sudah diserahterimakan (lihat resumableShiftSession di lib/shift.ts).
     await tx.user.update({
       where: { id: session.sub },
-      data: { currentShift: null, shiftStartedAt: null },
+      data: { currentShift: null, shiftStartedAt: null, currentSupervisiId: null },
     });
 
     return shiftReport;
@@ -231,6 +231,7 @@ export async function POST(req: Request) {
     role: session.role,
     shift: "",
     shiftStartedAt: "",
+    supervisiId: "",
   });
   const store = await cookies();
   store.set(COOKIE_NAME, token, {

@@ -5,7 +5,24 @@ import { SHIFT_LABELS, type Role } from "@/lib/constants";
 import { Badge } from "@/components/ui/Badge";
 import { Bell, ChevronDown, LogOut, User2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+
+interface NotificationItem {
+  id: string;
+  ticketId: string;
+  noTiket: string;
+  message: string;
+  createdAt: string;
+}
+
+const NOTIF_POLL_MS = 20_000;
+
+/** Tujuan klik notifikasi: satu-satunya halaman detail tiket per-item per role. */
+function ticketDetailPath(role: Role, ticketId: string): string {
+  return role === "supervisi"
+    ? `/weekly-monitoring/${ticketId}`
+    : `/daily-monitoring/${ticketId}`;
+}
 
 const ROLE_LABELS: Record<Role, string> = {
   superadmin: "Super Admin",
@@ -25,12 +42,59 @@ export function Topbar({ user }: { user: SessionUser }) {
   const router = useRouter();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [notifItems, setNotifItems] = useState<NotificationItem[] | null>(null);
+  const [loadingNotif, setLoadingNotif] = useState(false);
 
   async function handleLogout() {
     setLoggingOut(true);
     await fetch("/api/auth/logout", { method: "POST" });
     router.replace("/login");
     router.refresh();
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    async function pollCount() {
+      try {
+        const res = await fetch("/api/notifications/count");
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        if (!cancelled) setUnreadCount(data.count ?? 0);
+      } catch {
+        // Abaikan kegagalan polling — dicoba lagi di interval berikutnya.
+      }
+    }
+    pollCount();
+    const t = setInterval(pollCount, NOTIF_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, []);
+
+  async function toggleNotif() {
+    const opening = !notifOpen;
+    setNotifOpen(opening);
+    if (!opening) return;
+    setLoadingNotif(true);
+    try {
+      const res = await fetch("/api/notifications");
+      const data = await res.json();
+      setNotifItems(res.ok ? data.items : []);
+      // GET /api/notifications menandai sudah dibaca di server — badge reset.
+      setUnreadCount(0);
+    } catch {
+      setNotifItems([]);
+    } finally {
+      setLoadingNotif(false);
+    }
+  }
+
+  function goToTicket(ticketId: string) {
+    setNotifOpen(false);
+    router.push(ticketDetailPath(user.role, ticketId));
   }
 
   return (
@@ -69,13 +133,72 @@ export function Topbar({ user }: { user: SessionUser }) {
           </a>
         )}
 
-        <button
-          aria-label="Notifikasi"
-          className="relative p-2 rounded-lg text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors"
-        >
-          <Bell className="w-5 h-5" />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white" />
-        </button>
+        <div className="relative">
+          <button
+            onClick={toggleNotif}
+            aria-label="Notifikasi"
+            aria-expanded={notifOpen}
+            className="relative p-2 rounded-lg text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+          >
+            <Bell className="w-5 h-5" />
+            {unreadCount > 0 && (
+              <span className="absolute top-0.5 right-0.5 min-w-[16px] h-4 px-1 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-semibold leading-none border-2 border-white">
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </span>
+            )}
+          </button>
+
+          {notifOpen && (
+            <>
+              <div
+                className="fixed inset-0 z-10"
+                onClick={() => setNotifOpen(false)}
+              />
+              <div className="absolute right-0 top-full mt-1.5 w-80 bg-white rounded-xl shadow-card-lg border border-gray-100 z-20 overflow-hidden animate-slide-up">
+                <div className="px-3 py-2.5 border-b border-gray-100">
+                  <p className="text-sm font-semibold text-gray-800">
+                    Notifikasi
+                  </p>
+                </div>
+                <div className="max-h-80 overflow-y-auto">
+                  {loadingNotif ? (
+                    <p className="text-sm text-gray-400 text-center py-6">
+                      Memuat…
+                    </p>
+                  ) : !notifItems || notifItems.length === 0 ? (
+                    <p className="text-sm text-gray-400 text-center py-6">
+                      Tidak ada notifikasi.
+                    </p>
+                  ) : (
+                    <ul className="divide-y divide-gray-100">
+                      {notifItems.map((n) => (
+                        <li key={n.id}>
+                          <button
+                            onClick={() => goToTicket(n.ticketId)}
+                            className="w-full text-left px-3 py-2.5 hover:bg-gray-50 transition-colors"
+                          >
+                            <p className="text-xs font-semibold text-primary">
+                              {n.noTiket}
+                            </p>
+                            <p className="text-sm text-gray-700 leading-snug mt-0.5">
+                              {n.message}
+                            </p>
+                            <p className="text-xs text-gray-400 mt-1">
+                              {new Date(n.createdAt).toLocaleTimeString("id-ID", {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </p>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
 
         <div className="relative">
           <button

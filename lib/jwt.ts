@@ -21,6 +21,13 @@ export interface SessionPayload {
    * (PRD revisi §4.B).
    */
   shiftStartedAt: string;
+  /**
+   * Supervisi yang dipilih petugas bareng shift di Dashboard. Kosong ("")
+   * bila belum dipilih. Dipakai mengisi Ticket.supervisiId otomatis saat
+   * Open Tiket (app/api/tickets/route.ts), dan dikosongkan bareng
+   * shift/shiftStartedAt saat serah terima / tutup laporan shift.
+   */
+  supervisiId: string;
 }
 
 /**
@@ -63,6 +70,8 @@ export async function verifySession(
       shift: typeof payload.shift === "string" ? payload.shift : "",
       shiftStartedAt:
         typeof payload.shiftStartedAt === "string" ? payload.shiftStartedAt : "",
+      supervisiId:
+        typeof payload.supervisiId === "string" ? payload.supervisiId : "",
     };
   } catch {
     return null;

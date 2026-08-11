@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { generateUniqueNoTiket } from "@/lib/noTiket";
 import { listTickets } from "@/lib/ticketQueries";
+import { buildTicketOpenedMessage } from "@/lib/notifications";
 
 const KATEGORI = Object.values(TicketKategori) as string[];
 const SHIFTS = Object.values(ShiftKode) as string[];
@@ -75,6 +76,15 @@ export async function POST(req: Request) {
   if (!SHIFTS.includes(session.shift)) {
     return NextResponse.json(
       { error: "Shift sesi tidak aktif. Pilih shift di Dashboard terlebih dahulu." },
+      { status: 400 }
+    );
+  }
+  if (!session.supervisiId) {
+    return NextResponse.json(
+      {
+        error:
+          "Supervisi belum dipilih. Pilih shift & Supervisi di Dashboard terlebih dahulu.",
+      },
       { status: 400 }
     );
   }
@@ -222,6 +232,10 @@ export async function POST(req: Request) {
         // Shift asal = shift saat open; immutable, dipakai untuk laporan.
         openShiftKode: shiftKode,
         ownerUserId: session.sub,
+        // Supervisi dipilih bareng shift di Dashboard (bukan lagi menunggu
+        // serah terima/tutup) — supaya bisa langsung menambah kegiatan
+        // pengawasan selagi tiket ini masih Proses.
+        supervisiId: session.supervisiId,
         ...(waktuOpen ? { waktuOpen } : {}),
         // Dasar SLA Eksternal (Lampiran IV PKS Artajasa) — dicatat sekali
         // saat No Tiket Vendor pertama kali ada, immutable sesudahnya.
@@ -240,6 +254,17 @@ export async function POST(req: Request) {
         teks: kegiatan,
         // Samakan jam entri pertama dengan waktu kejadian yang dikoreksi.
         ...(waktuOpen ? { waktu: waktuOpen } : {}),
+      },
+    });
+
+    // Notif lonceng Topbar: beri tahu Supervisi yang sedang dipilih petugas
+    // bahwa tiket baru saja dibuka (lib/notifications.ts).
+    await tx.notification.create({
+      data: {
+        recipientUserId: session.supervisiId,
+        ticketId: t.id,
+        type: "petugas_open_tiket",
+        message: buildTicketOpenedMessage(session.nama, kategori as TicketKategori),
       },
     });
 

@@ -108,9 +108,18 @@ export function TicketDetailClient({
   /**
    * Hanya petugas shift aktif (atau Super Admin) yang boleh menambah kegiatan.
    * Owner shift sebelumnya tetap bisa lihat tiket, tetapi tidak menambah entri.
+   * Supervisi: boleh menambah kegiatan (catatan pengawasan) KHUSUS pada
+   * tiket yang jadi tanggung jawabnya (ticket.supervisiId), terlepas dari
+   * status tiket (Proses maupun Selesai) — supervisiId kini sudah terisi
+   * sejak tiket dibuka (bukan cuma sejak handover/close).
    */
+  const isSupervisiPenanggungJawab =
+    role === "supervisi" && ticket.supervisiId === currentUserId;
   const canAddActivity =
-    !readOnly && (role === "superadmin" || (canMutate && isShiftAktifPemegang));
+    !readOnly &&
+    (role === "superadmin" ||
+      (canMutate && isShiftAktifPemegang) ||
+      isSupervisiPenanggungJawab);
 
   // --- Kegiatan baru ---
   const [kegiatan, setKegiatan] = useState("");
@@ -639,7 +648,8 @@ export function TicketDetailClient({
             meninggalkan jejak (penanda &ldquo;diedit&rdquo;).
           </p>
 
-          {canMutate && !isSelesai && canAddActivity && (
+          {((canMutate && !isSelesai) || isSupervisiPenanggungJawab) &&
+            canAddActivity && (
             <form onSubmit={submitKegiatan} className="mb-5">
               <textarea
                 rows={2}
@@ -705,6 +715,9 @@ export function TicketDetailClient({
                       <Badge variant="neutral">
                         {SHIFT_NAMES[a.shiftKode] ?? `Shift ${a.shiftKode}`}
                       </Badge>
+                      {a.isSupervisiEntry && (
+                        <Badge variant="primary">Supervisi</Badge>
+                      )}
                       {a.editedAt && (
                         <span
                           className="inline-flex items-center gap-1 text-[11px] text-amber-700"

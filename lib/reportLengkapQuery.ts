@@ -47,6 +47,7 @@ export const lengkapTicketInclude = {
   atm: { select: { kodeAtm: true, namaAtm: true, cabang: true, alamat: true } },
   owner: { select: { nama: true } },
   activities: {
+    where: { isSupervisiEntry: false },
     orderBy: { waktu: "asc" },
     include: { user: { select: { nama: true } } },
   },

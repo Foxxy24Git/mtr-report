@@ -13,6 +13,7 @@ const session = {
   nama: "User A",
   role: "user",
   shift: "C",
+  supervisiId: "supervisi-a",
 };
 
 vi.mock("@/lib/session", () => ({ getSession: async () => session }));

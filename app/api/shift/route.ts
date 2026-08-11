@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { ShiftKode } from "@prisma/client";
+import { ShiftKode, TicketStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { signSession, COOKIE_NAME, SESSION_MAX_AGE, isSecureCookie } from "@/lib/jwt";
@@ -15,6 +15,8 @@ export async function POST(req: Request) {
 
   const body = await req.json().catch(() => null);
   const shift = (body?.shift ?? "").trim();
+  const supervisiIdInput =
+    typeof body?.supervisiId === "string" ? body.supervisiId.trim() : "";
 
   if (!ALL_SHIFTS.includes(shift as ShiftCode)) {
     return NextResponse.json({ error: "Shift tidak dikenal." }, { status: 400 });
@@ -25,7 +27,7 @@ export async function POST(req: Request) {
   // bergeser (lihat shiftSessionStart di lib/shift.ts).
   const user = await prisma.user.findUnique({
     where: { id: session.sub },
-    select: { currentShift: true, shiftStartedAt: true },
+    select: { currentShift: true, shiftStartedAt: true, currentSupervisiId: true },
   });
   const { startedAt } = shiftSessionStart(
     shift as ShiftCode,
@@ -33,11 +35,46 @@ export async function POST(req: Request) {
     user?.shiftStartedAt
   );
 
+  // supervisiId opsional per-request: kalau tidak dikirim (mis. petugas cuma
+  // ganti shift lewat tombol tanpa menyentuh dropdown Supervisi), pertahankan
+  // pilihan supervisi yang sudah tersimpan.
+  let supervisiId = supervisiIdInput || user?.currentSupervisiId || "";
+  if (supervisiIdInput) {
+    const supervisi = await prisma.user.findFirst({
+      where: { id: supervisiIdInput, role: "supervisi", isAktif: true },
+      select: { id: true },
+    });
+    if (!supervisi) {
+      return NextResponse.json({ error: "Supervisi tidak valid." }, { status: 400 });
+    }
+    supervisiId = supervisi.id;
+  }
+
   // Persist shift aktif & awalnya ke DB (kolom Shift Aktif Dashboard Super Admin).
   await prisma.user.update({
     where: { id: session.sub },
-    data: { currentShift: shift as ShiftKode, shiftStartedAt: startedAt },
+    data: {
+      currentShift: shift as ShiftKode,
+      shiftStartedAt: startedAt,
+      currentSupervisiId: supervisiId || null,
+    },
   });
+
+  // Tiket yang SUDAH dibuka petugas ini sebelum Supervisi dipilih/diganti
+  // (mis. dibuka duluan, Supervisi baru dipilih belakangan) ikut disamakan —
+  // supaya Supervisi yang dipilih bisa langsung menambah kegiatan tanpa
+  // menunggu tiket itu di-handover. Pola sama seperti reassignment supervisiId
+  // saat serah terima shift (app/api/shift/handover/route.ts).
+  if (supervisiId) {
+    await prisma.ticket.updateMany({
+      where: {
+        ownerUserId: session.sub,
+        shiftKode: shift as ShiftKode,
+        status: TicketStatus.proses,
+      },
+      data: { supervisiId },
+    });
+  }
 
   const token = await signSession({
     sub: session.sub,
@@ -49,6 +86,7 @@ export async function POST(req: Request) {
     // §4.B). Sengaja memakai nilai yang sama dengan yang ditulis ke DB agar
     // cookie & DB tidak pernah menyimpan waktu mulai yang berbeda.
     shiftStartedAt: startedAt.toISOString(),
+    supervisiId,
   });
 
   const store = await cookies();

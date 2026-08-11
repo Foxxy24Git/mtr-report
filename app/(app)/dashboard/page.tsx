@@ -1,4 +1,5 @@
 import { requireSession } from "@/lib/session";
+import { prisma } from "@/lib/prisma";
 import {
   getDashboardData,
   getSupervisiDashboardData,
@@ -48,7 +49,14 @@ export default async function DashboardPage() {
     );
   }
 
-  const data = await getDashboardData(session.sub);
+  const [data, supervisiUsers] = await Promise.all([
+    getDashboardData(session.sub),
+    prisma.user.findMany({
+      where: { role: "supervisi", isAktif: true },
+      orderBy: { nama: "asc" },
+      select: { id: true, nama: true },
+    }),
+  ]);
 
   return (
     <div>
@@ -59,7 +67,12 @@ export default async function DashboardPage() {
           alert realtime.
         </p>
       </div>
-      <DashboardClient initialData={data} currentShift={session.shift} />
+      <DashboardClient
+        initialData={data}
+        currentShift={session.shift}
+        currentSupervisiId={session.supervisiId}
+        supervisiUsers={supervisiUsers}
+      />
     </div>
   );
 }

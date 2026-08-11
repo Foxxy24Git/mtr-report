@@ -62,6 +62,11 @@ enum ShiftKode {
   E
 }
 
+enum NotificationType {
+  supervisi_update_kegiatan
+  petugas_open_tiket
+}
+
 enum ServerFase {
   awal
   akhir
@@ -87,8 +92,16 @@ model User {
   lastLogin     DateTime?  @map("last_login")
   currentShift  ShiftKode? @map("current_shift")
   shiftStartedAt DateTime? @map("shift_started_at")
+  // Supervisi yang dipilih petugas bareng shift di Dashboard (fitur baru) —
+  // dipakai mengisi Ticket.supervisiId otomatis sejak tiket dibuka, bukan
+  // cuma sejak serah terima/tutup shift.
+  currentSupervisiId String? @map("current_supervisi_id")
   createdAt    DateTime @default(now()) @map("created_at")
 
+  currentSupervisi    User?   @relation("UserCurrentSupervisi", fields: [currentSupervisiId], references: [id])
+  currentSupervisiFor User[]  @relation("UserCurrentSupervisi")
+
+  notifications    Notification[]
   ticketsOwned     Ticket[]          @relation("TicketOwner")
   ticketsApproved  Ticket[]          @relation("TicketApprover")
   ticketsSupervisi Ticket[]          @relation("TicketSupervisi")
@@ -214,6 +227,7 @@ model Ticket {
   supervisi      User?            @relation("TicketSupervisi", fields: [supervisiId], references: [id])
   activities     TicketActivity[]
   handovers      ShiftHandover[]
+  notifications  Notification[]
 
   @@index([status])
   @@index([kategori])
@@ -230,15 +244,17 @@ model TicketActivity {
   waktu            DateTime  @default(now())
   teks             String
   isTindakLanjutFlag Boolean @default(false) @map("is_tindak_lanjut_flag")
+  isSupervisiEntry   Boolean @default(false) @map("is_supervisi_entry")
   createdAt        DateTime  @default(now()) @map("created_at")
   // Audit edit: entri kini editable (pembuat/superadmin) dengan jejak revisi.
   editedAt         DateTime? @map("edited_at")
   editedById       String?   @map("edited_by")
 
-  ticket    Ticket                   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  user      User                     @relation(fields: [userId], references: [id])
-  editor    User?                    @relation("ActivityEditor", fields: [editedById], references: [id])
-  revisions TicketActivityRevision[]
+  ticket        Ticket                   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user          User                     @relation(fields: [userId], references: [id])
+  editor        User?                    @relation("ActivityEditor", fields: [editedById], references: [id])
+  revisions     TicketActivityRevision[]
+  notifications Notification[]
 
   @@index([ticketId])
   @@map("ticket_activities")
@@ -385,4 +401,33 @@ model AuditLog {
   @@index([tableName, rowId])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+// Notifikasi lonceng Topbar (fitur baru). Dua tipe:
+// - supervisi_update_kegiatan: ke petugas pemilik tiket, saat Supervisi
+//   menambah kegiatan pengawasan (isSupervisiEntry). Scoping "hanya selama
+//   shift berjalan" dilakukan di level query (lib/notifications.ts) via
+//   createdAt >= shiftStartedAt sesi petugas — bukan dengan menghapus baris.
+// - petugas_open_tiket: ke Supervisi yang sedang dipilih petugas, saat tiket
+//   baru dibuka. Scoping "reset saat Supervisi tidak dipilih lagi" dilakukan
+//   dengan live join ke ticket.owner.currentSupervisiId di level query —
+//   begitu petugas ganti/lepas Supervisi (atau serah terima, yang otomatis
+//   mengosongkan currentSupervisiId), notifikasi lama otomatis tidak lagi
+//   cocok, tanpa perlu job pembersihan terpisah.
+model Notification {
+  id              String           @id @default(cuid())
+  recipientUserId String           @map("recipient_user_id")
+  ticketId        String           @map("ticket_id")
+  activityId      String?          @map("activity_id")
+  type            NotificationType
+  message         String
+  isRead          Boolean          @default(false) @map("is_read")
+  createdAt       DateTime         @default(now()) @map("created_at")
+
+  recipient User            @relation(fields: [recipientUserId], references: [id])
+  ticket    Ticket          @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  activity  TicketActivity? @relation(fields: [activityId], references: [id], onDelete: SetNull)
+
+  @@index([recipientUserId, isRead])
+  @@map("notifications")
 }

@@ -38,6 +38,9 @@ export async function POST(req: Request) {
   // kolom ini di DB), petugas tetap dapat memantau & mengedit tiketnya di
   // Daily Monitoring setelah login kembali.
   const resumed = resumableShiftSession(user.currentShift, user.shiftStartedAt);
+  // Supervisi terpilih ikut sesi shift yang sama: hanya dipulihkan bila
+  // sesi shift-nya sendiri masih resumable, kosong bila sesi sudah lewat.
+  const resumedSupervisiId = resumed.shift ? user.currentSupervisiId ?? "" : "";
 
   // Kolom sesi shift hanya boleh dihapus bila memang kedaluwarsa karena umur
   // (>SHIFT_RESUME_MAX_AGE_MS — petugas lupa menutup shift). JANGAN pakai
@@ -59,7 +62,9 @@ export async function POST(req: Request) {
     where: { id: user.id },
     data: {
       lastLogin: new Date(),
-      ...(kedaluwarsa ? { currentShift: null, shiftStartedAt: null } : {}),
+      ...(kedaluwarsa
+        ? { currentShift: null, shiftStartedAt: null, currentSupervisiId: null }
+        : {}),
     },
   });
 
@@ -70,6 +75,7 @@ export async function POST(req: Request) {
     role: user.role as Role,
     shift: resumed.shift,
     shiftStartedAt: resumed.shiftStartedAt,
+    supervisiId: resumedSupervisiId,
   });
 
   const store = await cookies();

@@ -117,7 +117,11 @@ export async function gatherReportData(p: GatherParams): Promise<GatherResult> {
       approver: { select: { nama: true, ttdUrl: true } },
       pimpinanInfra: { select: { nama: true, tipe: true, namaPjs: true } },
       pimpinanDivisi: { select: { nama: true, tipe: true, namaPjs: true } },
-      activities: { orderBy: { waktu: "asc" }, include: { user: { select: { nama: true } } } },
+      activities: {
+        where: { isSupervisiEntry: false },
+        orderBy: { waktu: "asc" },
+        include: { user: { select: { nama: true } } },
+      },
     },
   });
 

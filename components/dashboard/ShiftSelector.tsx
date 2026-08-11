@@ -4,18 +4,28 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CalendarClock, Check, AlertCircle } from "lucide-react";
 import { Card, CardTitle } from "@/components/ui/Card";
+import { Select } from "@/components/ui/Select";
 import { cn } from "@/lib/cn";
 import { SHIFT_LABELS, SHIFT_NAMES } from "@/lib/constants";
 import { ALL_SHIFTS, type ShiftCode } from "@/lib/shift";
 
 interface Props {
   currentShift?: string;
+  currentSupervisiId?: string;
+  supervisiUsers?: { id: string; nama: string }[];
 }
 
-export function ShiftSelector({ currentShift }: Props) {
+export function ShiftSelector({
+  currentShift,
+  currentSupervisiId,
+  supervisiUsers = [],
+}: Props) {
   const router = useRouter();
   const [saving, setSaving] = useState<ShiftCode | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [supervisiId, setSupervisiId] = useState(currentSupervisiId ?? "");
+  const [savingSupervisi, setSavingSupervisi] = useState(false);
+  const [supervisiErr, setSupervisiErr] = useState<string | null>(null);
 
   const today = useMemo(() => new Date(), []);
   const hariIni = useMemo(
@@ -31,13 +41,17 @@ export function ShiftSelector({ currentShift }: Props) {
 
   async function pick(s: ShiftCode) {
     if (saving || s === currentShift) return;
+    if (!supervisiId) {
+      setError("Pilih Supervisi terlebih dahulu sebelum memilih shift.");
+      return;
+    }
     setError(null);
     setSaving(s);
     try {
       const res = await fetch("/api/shift", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ shift: s }),
+        body: JSON.stringify({ shift: s, supervisiId }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -49,6 +63,35 @@ export function ShiftSelector({ currentShift }: Props) {
       setError("Tidak dapat terhubung ke server.");
     } finally {
       setSaving(null);
+    }
+  }
+
+  /**
+   * Ganti Supervisi tanpa mengganti shift. Kalau shift belum aktif, cukup
+   * simpan di state lokal — dikirim bareng saat petugas klik salah satu
+   * tombol shift (lihat pick() di atas).
+   */
+  async function changeSupervisi(id: string) {
+    setSupervisiId(id);
+    setSupervisiErr(null);
+    if (!currentShift || !id) return;
+    setSavingSupervisi(true);
+    try {
+      const res = await fetch("/api/shift", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ shift: currentShift, supervisiId: id }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setSupervisiErr(data.error ?? "Gagal menyimpan supervisi.");
+        return;
+      }
+      router.refresh();
+    } catch {
+      setSupervisiErr("Tidak dapat terhubung ke server.");
+    } finally {
+      setSavingSupervisi(false);
     }
   }
 
@@ -97,6 +140,32 @@ export function ShiftSelector({ currentShift }: Props) {
             </button>
           );
         })}
+      </div>
+
+      <div className="mt-4 pt-4 border-t border-gray-100">
+        <Select
+          label="Supervisi Bertugas"
+          value={supervisiId}
+          disabled={savingSupervisi}
+          onChange={(e) => changeSupervisi(e.target.value)}
+        >
+          <option value="">— Pilih supervisi —</option>
+          {supervisiUsers.map((u) => (
+            <option key={u.id} value={u.id}>
+              {u.nama}
+            </option>
+          ))}
+        </Select>
+        <p className="text-xs text-gray-400 mt-1">
+          Supervisi yang dipilih dapat menambah kegiatan pengawasan pada tiket
+          yang dibuka selama shift ini — tidak ikut ke laporan yang di-download.
+        </p>
+        {supervisiErr && (
+          <div className="flex items-start gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mt-2">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>{supervisiErr}</span>
+          </div>
+        )}
       </div>
 
       <p className="text-xs text-gray-400 mt-3">

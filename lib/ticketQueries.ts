@@ -380,6 +380,7 @@ export interface TicketActivityItem {
   waktu: Date;
   teks: string;
   isTindakLanjutFlag: boolean;
+  isSupervisiEntry: boolean;
   shiftKode: ShiftKode;
   userId: string;
   userNama: string;
@@ -495,6 +496,7 @@ export async function getTicketDetail(id: string): Promise<TicketDetail | null> 
       waktu: a.waktu,
       teks: a.teks,
       isTindakLanjutFlag: a.isTindakLanjutFlag,
+      isSupervisiEntry: a.isSupervisiEntry,
       shiftKode: a.shiftKode,
       userId: a.userId,
       userNama: a.user.nama,
