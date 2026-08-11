@@ -18,7 +18,12 @@ export function Sidebar({ role, logoUrl }: { role: Role; logoUrl?: string | null
     >
       {/* Logo + App Name */}
       <div className="flex flex-col items-center px-5 py-5 border-b border-primary-700/50">
-        <AppLogo logoUrl={logoUrl} className="w-36 h-11 mb-2" priority />
+        <AppLogo
+          logoUrl={logoUrl}
+          className="w-52 h-16 mb-2"
+          logoClassName="w-36 h-11"
+          priority
+        />
         <p className="text-xs text-primary-200 font-medium tracking-wide mt-1">
           {APP_NAME}
         </p>

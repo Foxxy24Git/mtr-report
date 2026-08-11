@@ -74,7 +74,12 @@ export default function LoginPage() {
         <div className="bg-white rounded-2xl shadow-card-lg overflow-hidden">
           {/* Header */}
           <div className="bg-primary px-8 pt-8 pb-6 text-center">
-            <AppLogo logoUrl={logoUrl} className="w-40 h-12 mx-auto mb-3" priority />
+            <AppLogo
+              logoUrl={logoUrl}
+              className="w-56 h-16 mx-auto mb-3"
+              logoClassName="w-40 h-12"
+              priority
+            />
             <h1 className="text-white text-lg font-display font-bold">
               mtr-Report
             </h1>
