@@ -14,6 +14,7 @@ import {
   Database,
   ListTree,
   StickyNote,
+  Truck,
   type LucideIcon,
 } from "lucide-react";
 import type { Role } from "@/lib/roles";
@@ -98,6 +99,13 @@ export const NAV_ITEMS: NavItem[] = [
     icon: ListTree,
     description: "Master pilihan jenis, penyebab & metode penanganan gangguan",
     roles: ["superadmin", "user"],
+  },
+  {
+    label: "Data Vendor",
+    href: "/data-vendor",
+    icon: Truck,
+    description: "Kelola pilihan Vendor di form Open Tiket (Super Admin)",
+    roles: ["superadmin"],
   },
   {
     label: "Suhu / Server",

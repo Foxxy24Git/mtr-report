@@ -24,15 +24,19 @@ export default async function OpenTiketPage() {
     );
   }
 
-  const lookups = await prisma.masterLookup.findMany({
-    orderBy: { nilai: "asc" },
-    select: { tipe: true, nilai: true },
-  });
+  const [lookups, vendors] = await Promise.all([
+    prisma.masterLookup.findMany({
+      orderBy: { nilai: "asc" },
+      select: { tipe: true, nilai: true },
+    }),
+    prisma.vendorMaster.findMany({ orderBy: { nama: "asc" }, select: { nama: true } }),
+  ]);
 
   const opsi = {
     jenis_gangguan: [] as string[],
     sumber_penyebab: [] as string[],
     jenis_penanganan: [] as string[],
+    vendor: vendors.map((v) => v.nama),
   };
   for (const l of lookups) opsi[l.tipe].push(l.nilai);
 

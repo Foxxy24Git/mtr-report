@@ -9,6 +9,8 @@ const RESTRICTED: { prefix: string; roles: Role[] }[] = [
   { prefix: "/data-atm", roles: ["superadmin", "user"] },
   // Master data dropdown Open Tiket — Super Admin & Monitoring (bukan Supervisi).
   { prefix: "/data-gangguan", roles: ["superadmin", "user"] },
+  // Master data Vendor — hanya Super Admin yang boleh menambah.
+  { prefix: "/data-vendor", roles: ["superadmin"] },
   { prefix: "/suhu-server", roles: ["user"] },
   { prefix: "/supervisi", roles: ["supervisi"] },
   { prefix: "/catatan-supervisi", roles: ["user"] },

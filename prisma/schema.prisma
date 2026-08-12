@@ -182,6 +182,17 @@ model MasterLookup {
   @@map("master_lookup")
 }
 
+// Daftar pilihan Vendor pada form Open Tiket. Terpisah dari MasterLookup
+// karena hak tambah data cuma Super Admin (bukan superadmin+user seperti
+// MasterLookup).
+model VendorMaster {
+  id        String   @id @default(cuid())
+  nama      String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("vendor_master")
+}
+
 model Ticket {
   id                  String          @id @default(cuid())
   noTiket             String          @unique @map("no_tiket")

@@ -32,6 +32,7 @@ interface Props {
     jenis_gangguan: string[];
     sumber_penyebab: string[];
     jenis_penanganan: string[];
+    vendor: string[];
   };
 }
 
@@ -398,16 +399,45 @@ export function OpenTiketForm({ opsi }: Props) {
           </div>
 
           {/* 7-8. Vendor opsional */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Input
-              label="Vendor (opsional)"
-              value={vendor}
-              onChange={(e) => setVendor(e.target.value)}
-            />
+          <div className="flex flex-col gap-1.5">
+            <span className="text-sm font-medium text-gray-700">
+              Vendor (opsional)
+            </span>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setVendor("")}
+                className={cn(
+                  "px-3 py-1.5 rounded-md border text-sm font-medium transition-all",
+                  vendor === ""
+                    ? "border-primary bg-primary text-white shadow-sm"
+                    : "border-gray-300 text-gray-600 hover:border-primary/50"
+                )}
+              >
+                Default
+              </button>
+              {opsi.vendor.map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setVendor(v)}
+                  className={cn(
+                    "px-3 py-1.5 rounded-md border text-sm font-medium transition-all",
+                    vendor === v
+                      ? "border-primary bg-primary text-white shadow-sm"
+                      : "border-gray-300 text-gray-600 hover:border-primary/50"
+                  )}
+                >
+                  {v}
+                </button>
+              ))}
+            </div>
+
             <Input
               label="No Tiket dari Vendor (opsional)"
               value={noTiketVendor}
               onChange={(e) => setNoTiketVendor(e.target.value)}
+              className="max-w-sm"
             />
           </div>
 
