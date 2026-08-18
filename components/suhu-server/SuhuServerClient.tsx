@@ -376,7 +376,24 @@ function ServerFaseForm({
         <span className="text-sm font-semibold text-gray-800">
           {FASE_LABELS[fase]}
         </span>
-        <SavedFlash show={saved} />
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() =>
+              setVals({
+                npay: "Normal",
+                ajAtmb: "Normal",
+                bifast: "Normal",
+                prima: "Normal",
+                cipHost: "Normal",
+              })
+            }
+          >
+            Normal Semua
+          </Button>
+          <SavedFlash show={saved} />
+        </div>
       </div>
 
       <div className="space-y-3">
