@@ -120,7 +120,12 @@ export function RekapLaporanClient({
       `Laporan-Harian-${tglHarian}${shiftSlug}.xlsx`
     );
     if (res.ok) {
+      // Reset penuh (bukan cuma shiftCandidates) supaya download berikutnya
+      // — untuk user/tanggal yang sama sekalipun — kembali ke mode
+      // auto-detect, bukan diam-diam memakai shift manual dari sesi
+      // sebelumnya yang sudah tidak terlihat di UI.
       setShiftCandidates(null);
+      setShiftHarian("");
     } else {
       setErrHarian(res.error ?? "Gagal mengunduh.");
       setShiftCandidates(
@@ -268,6 +273,7 @@ export function RekapLaporanClient({
               label="Tanggal"
               type="date"
               value={tglHarian}
+              disabled={loadingHarian}
               onChange={(e) => {
                 setTglHarian(e.target.value);
                 resetHarianDeteksi();
@@ -278,6 +284,7 @@ export function RekapLaporanClient({
                 label="User"
                 required
                 value={harianUser}
+                disabled={loadingHarian}
                 onChange={(e) => {
                   setHarianUser(e.target.value);
                   resetHarianDeteksi();
@@ -298,6 +305,7 @@ export function RekapLaporanClient({
                 label="Shift (pilih manual)"
                 required
                 value={shiftHarian}
+                disabled={loadingHarian}
                 onChange={(e) => setShiftHarian(e.target.value)}
               >
                 <option value="">— Pilih shift —</option>

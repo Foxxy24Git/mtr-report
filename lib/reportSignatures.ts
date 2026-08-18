@@ -45,6 +45,11 @@ export function resolveLeaderName(leader: LeaderRef | null | undefined): string 
   return (leader.nama ?? "").trim();
 }
 
+/** True bila leader bertipe PJS — dipakai untuk label "PJS Pimpinan" di laporan. */
+export function isPjsLeader(leader: LeaderRef | null | undefined): boolean {
+  return leader?.tipe === "pjs";
+}
+
 /**
  * Tentukan "Mengetahui" (O26 infra / R26 divisi) — PRD §5, PART 4.
  *

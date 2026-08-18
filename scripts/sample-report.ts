@@ -144,6 +144,8 @@ const data: ReportData = {
     supervisiNextTtdPath: null,
     pimpinanInfra: "Pimpinan Bag. Infrastruktur TI",
     pimpinanDivisi: "Pemimpin Divisi TI",
+    pimpinanInfraIsPjs: false,
+    pimpinanDivisiIsPjs: false,
   },
 };
 

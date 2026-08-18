@@ -84,6 +84,9 @@ export interface ReportSignatures {
   supervisiNextTtdPath: string | null;
   pimpinanInfra: string;
   pimpinanDivisi: string;
+  /** True bila pimpinan bertipe PJS — label "PJS Pimpinan" di bawah nama. */
+  pimpinanInfraIsPjs: boolean;
+  pimpinanDivisiIsPjs: boolean;
 }
 
 export interface ReportData {
@@ -786,6 +789,8 @@ export async function buildReportWorkbook(data: ReportData): Promise<Buffer> {
     /** True = petugas/supervisi (punya TTD digital → tampilkan gambar/placeholder). */
     signer: boolean;
     show: boolean;
+    /** Label kecil di bawah nama, khusus blok pimpinan ("Pimpinan" / "PJS Pimpinan"). */
+    roleLabel?: string;
   }[] = [
     { c1: "C", c2: "D", imgCol: 2, title: "Petugas Monitoring yang menyerahkan", nama: sig.penyerah, ttdPath: sig.penyerahTtdPath, signer: true, show: true },
     { c1: "F", c2: "G", imgCol: 5, title: "Petugas Monitoring yang Menerima", nama: sig.penerima, ttdPath: sig.penerimaTtdPath, signer: true, show: true },
@@ -793,12 +798,15 @@ export async function buildReportWorkbook(data: ReportData): Promise<Buffer> {
     ...(sig.showSupervisiNext
       ? [{ c1: "L", c2: "L", imgCol: 11, title: "Supervisi Selanjutnya", nama: sig.supervisiNext, ttdPath: sig.supervisiNextTtdPath, signer: true, show: sig.supervisiNextApproved }]
       : []),
-    { c1: "O", c2: "P", imgCol: 14, title: "Mengetahui,\nBag. Infrastruktur TI", nama: sig.pimpinanInfra, ttdPath: null, signer: false, show: true },
-    { c1: "R", c2: "S", imgCol: 17, title: "Mengetahui,\nPemimpin Divisi", nama: sig.pimpinanDivisi, ttdPath: null, signer: false, show: true },
+    { c1: "O", c2: "P", imgCol: 14, title: "Mengetahui,\nBag. Infrastruktur TI", nama: sig.pimpinanInfra, ttdPath: null, signer: false, show: true, roleLabel: sig.pimpinanInfraIsPjs ? "PJS Pimpinan" : "Pimpinan" },
+    { c1: "R", c2: "S", imgCol: 17, title: "Mengetahui,\nPemimpin Divisi", nama: sig.pimpinanDivisi, ttdPath: null, signer: false, show: true, roleLabel: sig.pimpinanDivisiIsPjs ? "PJS Pimpinan" : "Pimpinan" },
   ];
 
   for (let row = titleRow; row <= titleRow + 2; row++) ws.getRow(row).height = 20;
   ws.getRow(nameRow).height = 31;
+  // Baris label jabatan pimpinan ("Pimpinan" / "PJS Pimpinan"), tepat di bawah nama.
+  const roleLabelRow = nameRow + 1;
+  ws.getRow(roleLabelRow).height = 16;
 
   for (const b of blocks) {
     // Label jabatan (merge X26:Y28) — teks di atas, area TTD di tengah.
@@ -819,6 +827,18 @@ export async function buildReportWorkbook(data: ReportData): Promise<Buffer> {
     name.value = `( ${b.nama || "…………………………"} )`;
     name.font = font({ size: 10 });
     name.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+
+    // Label jabatan pimpinan (mis. "Pimpinan" / "PJS Pimpinan"), khusus blok
+    // yang punya roleLabel (infra & divisi) — dicetak di baris tepat di bawah nama.
+    if (b.roleLabel) {
+      if (b.c1 !== b.c2) {
+        ws.mergeCells(`${b.c1}${roleLabelRow}:${b.c2}${roleLabelRow}`);
+      }
+      const role = ws.getCell(`${b.c1}${roleLabelRow}`);
+      role.value = b.roleLabel;
+      role.font = font({ size: 9 });
+      role.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+    }
 
     // TTD digital ditempel sebagai gambar melayang di atas area label (baris
     // 27–28). Petugas penyerah/penerima selalu muncul; supervisi hanya setelah
@@ -864,7 +884,7 @@ export async function buildReportWorkbook(data: ReportData): Promise<Buffer> {
   }
 
   // ------------------- Print area -------------------
-  ws.pageSetup.printArea = `A1:S${nameRow}`;
+  ws.pageSetup.printArea = `A1:S${roleLabelRow}`;
 
   const out = await wb.xlsx.writeBuffer();
   return Buffer.from(out);

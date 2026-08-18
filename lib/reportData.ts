@@ -12,7 +12,7 @@ import {
   resolveWaktuSelesaiForShiftReport,
   stripClosingMarker,
 } from "@/lib/reportQuery";
-import { resolveSender, resolveAcknowledger, resolveLeaderName } from "@/lib/reportSignatures";
+import { resolveSender, resolveAcknowledger, resolveLeaderName, isPjsLeader } from "@/lib/reportSignatures";
 import { resolveShiftReportSignatures } from "@/lib/shiftReport";
 import { shiftPakaiSupervisiNext } from "@/lib/shiftReportApproval";
 import { resolveReportLogoPath } from "@/lib/appSettings";
@@ -325,6 +325,8 @@ export async function gatherReportData(p: GatherParams): Promise<GatherResult> {
       supervisiNextTtdPath: s.supervisiNextTtdPath,
       pimpinanInfra: s.pimpinanInfra,
       pimpinanDivisi: s.pimpinanDivisi,
+      pimpinanInfraIsPjs: s.pimpinanInfraIsPjs,
+      pimpinanDivisiIsPjs: s.pimpinanDivisiIsPjs,
     };
   } else {
     // Fallback (data lama tanpa ShiftReport): logika handover/tiket lama.
@@ -363,6 +365,14 @@ export async function gatherReportData(p: GatherParams): Promise<GatherResult> {
         resolveLeaderName(handover?.pimpinanDivisi),
         uniqueJoin(ticketRows.map((t) => resolveLeaderName(t.pimpinanDivisi) || null))
       ),
+      // Ikuti sumber nama yang sama persis (handover diutamakan, lalu tiket):
+      // label "PJS Pimpinan" mengikuti tipe dari sumber yang benar-benar dipakai.
+      pimpinanInfraIsPjs: resolveLeaderName(handover?.pimpinanInfra)
+        ? isPjsLeader(handover?.pimpinanInfra)
+        : ticketRows.some((t) => resolveLeaderName(t.pimpinanInfra) && isPjsLeader(t.pimpinanInfra)),
+      pimpinanDivisiIsPjs: resolveLeaderName(handover?.pimpinanDivisi)
+        ? isPjsLeader(handover?.pimpinanDivisi)
+        : ticketRows.some((t) => resolveLeaderName(t.pimpinanDivisi) && isPjsLeader(t.pimpinanDivisi)),
     };
   }
 

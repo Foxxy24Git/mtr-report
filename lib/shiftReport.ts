@@ -1,5 +1,5 @@
 import { SHIFT_LABELS } from "@/lib/constants";
-import { resolveLeaderName, type LeaderRef } from "@/lib/reportSignatures";
+import { resolveLeaderName, isPjsLeader, type LeaderRef } from "@/lib/reportSignatures";
 import { shiftPakaiSupervisiNext } from "@/lib/shiftReportApproval";
 
 /** Label shift lengkap untuk laporan (mis. "Shift Pagi (07:00–15:00)"). */
@@ -46,6 +46,9 @@ export interface ShiftReportSignatures {
   supervisiNextTtdPath: string | null;
   pimpinanInfra: string;
   pimpinanDivisi: string;
+  /** True bila pimpinan bertipe PJS — label "PJS Pimpinan" di bawah nama. */
+  pimpinanInfraIsPjs: boolean;
+  pimpinanDivisiIsPjs: boolean;
 }
 
 /**
@@ -80,5 +83,7 @@ export function resolveShiftReportSignatures(
       showNext && approvedNext ? r.supervisiNext?.ttdUrl ?? null : null,
     pimpinanInfra: resolveLeaderName(r.pimpinanInfra),
     pimpinanDivisi: resolveLeaderName(r.pimpinanDivisi),
+    pimpinanInfraIsPjs: isPjsLeader(r.pimpinanInfra),
+    pimpinanDivisiIsPjs: isPjsLeader(r.pimpinanDivisi),
   };
 }
