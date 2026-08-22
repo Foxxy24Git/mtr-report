@@ -336,6 +336,7 @@ export function TicketDetailClient({
       vendor: editForm.vendor,
       noTiketVendor: editForm.noTiketVendor,
       keterangan: editForm.keterangan,
+      kategori: editForm.kategori,
     };
     if (editForm.waktuLaporVendor) {
       payload.waktuLaporVendor = wibInputToISO(editForm.waktuLaporVendor);
@@ -356,7 +357,6 @@ export function TicketDetailClient({
       if (editForm.cpTipe === "wag" && !editForm.cpNama) {
         return setEditErr("Nama WAG (WhatsApp Group) wajib diisi.");
       }
-      payload.kategori = editForm.kategori;
       payload.atmId = selectedAtm.id;
       payload.cpTipe = editForm.cpTipe;
       payload.cpNama = editForm.cpNama;
@@ -772,8 +772,8 @@ export function TicketDetailClient({
         title="Ubah Detail Gangguan"
         description={
           isSuperadmin
-            ? "Perbarui klasifikasi gangguan, vendor, dan data dasar tiket."
-            : "Perbarui klasifikasi gangguan & vendor."
+            ? "Perbarui klasifikasi gangguan, vendor, kategori, dan data dasar tiket."
+            : "Perbarui klasifikasi gangguan, vendor & kategori tiket."
         }
         size="lg"
       >
@@ -860,30 +860,6 @@ export function TicketDetailClient({
                 )}
               </div>
 
-              {/* Kategori */}
-              <div>
-                <label className="text-sm font-medium text-gray-700">
-                  Kategori Tiket
-                </label>
-                <div className="mt-1.5 flex gap-2">
-                  {(["atm", "jaringan"] as const).map((k) => (
-                    <button
-                      key={k}
-                      type="button"
-                      onClick={() => setEditForm({ ...editForm, kategori: k })}
-                      className={cn(
-                        "flex-1 px-4 py-2 rounded-md border text-sm font-medium transition-all",
-                        editForm.kategori === k
-                          ? "border-primary bg-primary text-white shadow-sm"
-                          : "border-gray-300 bg-white text-gray-600 hover:border-primary/50"
-                      )}
-                    >
-                      {k === "atm" ? "ATM" : "Jaringan Kantor"}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
               {/* Contact Person */}
               <div>
                 <label className="text-sm font-medium text-gray-700">
@@ -950,6 +926,30 @@ export function TicketDetailClient({
               </div>
             </div>
           )}
+
+          {/* Kategori — boleh diubah pemilik/petugas shift pemegang & Super Admin. */}
+          <div>
+            <label className="text-sm font-medium text-gray-700">
+              Kategori Tiket
+            </label>
+            <div className="mt-1.5 flex gap-2">
+              {(["atm", "jaringan"] as const).map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => setEditForm({ ...editForm, kategori: k })}
+                  className={cn(
+                    "flex-1 px-4 py-2 rounded-md border text-sm font-medium transition-all",
+                    editForm.kategori === k
+                      ? "border-primary bg-primary text-white shadow-sm"
+                      : "border-gray-300 bg-white text-gray-600 hover:border-primary/50"
+                  )}
+                >
+                  {k === "atm" ? "ATM" : "Jaringan Kantor"}
+                </button>
+              ))}
+            </div>
+          </div>
 
           <Select
             label="Jenis Gangguan"

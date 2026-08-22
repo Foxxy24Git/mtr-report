@@ -13,10 +13,10 @@ const CP_TIPE = Object.values(CpTipe) as string[];
 
 /**
  * Field yang HANYA boleh diubah Super Admin (override human error).
- * Petugas/shift holder tetap terbatas pada klasifikasi gangguan & vendor.
+ * Petugas/shift holder tetap terbatas pada klasifikasi gangguan, vendor,
+ * & kategori tiket.
  */
 const SUPERADMIN_FIELDS = [
-  "kategori",
   "atmId",
   "cpTipe",
   "cpNama",
@@ -71,8 +71,8 @@ export async function GET(_req: Request, { params }: Params) {
  *
  * Dua tingkat izin:
  * - Semua yang lolos guardTicketMutation (pemilik / petugas shift pemegang /
- *   Super Admin): klasifikasi gangguan, vendor, keterangan.
- * - Super Admin SAJA: kategori, ATM/lokasi, contact person, waktu kejadian.
+ *   Super Admin): klasifikasi gangguan, vendor, keterangan, kategori tiket.
+ * - Super Admin SAJA: ATM/lokasi, contact person, waktu kejadian.
  *   Dicek di server (session.role), bukan sekadar disembunyikan di form.
  */
 export async function PATCH(req: Request, { params }: Params) {
@@ -137,6 +137,19 @@ export async function PATCH(req: Request, { params }: Params) {
     data.waktuLaporVendor = waktuManual ?? new Date();
   }
 
+  // Kategori tiket — boleh diubah pemilik/petugas shift pemegang & Super
+  // Admin (siapa pun yang lolos guardTicketMutation di atas).
+  if (hasField(body, "kategori")) {
+    const kategori = cleanStr(body.kategori);
+    if (!KATEGORI.includes(kategori)) {
+      return NextResponse.json(
+        { error: "Kategori tiket tidak valid (ATM atau Jaringan)." },
+        { status: 400 }
+      );
+    }
+    data.kategori = kategori as TicketKategori;
+  }
+
   // --- Field override Super Admin ---
   const sentSuperadminFields = SUPERADMIN_FIELDS.filter((f) =>
     hasField(body, f)
@@ -145,25 +158,13 @@ export async function PATCH(req: Request, { params }: Params) {
     return NextResponse.json(
       {
         error:
-          "Hanya Super Admin yang dapat mengubah kategori, ATM/lokasi, contact person, atau waktu kejadian.",
+          "Hanya Super Admin yang dapat mengubah ATM/lokasi, contact person, atau waktu kejadian.",
       },
       { status: 403 }
     );
   }
 
   if (isSuperadmin) {
-    // Kategori tiket
-    if (hasField(body, "kategori")) {
-      const kategori = cleanStr(body.kategori);
-      if (!KATEGORI.includes(kategori)) {
-        return NextResponse.json(
-          { error: "Kategori tiket tidak valid (ATM atau Jaringan)." },
-          { status: 400 }
-        );
-      }
-      data.kategori = kategori as TicketKategori;
-    }
-
     // ATM / lokasi — wajib merujuk baris master yang ada.
     if (hasField(body, "atmId")) {
       const atmId = cleanStr(body.atmId);

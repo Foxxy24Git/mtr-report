@@ -203,6 +203,9 @@ export function ShiftReportDetailClient({
                 <Th>Kategori</Th>
                 <Th>Lokasi ATM</Th>
                 <Th>Status</Th>
+                <Th>Jenis Gangguan</Th>
+                <Th>Sumber Penyebab</Th>
+                <Th>Metode Penanganan</Th>
                 <Th>Lama Penanganan</Th>
                 <Th>SLA</Th>
               </TableRow>
@@ -324,6 +327,9 @@ function TicketRow({ ticket }: { ticket: ShiftReportDetailTicket }) {
             {ticket.status === "selesai" ? "Selesai" : "Proses"}
           </Badge>
         </Td>
+        <Td className="text-gray-600">{ticket.jenisGangguan ?? "—"}</Td>
+        <Td className="text-gray-600">{ticket.sumberPenyebab ?? "—"}</Td>
+        <Td className="text-gray-600">{ticket.metodePenanganan ?? "—"}</Td>
         <Td className="whitespace-nowrap text-xs">
           {sla.lamaHHMM ? (
             <span className="font-medium text-gray-700">{sla.lamaHHMM}</span>
@@ -337,7 +343,7 @@ function TicketRow({ ticket }: { ticket: ShiftReportDetailTicket }) {
       </TableRow>
       {open && (
         <TableRow>
-          <Td colSpan={6} className="bg-surface-subtle/40">
+          <Td colSpan={9} className="bg-surface-subtle/40">
             {loading ? (
               <p className="flex items-center gap-2 text-xs text-gray-500 py-2">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" /> Memuat kronologi…

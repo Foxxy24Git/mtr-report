@@ -20,6 +20,9 @@ FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 RUN apk add --no-cache su-exec
+# libreoffice-calc: dipakai lib/xlsxToPdf.ts (soffice --headless) untuk
+# konversi Download Harian .xlsx -> .pdf identik layout (bukan render ulang).
+RUN apk add --no-cache libreoffice-calc
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 

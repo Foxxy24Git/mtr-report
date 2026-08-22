@@ -220,6 +220,9 @@ export interface ShiftReportDetailTicket {
   waktuSelesai: Date | null;
   /** True bila tiket ini diteruskan ke shift berikutnya. */
   isLanjutan: boolean;
+  jenisGangguan: string | null;
+  sumberPenyebab: string | null;
+  metodePenanganan: string | null;
 }
 
 export interface ShiftReportDetail {
@@ -321,6 +324,9 @@ export async function getShiftReportDetail(
       waktuOpen: t.waktuOpen,
       waktuSelesai: t.waktuSelesai,
       isLanjutan: t.activities.length > 0,
+      jenisGangguan: t.jenisGangguan,
+      sumberPenyebab: t.sumberPenyebab,
+      metodePenanganan: t.metodePenanganan,
     })),
   };
 }

@@ -3,16 +3,18 @@ import { getSession } from "@/lib/session";
 import { gatherReportData } from "@/lib/reportData";
 import { buildReportWorkbook } from "@/lib/excelReport";
 import { findUserShiftsForDate } from "@/lib/reportShiftLookup";
+import { convertXlsxToPdf } from "@/lib/xlsxToPdf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const XLSX_MIME =
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+const PDF_MIME = "application/pdf";
 
 /**
- * GET /api/rekap?mode=harian|user&tanggal=YYYY-MM-DD&shift=A&owner=<id>
- * Mengunduh laporan Form OPS-001 (.xlsx) identik template (PRD §4.D).
+ * GET /api/rekap?mode=harian|user&tanggal=YYYY-MM-DD&shift=A&owner=<id>&format=xlsx|pdf
+ * Mengunduh laporan Form OPS-001 (.xlsx atau .pdf) identik template (PRD §4.D).
  *
  * mode=harian: `shift` kini OPSIONAL — bila kosong, shift dideteksi otomatis
  * dari sesi yang dijalankan `owner` (atau user login bila bukan superadmin)
@@ -20,6 +22,10 @@ const XLSX_MIME =
  * BUKAN untuk memfilter isi laporan (laporan tetap laporan shift penuh).
  * Balasan 404 bila tidak ditemukan sesi, 409 (+ `candidates`) bila ditemukan
  * lebih dari satu sesi dan shift harus dipilih manual.
+ *
+ * `format` opsional (default "xlsx"): "pdf" mengonversi workbook yang SAMA
+ * lewat LibreOffice headless (lib/xlsxToPdf.ts) — bukan render ulang, jadi
+ * hasil PDF identik dengan .xlsx (layout, wrap, TTD, dll).
  */
 export async function GET(req: Request) {
   const session = await getSession();
@@ -82,6 +88,29 @@ export async function GET(req: Request) {
     useShiftSessionWindow: mode === "harian",
   });
   const buffer = await buildReportWorkbook(data);
+
+  if (sp.get("format") === "pdf") {
+    let pdfBuffer: Buffer;
+    try {
+      pdfBuffer = await convertXlsxToPdf(buffer);
+    } catch (err) {
+      console.error("Gagal konversi PDF laporan harian:", err);
+      return NextResponse.json(
+        { error: "Gagal membuat PDF. Coba lagi atau unduh format Excel." },
+        { status: 500 }
+      );
+    }
+    const pdfFilename = filename.replace(/\.xlsx$/i, ".pdf");
+    return new NextResponse(new Uint8Array(pdfBuffer), {
+      status: 200,
+      headers: {
+        "Content-Type": PDF_MIME,
+        "Content-Disposition": `attachment; filename="${pdfFilename}"`,
+        "Content-Length": String(pdfBuffer.length),
+        "Cache-Control": "no-store",
+      },
+    });
+  }
 
   return new NextResponse(new Uint8Array(buffer), {
     status: 200,

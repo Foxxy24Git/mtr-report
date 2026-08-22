@@ -92,7 +92,8 @@ export function RekapLaporanClient({
   // null = belum pernah gagal (form auto/normal). Array = auto-detect
   // gagal, tampilkan dropdown shift manual berisi kandidat ini.
   const [shiftCandidates, setShiftCandidates] = useState<string[] | null>(null);
-  const [loadingHarian, setLoadingHarian] = useState(false);
+  // null = tidak ada download berjalan; "xlsx"/"pdf" = format yang sedang diproses.
+  const [loadingHarian, setLoadingHarian] = useState<"xlsx" | "pdf" | null>(null);
   const [errHarian, setErrHarian] = useState("");
 
   function resetHarianDeteksi() {
@@ -101,14 +102,15 @@ export function RekapLaporanClient({
     setErrHarian("");
   }
 
-  async function unduhHarian() {
+  async function unduhHarian(format: "xlsx" | "pdf") {
     setErrHarian("");
     if (isSuperadmin && !harianUser) {
       setErrHarian("Pilih user terlebih dahulu.");
       return;
     }
-    setLoadingHarian(true);
+    setLoadingHarian(format);
     const params = new URLSearchParams({ mode: "harian", tanggal: tglHarian });
+    if (format === "pdf") params.set("format", "pdf");
     if (shiftHarian) {
       params.set("shift", shiftHarian);
     } else if (isSuperadmin) {
@@ -117,7 +119,7 @@ export function RekapLaporanClient({
     const shiftSlug = shiftHarian ? `-Shift${shiftHarian}` : "";
     const res = await downloadFile(
       `/api/rekap?${params.toString()}`,
-      `Laporan-Harian-${tglHarian}${shiftSlug}.xlsx`
+      `Laporan-Harian-${tglHarian}${shiftSlug}.${format}`
     );
     if (res.ok) {
       // Reset penuh (bukan cuma shiftCandidates) supaya download berikutnya
@@ -132,7 +134,7 @@ export function RekapLaporanClient({
         res.candidates && res.candidates.length > 0 ? res.candidates : ALL_SHIFTS
       );
     }
-    setLoadingHarian(false);
+    setLoadingHarian(null);
   }
 
   // --- Download per User (Logbook, modal rentang tanggal) ---
@@ -273,7 +275,7 @@ export function RekapLaporanClient({
               label="Tanggal"
               type="date"
               value={tglHarian}
-              disabled={loadingHarian}
+              disabled={loadingHarian !== null}
               onChange={(e) => {
                 setTglHarian(e.target.value);
                 resetHarianDeteksi();
@@ -284,7 +286,7 @@ export function RekapLaporanClient({
                 label="User"
                 required
                 value={harianUser}
-                disabled={loadingHarian}
+                disabled={loadingHarian !== null}
                 onChange={(e) => {
                   setHarianUser(e.target.value);
                   resetHarianDeteksi();
@@ -305,7 +307,7 @@ export function RekapLaporanClient({
                 label="Shift (pilih manual)"
                 required
                 value={shiftHarian}
-                disabled={loadingHarian}
+                disabled={loadingHarian !== null}
                 onChange={(e) => setShiftHarian(e.target.value)}
               >
                 <option value="">— Pilih shift —</option>
@@ -322,9 +324,21 @@ export function RekapLaporanClient({
               {errHarian}
             </p>
           )}
-          <div className="flex justify-end mt-4">
-            <Button onClick={unduhHarian} loading={loadingHarian}>
-              {!loadingHarian && <Download className="w-4 h-4" />} Download Excel
+          <div className="flex justify-end gap-2 mt-4">
+            <Button
+              variant="outline"
+              onClick={() => unduhHarian("pdf")}
+              loading={loadingHarian === "pdf"}
+              disabled={loadingHarian !== null}
+            >
+              {loadingHarian !== "pdf" && <FileText className="w-4 h-4" />} Download PDF
+            </Button>
+            <Button
+              onClick={() => unduhHarian("xlsx")}
+              loading={loadingHarian === "xlsx"}
+              disabled={loadingHarian !== null}
+            >
+              {loadingHarian !== "xlsx" && <Download className="w-4 h-4" />} Download Excel
             </Button>
           </div>
         </Card>
