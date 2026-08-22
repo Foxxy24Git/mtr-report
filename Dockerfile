@@ -3,6 +3,11 @@
 # Semua stage ikut pindah, bukan cuma runner, supaya binary native yang
 # ter-compile saat `npm ci` (mis. sharp) cocok dengan libc runner (glibc).
 FROM node:20-bookworm-slim AS base
+# Prisma butuh binary/lib openssl buat deteksi versi libssl runtime (bookworm
+# = debian-openssl-3.0.x) saat `prisma generate` maupun saat query engine
+# native-nya dipanggil; tanpa ini Prisma salah generate untuk openssl-1.1.x.
+RUN apt-get update && apt-get install -y --no-install-recommends openssl \
+  && rm -rf /var/lib/apt/lists/*
 
 # Install dependencies only when needed
 FROM base AS deps
