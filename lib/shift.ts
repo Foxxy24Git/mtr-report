@@ -30,12 +30,32 @@ const WEEKEND = new Set(["Sat", "Sun"]);
  * kontainer berjalan di UTC (pola sama dengan bolehKirimNotif di
  * lib/telegramNotif.ts).
  */
-function isAkhirPekanWIB(now: Date): boolean {
+export function isAkhirPekanWIB(now: Date): boolean {
   const weekday = new Intl.DateTimeFormat("en-US", {
     timeZone: TZ,
     weekday: "short",
   }).format(now);
   return WEEKEND.has(weekday);
+}
+
+const WEEKDAY_SHIFTS: ShiftCode[] = ["A", "B", "C"];
+const WEEKEND_SHIFTS: ShiftCode[] = ["D", "E"];
+
+/**
+ * Shift yang boleh dipilih pada tanggal tertentu.
+ *
+ * - Akhir pekan (Sab-Min): selalu D/E (shift 12 jam).
+ * - Hari kerja (Sen-Jum): normalnya A/B/C (shift 8 jam). D/E ikut tersedia
+ *   HANYA bila Super Admin sudah mengaktifkan mode 12 jam untuk tanggal itu
+ *   (kondisi darurat: petugas sakit/izin, atau tanggal merah) — lihat model
+ *   ShiftOverride di prisma/schema.prisma.
+ */
+export function validShiftsForDate(
+  date: Date,
+  shift12JamAktif: boolean
+): ShiftCode[] {
+  if (isAkhirPekanWIB(date)) return WEEKEND_SHIFTS;
+  return shift12JamAktif ? [...WEEKDAY_SHIFTS, ...WEEKEND_SHIFTS] : WEEKDAY_SHIFTS;
 }
 
 /**

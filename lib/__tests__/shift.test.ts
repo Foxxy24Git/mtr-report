@@ -4,6 +4,7 @@ import {
   nextShift,
   resumableShiftSession,
   shiftSessionStart,
+  validShiftsForDate,
 } from "../shift";
 
 describe("ALL_SHIFTS", () => {
@@ -65,6 +66,33 @@ describe("nextShift", () => {
     expect(nextShift("C", new Date("2026-07-31T18:00:00.000Z"))).toBe("D");
     // Minggu 18:00 UTC = Senin 01:00 WIB → sudah hari kerja.
     expect(nextShift("E", new Date("2026-08-02T18:00:00.000Z"))).toBe("A");
+  });
+});
+
+describe("validShiftsForDate", () => {
+  // Sama seperti nextShift: acuan waktu eksplisit UTC + padanan WIB (UTC+7).
+  const RABU = new Date("2026-07-29T00:00:00.000Z"); // Rabu 07:00 WIB
+  const SABTU = new Date("2026-08-01T00:00:00.000Z"); // Sabtu 07:00 WIB
+  const MINGGU = new Date("2026-08-02T00:00:00.000Z"); // Minggu 07:00 WIB
+  const SENIN = new Date("2026-08-03T00:00:00.000Z"); // Senin 07:00 WIB
+
+  it("hari kerja tanpa aktivasi Super Admin → hanya A/B/C (8 jam)", () => {
+    for (const now of [RABU, SENIN]) {
+      expect(validShiftsForDate(now, false)).toEqual(["A", "B", "C"]);
+    }
+  });
+
+  it("hari kerja dengan aktivasi Super Admin → A/B/C ditambah D/E (12 jam)", () => {
+    for (const now of [RABU, SENIN]) {
+      expect(validShiftsForDate(now, true)).toEqual(["A", "B", "C", "D", "E"]);
+    }
+  });
+
+  it("akhir pekan selalu D/E, tidak terpengaruh status aktivasi", () => {
+    for (const now of [SABTU, MINGGU]) {
+      expect(validShiftsForDate(now, false)).toEqual(["D", "E"]);
+      expect(validShiftsForDate(now, true)).toEqual(["D", "E"]);
+    }
   });
 });
 

@@ -21,6 +21,7 @@ interface Props {
   currentShift?: string;
   currentSupervisiId?: string;
   supervisiUsers: { id: string; nama: string }[];
+  shift12JamAktifHariIni?: boolean;
 }
 
 export function DashboardClient({
@@ -28,6 +29,7 @@ export function DashboardClient({
   currentShift,
   currentSupervisiId,
   supervisiUsers,
+  shift12JamAktifHariIni,
 }: Props) {
   const [data, setData] = useState<DashboardData>(initialData);
   const [loading, setLoading] = useState(false);
@@ -67,6 +69,7 @@ export function DashboardClient({
         currentShift={currentShift}
         currentSupervisiId={currentSupervisiId}
         supervisiUsers={supervisiUsers}
+        shift12JamAktifHariIni={shift12JamAktifHariIni}
       />
 
       {/* Toolbar refresh */}

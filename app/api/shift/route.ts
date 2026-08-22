@@ -4,7 +4,14 @@ import { ShiftKode, TicketStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { signSession, COOKIE_NAME, SESSION_MAX_AGE, isSecureCookie } from "@/lib/jwt";
-import { ALL_SHIFTS, shiftSessionStart, type ShiftCode } from "@/lib/shift";
+import {
+  ALL_SHIFTS,
+  isAkhirPekanWIB,
+  shiftSessionStart,
+  validShiftsForDate,
+  type ShiftCode,
+} from "@/lib/shift";
+import { isShift12JamAktif } from "@/lib/shiftOverride";
 
 /** POST /api/shift — set shift aktif sesi (dipilih dari Dashboard). */
 export async function POST(req: Request) {
@@ -29,11 +36,32 @@ export async function POST(req: Request) {
     where: { id: session.sub },
     select: { currentShift: true, shiftStartedAt: true, currentSupervisiId: true },
   });
-  const { startedAt } = shiftSessionStart(
+  const now = new Date();
+  const { startedAt, lanjutan } = shiftSessionStart(
     shift as ShiftCode,
     user?.currentShift,
-    user?.shiftStartedAt
+    user?.shiftStartedAt,
+    now
   );
+
+  // Shift 12 jam (D/E) di hari kerja hanya boleh DIMULAI bila Super Admin
+  // sudah mengaktifkan mode 12 jam untuk tanggal ini (kondisi darurat). Sesi
+  // yang sudah berjalan (lanjutan, mis. shift E lewat tengah malam, atau
+  // sekadar ganti Supervisi tanpa ganti shift) tidak divalidasi ulang di sini
+  // — statusnya sudah sah sejak dimulai.
+  if (!lanjutan) {
+    const shift12JamAktif = await isShift12JamAktif(now);
+    if (!validShiftsForDate(now, shift12JamAktif).includes(shift as ShiftCode)) {
+      return NextResponse.json(
+        {
+          error: isAkhirPekanWIB(now)
+            ? "Hari ini akhir pekan — hanya shift 12 jam (D/E) yang tersedia."
+            : "Shift 12 jam (D/E) belum diaktifkan untuk hari ini. Hubungi Super Admin bila diperlukan.",
+        },
+        { status: 400 }
+      );
+    }
+  }
 
   // supervisiId opsional per-request: kalau tidak dikirim (mis. petugas cuma
   // ganti shift lewat tombol tanpa menyentuh dropdown Supervisi), pertahankan

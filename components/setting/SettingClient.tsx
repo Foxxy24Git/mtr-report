@@ -2,12 +2,16 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { UserCircle, KeyRound, ImageIcon } from "lucide-react";
+import { UserCircle, KeyRound, ImageIcon, CalendarClock } from "lucide-react";
 import { cn } from "@/lib/cn";
 import type { Role } from "@/lib/roles";
 import { ProfilSection } from "@/components/setting/ProfilSection";
 import { PasswordSection } from "@/components/setting/PasswordSection";
 import { LogoSection } from "@/components/setting/LogoSection";
+import {
+  Shift12JamSection,
+  type ShiftOverrideRow,
+} from "@/components/setting/Shift12JamSection";
 
 interface Props {
   me: {
@@ -19,16 +23,20 @@ interface Props {
     createdAt: string;
   };
   logoUrl: string | null;
+  shiftOverrides: ShiftOverrideRow[];
 }
 
-export function SettingClient({ me, logoUrl }: Props) {
+export function SettingClient({ me, logoUrl, shiftOverrides }: Props) {
   // Manajemen akun kini halaman tersendiri (/manajemen-akun, PRD §3).
-  // Tab Logo Aplikasi hanya untuk Super Admin (PRD: pengaturan global).
+  // Tab Logo Aplikasi & Shift 12 Jam hanya untuk Super Admin.
   const tabs = [
     { key: "profil", label: "Profil", icon: UserCircle },
     { key: "password", label: "Keamanan", icon: KeyRound },
     ...(me.role === "superadmin"
-      ? ([{ key: "logo", label: "Logo Aplikasi", icon: ImageIcon }] as const)
+      ? ([
+          { key: "logo", label: "Logo Aplikasi", icon: ImageIcon },
+          { key: "shift12jam", label: "Shift 12 Jam", icon: CalendarClock },
+        ] as const)
       : []),
   ] as const;
 
@@ -90,6 +98,9 @@ export function SettingClient({ me, logoUrl }: Props) {
         {active === "password" && <PasswordSection />}
         {active === "logo" && me.role === "superadmin" && (
           <LogoSection currentLogoUrl={logoUrl} />
+        )}
+        {active === "shift12jam" && me.role === "superadmin" && (
+          <Shift12JamSection initialItems={shiftOverrides} />
         )}
       </motion.div>
     </div>

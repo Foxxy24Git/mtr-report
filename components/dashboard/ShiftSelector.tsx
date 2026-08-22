@@ -7,18 +7,21 @@ import { Card, CardTitle } from "@/components/ui/Card";
 import { Select } from "@/components/ui/Select";
 import { cn } from "@/lib/cn";
 import { SHIFT_LABELS, SHIFT_NAMES } from "@/lib/constants";
-import { ALL_SHIFTS, type ShiftCode } from "@/lib/shift";
+import { ALL_SHIFTS, validShiftsForDate, type ShiftCode } from "@/lib/shift";
 
 interface Props {
   currentShift?: string;
   currentSupervisiId?: string;
   supervisiUsers?: { id: string; nama: string }[];
+  /** True bila Super Admin sudah mengaktifkan mode shift 12 jam untuk hari ini. */
+  shift12JamAktifHariIni?: boolean;
 }
 
 export function ShiftSelector({
   currentShift,
   currentSupervisiId,
   supervisiUsers = [],
+  shift12JamAktifHariIni = false,
 }: Props) {
   const router = useRouter();
   const [saving, setSaving] = useState<ShiftCode | null>(null);
@@ -28,6 +31,10 @@ export function ShiftSelector({
   const [supervisiErr, setSupervisiErr] = useState<string | null>(null);
 
   const today = useMemo(() => new Date(), []);
+  const validShifts = useMemo(
+    () => validShiftsForDate(today, shift12JamAktifHariIni),
+    [today, shift12JamAktifHariIni]
+  );
   const hariIni = useMemo(
     () =>
       new Intl.DateTimeFormat("id-ID", {
@@ -41,6 +48,14 @@ export function ShiftSelector({
 
   async function pick(s: ShiftCode) {
     if (saving || s === currentShift) return;
+    if (!validShifts.includes(s)) {
+      setError(
+        s === "D" || s === "E"
+          ? "Shift 12 jam belum diaktifkan untuk hari ini. Hubungi Super Admin bila diperlukan."
+          : "Shift ini tidak tersedia untuk hari ini."
+      );
+      return;
+    }
     if (!supervisiId) {
       setError("Pilih Supervisi terlebih dahulu sebelum memilih shift.");
       return;
@@ -108,19 +123,29 @@ export function ShiftSelector({
       <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
         {ALL_SHIFTS.map((s) => {
           const active = s === currentShift;
+          // Sesi yang sedang berjalan (active) tetap ditampilkan apa adanya
+          // meski aturan hari ini berubah di tengah sesi (mis. shift E lewat
+          // tengah malam) — lihat catatan "lanjutan" di app/api/shift/route.ts.
+          const valid = active || validShifts.includes(s);
           return (
             <button
               key={s}
               type="button"
-              disabled={saving !== null}
+              disabled={saving !== null || !valid}
               onClick={() => pick(s)}
               aria-pressed={active}
-              title={SHIFT_LABELS[s]}
+              title={
+                valid
+                  ? SHIFT_LABELS[s]
+                  : `${SHIFT_LABELS[s]} — belum tersedia untuk hari ini. Hubungi Super Admin bila perlu shift 12 jam di hari kerja.`
+              }
               className={cn(
                 "relative flex flex-col items-center justify-center rounded-lg border py-3 px-1 transition-all",
                 active
                   ? "border-primary bg-primary-50 ring-2 ring-primary/30"
-                  : "border-gray-300 hover:border-primary/50 hover:bg-surface-subtle"
+                  : valid
+                    ? "border-gray-300 hover:border-primary/50 hover:bg-surface-subtle"
+                    : "border-gray-200 opacity-40 cursor-not-allowed"
               )}
             >
               {active && (
@@ -178,7 +203,12 @@ export function ShiftSelector({
             . Dipakai untuk open tiket, daily monitoring, dan suhu/log server.
           </>
         ) : (
-          <>Belum memilih shift. Semua shift dapat dipilih kapan saja.</>
+          <>
+            Belum memilih shift. Hari kerja: Shift Pagi/Sore/Malam (8 jam).
+            {shift12JamAktifHariIni
+              ? " Shift 12 jam sedang diaktifkan Super Admin untuk hari ini."
+              : " Shift 12 jam (D/E) khusus akhir pekan, kecuali diaktifkan Super Admin."}
+          </>
         )}
       </p>
 

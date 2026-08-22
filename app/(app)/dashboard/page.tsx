@@ -8,6 +8,7 @@ import {
 import { DashboardClient } from "@/components/dashboard/DashboardClient";
 import { SupervisiDashboardClient } from "@/components/dashboard/SupervisiDashboardClient";
 import { SuperAdminDashboardClient } from "@/components/dashboard/SuperAdminDashboardClient";
+import { isShift12JamAktif } from "@/lib/shiftOverride";
 
 export const dynamic = "force-dynamic";
 
@@ -49,13 +50,14 @@ export default async function DashboardPage() {
     );
   }
 
-  const [data, supervisiUsers] = await Promise.all([
+  const [data, supervisiUsers, shift12JamAktifHariIni] = await Promise.all([
     getDashboardData(session.sub),
     prisma.user.findMany({
       where: { role: "supervisi", isAktif: true },
       orderBy: { nama: "asc" },
       select: { id: true, nama: true },
     }),
+    isShift12JamAktif(),
   ]);
 
   return (
@@ -72,6 +74,7 @@ export default async function DashboardPage() {
         currentShift={session.shift}
         currentSupervisiId={session.supervisiId}
         supervisiUsers={supervisiUsers}
+        shift12JamAktifHariIni={shift12JamAktifHariIni}
       />
     </div>
   );

@@ -75,51 +75,52 @@ enum ServerFase {
 // ----------------------------- Models -----------------------------
 
 model User {
-  id           String   @id @default(cuid())
-  username     String   @unique
-  nama         String
-  role         Role     @default(user)
-  passwordHash String   @map("password_hash")
-  fotoProfilUrl String? @map("foto_profil_url")
-  ttdUrl       String?  @map("ttd_url")
+  id                 String     @id @default(cuid())
+  username           String     @unique
+  nama               String
+  role               Role       @default(user)
+  passwordHash       String     @map("password_hash")
+  fotoProfilUrl      String?    @map("foto_profil_url")
+  ttdUrl             String?    @map("ttd_url")
   // Integrasi Telegram (Fase 2): chat ID tujuan notif bot — hanya diisi Super
   // Admin untuk akun Supervisi. telegramNomor = catatan nomor HP/WA (opsional).
-  telegramChatId String? @map("telegram_chat_id")
-  telegramNomor  String? @map("telegram_nomor")
+  telegramChatId     String?    @map("telegram_chat_id")
+  telegramNomor      String?    @map("telegram_nomor")
   // Soft delete (PRD §3 Super Admin): akun nonaktif tidak bisa login.
-  isAktif      Boolean  @default(true) @map("is_aktif")
+  isAktif            Boolean    @default(true) @map("is_aktif")
   // Jejak login & shift aktif untuk tabel Member di Dashboard Super Admin.
-  lastLogin     DateTime?  @map("last_login")
-  currentShift  ShiftKode? @map("current_shift")
-  shiftStartedAt DateTime? @map("shift_started_at")
+  lastLogin          DateTime?  @map("last_login")
+  currentShift       ShiftKode? @map("current_shift")
+  shiftStartedAt     DateTime?  @map("shift_started_at")
   // Supervisi yang dipilih petugas bareng shift di Dashboard (fitur baru) —
   // dipakai mengisi Ticket.supervisiId otomatis sejak tiket dibuka, bukan
   // cuma sejak serah terima/tutup shift.
-  currentSupervisiId String? @map("current_supervisi_id")
-  createdAt    DateTime @default(now()) @map("created_at")
+  currentSupervisiId String?    @map("current_supervisi_id")
+  createdAt          DateTime   @default(now()) @map("created_at")
 
-  currentSupervisi    User?   @relation("UserCurrentSupervisi", fields: [currentSupervisiId], references: [id])
-  currentSupervisiFor User[]  @relation("UserCurrentSupervisi")
+  currentSupervisi    User?  @relation("UserCurrentSupervisi", fields: [currentSupervisiId], references: [id])
+  currentSupervisiFor User[] @relation("UserCurrentSupervisi")
 
-  notifications    Notification[]
-  ticketsOwned     Ticket[]          @relation("TicketOwner")
-  ticketsApproved  Ticket[]          @relation("TicketApprover")
-  ticketsSupervisi Ticket[]          @relation("TicketSupervisi")
-  activities       TicketActivity[]
-  activitiesEdited TicketActivity[]  @relation("ActivityEditor")
-  handoversFrom    ShiftHandover[]   @relation("HandoverFrom")
-  handoversTo      ShiftHandover[]   @relation("HandoverTo")
-  handoversSupervisi     ShiftHandover[] @relation("HandoverSupervisi")
-  handoversSupervisiNext ShiftHandover[] @relation("HandoverSupervisiNext")
-  acTempLogs       AcTempLog[]
-  serverLogs       ServerLog[]
-  appSettings      AppSetting[]
-  shiftReportsOwned         ShiftReport[] @relation("ShiftReportOwner")
-  shiftReportsReceived      ShiftReport[] @relation("ShiftReportReceiver")
-  shiftReportsSupervisi     ShiftReport[] @relation("ShiftReportSupervisi")
-  shiftReportsSupervisiNext ShiftReport[] @relation("ShiftReportSupervisiNext")
-  shiftReportsApproved      ShiftReport[] @relation("ShiftReportApprover")
-  shiftReportsNextApproved  ShiftReport[] @relation("ShiftReportSupervisiNextApprover")
+  notifications             Notification[]
+  ticketsOwned              Ticket[]         @relation("TicketOwner")
+  ticketsApproved           Ticket[]         @relation("TicketApprover")
+  ticketsSupervisi          Ticket[]         @relation("TicketSupervisi")
+  activities                TicketActivity[]
+  activitiesEdited          TicketActivity[] @relation("ActivityEditor")
+  handoversFrom             ShiftHandover[]  @relation("HandoverFrom")
+  handoversTo               ShiftHandover[]  @relation("HandoverTo")
+  handoversSupervisi        ShiftHandover[]  @relation("HandoverSupervisi")
+  handoversSupervisiNext    ShiftHandover[]  @relation("HandoverSupervisiNext")
+  acTempLogs                AcTempLog[]
+  serverLogs                ServerLog[]
+  appSettings               AppSetting[]
+  shiftOverridesCreated     ShiftOverride[]
+  shiftReportsOwned         ShiftReport[]    @relation("ShiftReportOwner")
+  shiftReportsReceived      ShiftReport[]    @relation("ShiftReportReceiver")
+  shiftReportsSupervisi     ShiftReport[]    @relation("ShiftReportSupervisi")
+  shiftReportsSupervisiNext ShiftReport[]    @relation("ShiftReportSupervisiNext")
+  shiftReportsApproved      ShiftReport[]    @relation("ShiftReportApprover")
+  shiftReportsNextApproved  ShiftReport[]    @relation("ShiftReportSupervisiNextApprover")
 
   @@map("users")
 }
@@ -140,8 +141,8 @@ model AppSetting {
 
 model Leader {
   id        String         @id @default(cuid())
-  nama      String         // nama pimpinan tetap
-  jabatan   String         // teks jabatan lengkap, mis. "Pemimpin Bagian Infrastruktur TI"
+  nama      String // nama pimpinan tetap
+  jabatan   String // teks jabatan lengkap, mis. "Pemimpin Bagian Infrastruktur TI"
   kategori  LeaderKategori // infrastruktur | divisi (menentukan section)
   tipe      LeaderTipe     @default(tetap) // tetap | pjs
   namaPjs   String?        @map("nama_pjs") // diisi bila tipe = pjs
@@ -149,12 +150,12 @@ model Leader {
   createdAt DateTime       @default(now()) @map("created_at")
   updatedAt DateTime       @updatedAt @map("updated_at")
 
-  ticketsInfra   Ticket[] @relation("TicketPimpinanInfra")
-  ticketsDivisi  Ticket[] @relation("TicketPimpinanDivisi")
-  handoversInfra  ShiftHandover[] @relation("HandoverPimpinanInfra")
-  handoversDivisi ShiftHandover[] @relation("HandoverPimpinanDivisi")
-  shiftReportsInfra  ShiftReport[] @relation("ShiftReportPimpinanInfra")
-  shiftReportsDivisi ShiftReport[] @relation("ShiftReportPimpinanDivisi")
+  ticketsInfra       Ticket[]        @relation("TicketPimpinanInfra")
+  ticketsDivisi      Ticket[]        @relation("TicketPimpinanDivisi")
+  handoversInfra     ShiftHandover[] @relation("HandoverPimpinanInfra")
+  handoversDivisi    ShiftHandover[] @relation("HandoverPimpinanDivisi")
+  shiftReportsInfra  ShiftReport[]   @relation("ShiftReportPimpinanInfra")
+  shiftReportsDivisi ShiftReport[]   @relation("ShiftReportPimpinanDivisi")
 
   @@map("leaders")
 }
@@ -191,6 +192,21 @@ model VendorMaster {
   createdAt DateTime @default(now()) @map("created_at")
 
   @@map("vendor_master")
+}
+
+// Aktivasi shift 12 jam (D/E) pada hari kerja untuk satu tanggal tertentu —
+// kondisi darurat (petugas sakit/izin, atau tanggal merah). Hanya Super Admin
+// yang dapat mengaktifkan (lib/rbac.ts: /api/superadmin/*). Satu baris per
+// tanggal; berlaku otomatis lewat begitu tanggalnya lampau — tidak perlu
+// dimatikan manual (lihat validShiftsForDate di lib/shift.ts).
+model ShiftOverride {
+  id          String   @id @default(cuid())
+  tanggal     DateTime @unique @db.Date
+  createdById String   @map("created_by")
+  createdBy   User     @relation(fields: [createdById], references: [id])
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("shift_overrides")
 }
 
 model Ticket {
@@ -248,18 +264,18 @@ model Ticket {
 }
 
 model TicketActivity {
-  id               String    @id @default(cuid())
-  ticketId         String    @map("ticket_id")
-  userId           String    @map("user_id")
-  shiftKode        ShiftKode @map("shift_kode")
-  waktu            DateTime  @default(now())
-  teks             String
-  isTindakLanjutFlag Boolean @default(false) @map("is_tindak_lanjut_flag")
-  isSupervisiEntry   Boolean @default(false) @map("is_supervisi_entry")
-  createdAt        DateTime  @default(now()) @map("created_at")
+  id                 String    @id @default(cuid())
+  ticketId           String    @map("ticket_id")
+  userId             String    @map("user_id")
+  shiftKode          ShiftKode @map("shift_kode")
+  waktu              DateTime  @default(now())
+  teks               String
+  isTindakLanjutFlag Boolean   @default(false) @map("is_tindak_lanjut_flag")
+  isSupervisiEntry   Boolean   @default(false) @map("is_supervisi_entry")
+  createdAt          DateTime  @default(now()) @map("created_at")
   // Audit edit: entri kini editable (pembuat/superadmin) dengan jejak revisi.
-  editedAt         DateTime? @map("edited_at")
-  editedById       String?   @map("edited_by")
+  editedAt           DateTime? @map("edited_at")
+  editedById         String?   @map("edited_by")
 
   ticket        Ticket                   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
   user          User                     @relation(fields: [userId], references: [id])
@@ -290,26 +306,26 @@ model TicketActivityRevision {
 // Satu baris dicatat sekali per aksi serah terima: from_shift → to_shift.
 // ticketId & toUserId nullable (tidak ada pemilihan tiket/petugas manual).
 model ShiftHandover {
-  id        String    @id @default(cuid())
-  ticketId  String?   @map("ticket_id")
-  fromUserId String   @map("from_user")
-  toUserId   String?  @map("to_user")
-  fromShift ShiftKode @map("from_shift")
-  toShift   ShiftKode @map("to_shift")
-  at        DateTime  @default(now())
+  id               String    @id @default(cuid())
+  ticketId         String?   @map("ticket_id")
+  fromUserId       String    @map("from_user")
+  toUserId         String?   @map("to_user")
+  fromShift        ShiftKode @map("from_shift")
+  toShift          ShiftKode @map("to_shift")
+  at               DateTime  @default(now())
   // Penanda tangan dipilih saat serah terima shift (PRD revisi §2/§4).
-  pimpinanInfraId  String? @map("pimpinan_infra_id")
-  pimpinanDivisiId String? @map("pimpinan_divisi_id")
-  supervisiId      String? @map("supervisi_id")
-  supervisiNextId  String? @map("supervisi_next_id")
+  pimpinanInfraId  String?   @map("pimpinan_infra_id")
+  pimpinanDivisiId String?   @map("pimpinan_divisi_id")
+  supervisiId      String?   @map("supervisi_id")
+  supervisiNextId  String?   @map("supervisi_next_id")
 
-  ticket   Ticket? @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  fromUser User    @relation("HandoverFrom", fields: [fromUserId], references: [id])
-  toUser   User?   @relation("HandoverTo", fields: [toUserId], references: [id])
-  pimpinanInfra  Leader? @relation("HandoverPimpinanInfra", fields: [pimpinanInfraId], references: [id])
-  pimpinanDivisi Leader? @relation("HandoverPimpinanDivisi", fields: [pimpinanDivisiId], references: [id])
-  supervisi      User?   @relation("HandoverSupervisi", fields: [supervisiId], references: [id])
-  supervisiNext  User?   @relation("HandoverSupervisiNext", fields: [supervisiNextId], references: [id])
+  ticket         Ticket?       @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  fromUser       User          @relation("HandoverFrom", fields: [fromUserId], references: [id])
+  toUser         User?         @relation("HandoverTo", fields: [toUserId], references: [id])
+  pimpinanInfra  Leader?       @relation("HandoverPimpinanInfra", fields: [pimpinanInfraId], references: [id])
+  pimpinanDivisi Leader?       @relation("HandoverPimpinanDivisi", fields: [pimpinanDivisiId], references: [id])
+  supervisi      User?         @relation("HandoverSupervisi", fields: [supervisiId], references: [id])
+  supervisiNext  User?         @relation("HandoverSupervisiNext", fields: [supervisiNextId], references: [id])
   shiftReports   ShiftReport[]
 
   @@map("shift_handovers")
@@ -319,38 +335,38 @@ model ShiftHandover {
 // otomatis saat serah terima ATAU "Tutup Laporan Shift". Supervisi approve di
 // level laporan ini (bukan per tiket); TTD supervisi di Excel di-gate status.
 model ShiftReport {
-  id               String    @id @default(cuid())
-  tanggal          DateTime  // instant saat shift ditutup (dipakai day-range WIB)
-  shiftKode        ShiftKode @map("shift_kode")
-  shiftLabel       String    @map("shift_label")
-  ownerUserId      String    @map("owner_user_id")
-  receiverUserId   String?   @map("receiver_user_id")
-  supervisiId      String?   @map("supervisi_id")
-  supervisiNextId  String?   @map("supervisi_next_id")
-  pimpinanInfraId  String?   @map("pimpinan_infra_id")
-  pimpinanDivisiId String?   @map("pimpinan_divisi_id")
-  status           String    @default("pending") // pending | approved
-  approvedAt       DateTime? @map("approved_at")
-  approvedById     String?   @map("approved_by")
-  catatanSupervisi String?   @map("catatan_supervisi")
+  id                        String    @id @default(cuid())
+  tanggal                   DateTime // instant saat shift ditutup (dipakai day-range WIB)
+  shiftKode                 ShiftKode @map("shift_kode")
+  shiftLabel                String    @map("shift_label")
+  ownerUserId               String    @map("owner_user_id")
+  receiverUserId            String?   @map("receiver_user_id")
+  supervisiId               String?   @map("supervisi_id")
+  supervisiNextId           String?   @map("supervisi_next_id")
+  pimpinanInfraId           String?   @map("pimpinan_infra_id")
+  pimpinanDivisiId          String?   @map("pimpinan_divisi_id")
+  status                    String    @default("pending") // pending | approved
+  approvedAt                DateTime? @map("approved_at")
+  approvedById              String?   @map("approved_by")
+  catatanSupervisi          String?   @map("catatan_supervisi")
   // Approval kedua untuk laporan shift malam (C/E) — supervisi yang meneruskan
   // pemantauan tiket lanjutan. Nullable: shift A/B/D tidak memakainya.
   supervisiNextApprovedAt   DateTime? @map("supervisi_next_approved_at")
   supervisiNextApprovedById String?   @map("supervisi_next_approved_by")
   catatanSupervisiNext      String?   @map("catatan_supervisi_next")
-  handoverId       String?   @map("handover_id")
-  createdAt        DateTime  @default(now()) @map("created_at")
-  updatedAt        DateTime  @updatedAt @map("updated_at")
+  handoverId                String?   @map("handover_id")
+  createdAt                 DateTime  @default(now()) @map("created_at")
+  updatedAt                 DateTime  @updatedAt @map("updated_at")
 
-  ownerUser      User           @relation("ShiftReportOwner", fields: [ownerUserId], references: [id])
-  receiverUser   User?          @relation("ShiftReportReceiver", fields: [receiverUserId], references: [id])
-  supervisi      User?          @relation("ShiftReportSupervisi", fields: [supervisiId], references: [id])
-  supervisiNext  User?          @relation("ShiftReportSupervisiNext", fields: [supervisiNextId], references: [id])
-  approver       User?          @relation("ShiftReportApprover", fields: [approvedById], references: [id])
-  supervisiNextApprover User? @relation("ShiftReportSupervisiNextApprover", fields: [supervisiNextApprovedById], references: [id])
-  pimpinanInfra  Leader?        @relation("ShiftReportPimpinanInfra", fields: [pimpinanInfraId], references: [id])
-  pimpinanDivisi Leader?        @relation("ShiftReportPimpinanDivisi", fields: [pimpinanDivisiId], references: [id])
-  handover       ShiftHandover? @relation(fields: [handoverId], references: [id])
+  ownerUser             User           @relation("ShiftReportOwner", fields: [ownerUserId], references: [id])
+  receiverUser          User?          @relation("ShiftReportReceiver", fields: [receiverUserId], references: [id])
+  supervisi             User?          @relation("ShiftReportSupervisi", fields: [supervisiId], references: [id])
+  supervisiNext         User?          @relation("ShiftReportSupervisiNext", fields: [supervisiNextId], references: [id])
+  approver              User?          @relation("ShiftReportApprover", fields: [approvedById], references: [id])
+  supervisiNextApprover User?          @relation("ShiftReportSupervisiNextApprover", fields: [supervisiNextApprovedById], references: [id])
+  pimpinanInfra         Leader?        @relation("ShiftReportPimpinanInfra", fields: [pimpinanInfraId], references: [id])
+  pimpinanDivisi        Leader?        @relation("ShiftReportPimpinanDivisi", fields: [pimpinanDivisiId], references: [id])
+  handover              ShiftHandover? @relation(fields: [handoverId], references: [id])
 
   @@index([shiftKode, tanggal])
   @@index([supervisiId, status])
@@ -359,18 +375,18 @@ model ShiftReport {
 }
 
 model AcTempLog {
-  id              String    @id @default(cuid())
-  tanggal         DateTime  @db.Date
-  shiftKode       ShiftKode @map("shift_kode")
-  userId          String    @map("user_id")
-  urutan          Int // 1 | 2 | 3
-  waktuPantau     DateTime  @map("waktu_pantau")
-  suhuRoomServer  String?   @map("suhu_room_server")
-  suhuPanel       String?   @map("suhu_panel")
-  statusAktifKiri  Boolean  @default(true) @map("status_aktif_kiri")
-  statusAktifKanan Boolean  @default(true) @map("status_aktif_kanan")
-  pantau12jamKiri  String?  @map("pantau_12jam_kiri")
-  pantau12jamKanan String?  @map("pantau_12jam_kanan")
+  id               String    @id @default(cuid())
+  tanggal          DateTime  @db.Date
+  shiftKode        ShiftKode @map("shift_kode")
+  userId           String    @map("user_id")
+  urutan           Int // 1 | 2 | 3
+  waktuPantau      DateTime  @map("waktu_pantau")
+  suhuRoomServer   String?   @map("suhu_room_server")
+  suhuPanel        String?   @map("suhu_panel")
+  statusAktifKiri  Boolean   @default(true) @map("status_aktif_kiri")
+  statusAktifKanan Boolean   @default(true) @map("status_aktif_kanan")
+  pantau12jamKiri  String?   @map("pantau_12jam_kiri")
+  pantau12jamKanan String?   @map("pantau_12jam_kanan")
 
   user User @relation(fields: [userId], references: [id])
 
