@@ -9,4 +9,4 @@ set -e
 mkdir -p public/uploads/foto public/uploads/ttd public/uploads/logo
 chown -R nextjs:nodejs public/uploads
 
-exec su-exec nextjs:nodejs "$@"
+exec setpriv --reuid=nextjs --regid=nodejs --init-groups "$@"

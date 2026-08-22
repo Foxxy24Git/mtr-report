@@ -1,8 +1,11 @@
-FROM node:20-alpine AS base
+# Debian (bukan Alpine): libreoffice-calc crash di Alpine/musl (UNO
+# RuntimeException, exit 134) saat convert-to pdf - lihat lib/xlsxToPdf.ts.
+# Semua stage ikut pindah, bukan cuma runner, supaya binary native yang
+# ter-compile saat `npm ci` (mis. sharp) cocok dengan libc runner (glibc).
+FROM node:20-bookworm-slim AS base
 
 # Install dependencies only when needed
 FROM base AS deps
-RUN apk add --no-cache libc6-compat
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
@@ -19,12 +22,15 @@ RUN npm run build
 FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
-RUN apk add --no-cache su-exec
 # libreoffice-calc: dipakai lib/xlsxToPdf.ts (soffice --headless) untuk
 # konversi Download Harian .xlsx -> .pdf identik layout (bukan render ulang).
-RUN apk add --no-cache libreoffice-calc
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
+# util-linux: sediakan `setpriv`, pengganti su-exec (Alpine) untuk turun hak
+# ke user non-root di docker-entrypoint.sh.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  libreoffice-calc util-linux \
+  && rm -rf /var/lib/apt/lists/*
+RUN groupadd --system --gid 1001 nodejs
+RUN useradd --system --uid 1001 --gid nodejs nextjs
 
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
