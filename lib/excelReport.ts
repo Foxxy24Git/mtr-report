@@ -916,8 +916,34 @@ export async function buildReportWorkbook(data: ReportData): Promise<Buffer> {
       const low = b.ttdPath.toLowerCase();
       const ext = low.endsWith(".jpg") || low.endsWith(".jpeg") ? "jpeg" : "png";
       if (existsSync(ttdAbs)) {
+        // Hasil signature-pad biasanya kanvas persegi dengan banyak ruang
+        // kosong di sekitar coretan — di-trim dulu ke bounding box tinta,
+        // lalu di-"contain"-fit (rasio asli dijaga) ke kotak TTD_W×TTD_H.
+        // Sebelumnya ext dipaksa 130×56 tanpa peduli rasio asli, jadi TTD-nya
+        // gepeng/melebar (terlihat "ditempel" asal, tak beraturan).
+        const raw = readFileSync(ttdAbs);
+        let ttdBuf: Buffer = raw;
+        let srcW = TTD_W;
+        let srcH = TTD_H;
+        try {
+          const trimmed = await sharp(raw).trim().toBuffer();
+          const meta = await sharp(trimmed).metadata();
+          if (meta.width && meta.height) {
+            ttdBuf = trimmed;
+            srcW = meta.width;
+            srcH = meta.height;
+          }
+        } catch {
+          const meta = await sharp(raw).metadata();
+          srcW = meta.width || TTD_W;
+          srcH = meta.height || TTD_H;
+        }
+        const ttdScale = Math.min(TTD_W / srcW, TTD_H / srcH);
+        const ttdWpx = srcW * ttdScale;
+        const ttdHpx = srcH * ttdScale;
+
         const ttdId = wb.addImage({
-          buffer: readFileSync(ttdAbs) as unknown as ArrayBuffer,
+          buffer: ttdBuf as unknown as ArrayBuffer,
           extension: ext,
         });
         // Pusatkan TTD horizontal di area merge label (kolom c1:c2). ExcelJS
@@ -930,7 +956,7 @@ export async function buildReportWorkbook(data: ReportData): Promise<Buffer> {
         // Blok 1 kolom (c1 === c2) tidak boleh menghitung lebarnya dua kali —
         // TTD-nya akan meleset ke kanan dan meluber ke kolom sebelahnya.
         const w2 = b.c2 === b.c1 ? 0 : colWidthPx(COL_WIDTHS[b.c2]);
-        let leftPx = Math.max(0, (w1 + w2 - TTD_W) / 2);
+        let leftPx = Math.max(0, (w1 + w2 - ttdWpx) / 2);
         let nativeCol = b.imgCol;
         if (leftPx > w1) {
           leftPx -= w1; // gambar mulai dari kolom kedua (c2)
@@ -943,7 +969,7 @@ export async function buildReportWorkbook(data: ReportData): Promise<Buffer> {
             nativeRow: ttdTop - 1,
             nativeRowOff: 0,
           },
-          ext: { width: TTD_W, height: TTD_H },
+          ext: { width: ttdWpx, height: ttdHpx },
         } as unknown as Parameters<typeof ws.addImage>[1]);
       }
     }
