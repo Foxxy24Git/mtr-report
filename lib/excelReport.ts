@@ -7,6 +7,7 @@
 // ReportData (tanpa I/O DB) agar bisa dipakai API route & skrip contoh.
 
 import ExcelJS from "exceljs";
+import sharp from "sharp";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
@@ -211,6 +212,41 @@ const TINDAK_LANJUT_TEKS = "Tindak lanjut monitoring selanjutnya";
  */
 const PX_PER_COL_UNIT = 7;
 
+/** 1pt = 4/3 px pada 96 DPI (dipakai buat tinggi baris → piksel). */
+const PT_TO_PX = 4 / 3;
+
+/** Lebar kolom (satuan karakter Excel) → piksel render. Lihat PX_PER_COL_UNIT. */
+function colWidthPx(w: number): number {
+  return Math.round(w * PX_PER_COL_UNIT + 5);
+}
+
+/**
+ * Kolom A–C (piksel render) dipakai sebagai kotak aman logo pojok kiri atas
+ * (lihat blok logo di buildReportWorkbook). Urutan A→C penting untuk
+ * logoBoxColFrac di bawah.
+ */
+const LOGO_BOX_COLS: Array<[string, number]> = (["A", "B", "C"] as const).map(
+  (c) => [c, colWidthPx(COL_WIDTHS[c])],
+);
+
+/**
+ * Konversi target lebar (px, diukur dari sisi kiri kolom A) → posisi kolom
+ * pecahan (0 = kiri A) yang dipahami ExcelJS untuk anchor gambar. Dipakai
+ * supaya lebar logo mengikuti batas kolom Excel SUNGGUHAN (bukan piksel
+ * mati) — anchor dua-sel dengan patokan kolom ini yang membuat ukuran logo
+ * konsisten di Excel/LibreOffice/Google Sheets.
+ */
+function logoBoxColFrac(widthPx: number): number {
+  let idx = 0;
+  let remaining = widthPx;
+  for (const [, w] of LOGO_BOX_COLS) {
+    if (remaining <= w) return idx + remaining / w;
+    remaining -= w;
+    idx++;
+  }
+  return idx;
+}
+
 /**
  * Lebar 1 satuan bobot CHAR_WEIGHTS dalam px pada Arial 9pt = 5.608px (angka
  * '0' = 0.5562em → 6.674px dibagi bobot 1.19; diukur dari advance width
@@ -395,11 +431,34 @@ export async function buildReportWorkbook(data: ReportData): Promise<Buffer> {
   if (existsSync(logoPath)) {
     const lower = logoPath.toLowerCase();
     const extension = lower.endsWith(".jpg") || lower.endsWith(".jpeg") ? "jpeg" : "png";
+    const logoBuffer = readFileSync(logoPath);
     const imgId = wb.addImage({
-      buffer: readFileSync(logoPath) as unknown as ArrayBuffer,
+      buffer: logoBuffer as unknown as ArrayBuffer,
       extension,
     });
-    ws.addImage(imgId, { tl: { col: 0.1, row: 0.1 }, ext: { width: 84, height: 52 } });
+    // Kotak aman: kolom A–C × baris 1–3. Rasio asli logo dijaga (fit
+    // "contain" di dalam kotak, tak pernah gepeng) lalu ditempel via anchor
+    // DUA-SEL (tl+br mengikuti batas kolom/baris sungguhan) — bukan tl+ext
+    // piksel absolut, yang ternyata ditafsirkan beda oleh viewer (ukuran
+    // logo jadi raksasa & meluber ke kolom lain di Google Sheets meski
+    // tampil normal di Excel/LibreOffice).
+    const boxWpx = LOGO_BOX_COLS.reduce((sum, [, w]) => sum + w, 0);
+    const boxHpx = 3 * 18 * PT_TO_PX; // baris 1–3 @ 18pt
+    const meta = await sharp(logoBuffer).metadata();
+    const srcW = meta.width || 320;
+    const srcH = meta.height || 96;
+    const scale = Math.min(boxWpx / srcW, boxHpx / srcH);
+    const imgWpx = srcW * scale;
+    const imgHpx = srcH * scale;
+
+    const marginPx = 3; // jarak kecil dari garis tepi sel A1
+    ws.addImage(imgId, {
+      tl: { col: marginPx / LOGO_BOX_COLS[0][1], row: marginPx / (18 * PT_TO_PX) },
+      br: {
+        col: logoBoxColFrac(marginPx + imgWpx),
+        row: (marginPx + imgHpx) / (18 * PT_TO_PX),
+      },
+    } as unknown as Parameters<typeof ws.addImage>[1]);
   }
 
   // ------------------- Header judul -------------------
@@ -472,6 +531,14 @@ export async function buildReportWorkbook(data: ReportData): Promise<Buffer> {
     akhir.alignment = { horizontal: "center", vertical: "middle" };
   });
   borderRange(ws, "G5:L10");
+  // Kolom J = spacer antara tabel awal (G:I) & akhir (K:L). Kolom I aman
+  // dari borderRange di atas karena selalu jadi bagian sel merge (border
+  // internalnya otomatis disembunyikan Excel), tapi J berdiri sendiri
+  // (tak pernah di-merge) jadi border kotaknya tetap kelihatan — hapus di
+  // sini. Kolomnya TETAP ada (lebar tak diubah), cuma bordernya dihilangkan.
+  for (let row = 5; row <= 10; row++) {
+    ws.getCell(`J${row}`).border = {};
+  }
 
   // ------------------- Blok Suhu AC (N5:R9) -------------------
   // O5 = "Waktu Pemantauan :", P5/Q5/R5 = 3 jam pemantauan.
@@ -859,11 +926,10 @@ export async function buildReportWorkbook(data: ReportData): Promise<Buffer> {
         // (1 px = 9525 EMU; lebar render kolom ≈ width*7+5 px). Vertikal:
         // nativeRow baris 27 (di bawah teks label, merge 26:28).
         const EMU_PX = 9525;
-        const colPx = (w: number) => Math.round(w * 7 + 5);
-        const w1 = colPx(COL_WIDTHS[b.c1]);
+        const w1 = colWidthPx(COL_WIDTHS[b.c1]);
         // Blok 1 kolom (c1 === c2) tidak boleh menghitung lebarnya dua kali —
         // TTD-nya akan meleset ke kanan dan meluber ke kolom sebelahnya.
-        const w2 = b.c2 === b.c1 ? 0 : colPx(COL_WIDTHS[b.c2]);
+        const w2 = b.c2 === b.c1 ? 0 : colWidthPx(COL_WIDTHS[b.c2]);
         let leftPx = Math.max(0, (w1 + w2 - TTD_W) / 2);
         let nativeCol = b.imgCol;
         if (leftPx > w1) {
