@@ -51,6 +51,8 @@ interface Props {
   currentUserHasTtd: boolean;
   /** True bila Super Admin sudah mengaktifkan mode shift 12 jam untuk hari ini. */
   shift12JamAktifHariIni: boolean;
+  /** True bila Super Admin sudah mengizinkan akun ini memilih Shift Tujuan manual (Manajemen Akun). */
+  bolehPilihShiftTujuan: boolean;
 }
 
 const SELECT_CLS =
@@ -67,6 +69,7 @@ export function DailyMonitoringClient({
   currentUserId,
   currentUserHasTtd,
   shift12JamAktifHariIni,
+  bolehPilihShiftTujuan,
 }: Props) {
   const router = useRouter();
   const [items, setItems] = useState<TicketListItem[]>(initialItems);
@@ -84,15 +87,17 @@ export function DailyMonitoringClient({
   const [hoNow, setHoNow] = useState(() => new Date());
   const autoToShift = hasShift ? nextShift(currentShift as ShiftCode, hoNow) : null;
   // Shift tujuan lain yang boleh dipilih manual — hanya relevan saat Shift 12
-  // Jam Override aktif (lib/shiftOverride.ts): sistem tidak bisa menebak sendiri
-  // apakah petugas penerima akan bekerja 8 jam normal atau ambil lembur 12 jam,
-  // jadi tujuan otomatis (nextShift) tetap jadi default tapi bisa ditimpa.
+  // Jam Override aktif (lib/shiftOverride.ts) DAN Super Admin sudah mengizinkan
+  // akun ini secara eksplisit (Manajemen Akun, kasus tertentu saja): sistem
+  // tidak bisa menebak sendiri apakah petugas penerima akan bekerja 8 jam
+  // normal atau ambil lembur 12 jam, jadi tujuan otomatis (nextShift) tetap
+  // jadi default tapi bisa ditimpa — hanya oleh akun yang diizinkan.
   const toShiftOptions = useMemo(
     () =>
-      hasShift && shift12JamAktifHariIni
+      hasShift && shift12JamAktifHariIni && bolehPilihShiftTujuan
         ? validShiftsForDate(hoNow, true).filter((s) => s !== currentShift)
         : [],
-    [hasShift, shift12JamAktifHariIni, hoNow, currentShift]
+    [hasShift, shift12JamAktifHariIni, bolehPilihShiftTujuan, hoNow, currentShift]
   );
   const [hoToShiftPick, setHoToShiftPick] = useState<ShiftCode | "">("");
   const toShift = hasShift

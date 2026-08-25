@@ -32,6 +32,7 @@ const WAKTU_HANDOVER = new Date("2026-08-25T05:00:00Z");
 let tickets: FakeTicket[] = [];
 let activities: { ticketId: string; isTindakLanjutFlag: boolean }[] = [];
 let shiftOverrideAktif = false;
+let callerBolehPilihShiftTujuan = true;
 
 function matchTicket(t: FakeTicket, where: Record<string, unknown>): boolean {
   for (const [key, val] of Object.entries(where)) {
@@ -108,7 +109,10 @@ const prismaFake = {
   },
   shiftHandover: { create: async () => ({ id: "handover-1" }) },
   shiftReport: { create: async () => ({ id: "report-1" }) },
-  user: { update: async () => ({}) },
+  user: {
+    findUnique: async () => ({ bolehPilihShiftTujuan: callerBolehPilihShiftTujuan }),
+    update: async () => ({}),
+  },
   $transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(prismaFake),
 };
 
@@ -154,6 +158,7 @@ beforeEach(() => {
   vi.setSystemTime(WAKTU_HANDOVER);
   activities = [];
   shiftOverrideAktif = false;
+  callerBolehPilihShiftTujuan = true;
   tickets = [
     {
       id: "t-a1",
@@ -197,6 +202,18 @@ describe("POST /api/shift/handover — toShift manual (Shift 12 Jam Override)", 
     expect(body.error).toContain("tidak tersedia");
     // Tiket & aktivitas tidak boleh berubah sama sekali — request ditolak
     // sebelum transaksi handover dimulai.
+    expect(tickets.find((t) => t.id === "t-a1")!.shiftKode).toBe("A");
+    expect(activities.length).toBe(0);
+  });
+
+  it("toShift dikirim tapi akun TIDAK diizinkan Super Admin → ditolak 403, tidak ada perubahan", async () => {
+    shiftOverrideAktif = true;
+    callerBolehPilihShiftTujuan = false;
+    const { POST } = await import("../handover/route");
+    const res = await POST(req({ ...BODY, toShift: "E" }));
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error).toContain("izin");
     expect(tickets.find((t) => t.id === "t-a1")!.shiftKode).toBe("A");
     expect(activities.length).toBe(0);
   });

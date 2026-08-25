@@ -123,6 +123,23 @@ export async function POST(req: Request) {
   const now = new Date();
   let toShift = nextShift(fromShift as ShiftCode, now);
   if (toShiftInput) {
+    // Izin memilih tujuan manual diatur per-akun oleh Super Admin (Manajemen
+    // Akun, kasus tertentu saja) — dicek ulang dari DB, BUKAN dipercaya dari
+    // klien (UI-nya cuma disembunyikan bila tidak diizinkan), karena izin ini
+    // bisa berubah kapan saja tanpa menunggu sesi login baru.
+    const caller = await prisma.user.findUnique({
+      where: { id: session.sub },
+      select: { bolehPilihShiftTujuan: true },
+    });
+    if (!caller?.bolehPilihShiftTujuan) {
+      return NextResponse.json(
+        {
+          error:
+            "Anda tidak memiliki izin memilih Shift Tujuan manual. Hubungi Super Admin.",
+        },
+        { status: 403 }
+      );
+    }
     // Tujuan manual HANYA boleh salah satu shift yang sah untuk tanggal ini
     // (validShiftsForDate sudah override-aware) — mencegah, mis. memilih D/E
     // saat Shift 12 Jam belum diaktifkan Super Admin.

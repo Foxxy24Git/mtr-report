@@ -81,6 +81,22 @@ export async function PATCH(req: Request, { params }: Params) {
     data.isAktif = body.isAktif;
   }
 
+  // Izin pilih Shift Tujuan manual saat serah terima (fitur Shift 12 Jam
+  // Override) — hanya berlaku untuk akun Petugas (role user); Supervisi tidak
+  // bisa serah terima sama sekali, Super Admin diatur lewat role-nya sendiri.
+  if (typeof body?.bolehPilihShiftTujuan === "boolean") {
+    if (target.role !== Role.user) {
+      return NextResponse.json(
+        {
+          error:
+            "Izin pilih Shift Tujuan hanya berlaku untuk akun Petugas Monitoring.",
+        },
+        { status: 400 }
+      );
+    }
+    data.bolehPilihShiftTujuan = body.bolehPilihShiftTujuan;
+  }
+
   // Integrasi Telegram (Fase 2) — hanya Super Admin (route ini sudah dibatasi)
   // dan hanya untuk akun non-superadmin. String kosong → null (hapus setelan).
   if (body?.telegramChatId !== undefined) {
@@ -124,6 +140,7 @@ export async function PATCH(req: Request, { params }: Params) {
         telegramChatId: true,
         telegramNomor: true,
         isAktif: true,
+        bolehPilihShiftTujuan: true,
       },
     });
     return NextResponse.json({ user: updated });

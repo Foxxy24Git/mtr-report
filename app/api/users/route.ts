@@ -85,6 +85,10 @@ export async function POST(req: Request) {
         role: role as Role,
         passwordHash: await hashPassword(password),
         isAktif: typeof body?.isAktif === "boolean" ? body.isAktif : true,
+        bolehPilihShiftTujuan:
+          typeof body?.bolehPilihShiftTujuan === "boolean"
+            ? body.bolehPilihShiftTujuan
+            : false,
       },
       select: {
         id: true,
@@ -92,6 +96,7 @@ export async function POST(req: Request) {
         nama: true,
         role: true,
         isAktif: true,
+        bolehPilihShiftTujuan: true,
         createdAt: true,
       },
     });

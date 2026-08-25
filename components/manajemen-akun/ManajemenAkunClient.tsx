@@ -11,6 +11,8 @@ import {
   RotateCcw,
   ImageIcon,
   Send,
+  Lock,
+  Unlock,
 } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -38,6 +40,8 @@ export interface AkunRow {
   telegramChatId: string | null;
   telegramNomor: string | null;
   isAktif: boolean;
+  /** Izin pilih Shift Tujuan manual saat serah terima (Shift 12 Jam Override) — hanya relevan untuk role user. */
+  bolehPilihShiftTujuan: boolean;
 }
 
 const ROLE_LABELS: Record<Role, string> = {
@@ -57,6 +61,7 @@ interface FormState {
   password: string;
   role: string;
   isAktif: boolean;
+  bolehPilihShiftTujuan: boolean;
   telegramNomor: string;
   telegramChatId: string;
 }
@@ -67,6 +72,7 @@ const EMPTY: FormState = {
   password: "",
   role: "user",
   isAktif: true,
+  bolehPilihShiftTujuan: false,
   telegramNomor: "",
   telegramChatId: "",
 };
@@ -118,6 +124,7 @@ export function ManajemenAkunClient({
       password: "",
       role: u.role === "superadmin" ? "user" : u.role,
       isAktif: u.isAktif,
+      bolehPilihShiftTujuan: u.bolehPilihShiftTujuan,
       telegramNomor: u.telegramNomor ?? "",
       telegramChatId: u.telegramChatId ?? "",
     });
@@ -182,6 +189,10 @@ export function ManajemenAkunClient({
             ...(isSuper
               ? {}
               : { username: form.username, role: form.role, isAktif: form.isAktif }),
+            // Izin Shift Tujuan manual hanya relevan untuk akun Petugas (user).
+            ...(!isSuper && form.role === "user"
+              ? { bolehPilihShiftTujuan: form.bolehPilihShiftTujuan }
+              : {}),
             // Field Telegram hanya relevan untuk akun Supervisi.
             ...(!isSuper && form.role === "supervisi"
               ? {
@@ -214,6 +225,9 @@ export function ManajemenAkunClient({
             password: form.password,
             role: form.role,
             isAktif: form.isAktif,
+            ...(form.role === "user"
+              ? { bolehPilihShiftTujuan: form.bolehPilihShiftTujuan }
+              : {}),
           }),
         });
         const data = await res.json().catch(() => ({}));
@@ -297,6 +311,29 @@ export function ManajemenAkunClient({
     );
   }
 
+  /** Izinkan/cabut pilih Shift Tujuan manual cepat dari tabel (khusus role user). */
+  async function toggleBolehPilihShiftTujuan(u: AkunRow) {
+    const res = await fetch(`/api/users/${u.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        bolehPilihShiftTujuan: !u.bolehPilihShiftTujuan,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert(data.error ?? "Gagal mengubah izin Shift Tujuan.");
+      return;
+    }
+    setUsers((prev) =>
+      prev.map((x) =>
+        x.id === u.id
+          ? { ...x, bolehPilihShiftTujuan: !u.bolehPilihShiftTujuan }
+          : x
+      )
+    );
+  }
+
   return (
     <div>
       <div className="mb-6 flex items-end justify-between gap-4">
@@ -319,6 +356,7 @@ export function ManajemenAkunClient({
               <Th>Username</Th>
               <Th>Role</Th>
               <Th>Status</Th>
+              <Th>Shift Tujuan</Th>
               <Th>Foto</Th>
               <Th>TTD</Th>
               <Th>Telegram</Th>
@@ -341,6 +379,15 @@ export function ManajemenAkunClient({
                     <Badge variant={u.isAktif ? "success" : "danger"}>
                       {u.isAktif ? "Aktif" : "Nonaktif"}
                     </Badge>
+                  </Td>
+                  <Td>
+                    {u.role === "user" ? (
+                      <Badge variant={u.bolehPilihShiftTujuan ? "info" : "neutral"}>
+                        {u.bolehPilihShiftTujuan ? "Manual" : "Otomatis"}
+                      </Badge>
+                    ) : (
+                      <span className="text-xs text-gray-400">—</span>
+                    )}
                   </Td>
                   <Td>
                     {u.fotoProfilUrl ? (
@@ -403,6 +450,24 @@ export function ManajemenAkunClient({
                           ) : (
                             <>
                               <RotateCcw className="w-3.5 h-3.5" /> Aktifkan
+                            </>
+                          )}
+                        </Button>
+                      )}
+                      {u.role === "user" && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => toggleBolehPilihShiftTujuan(u)}
+                          title="Izin pilih Shift Tujuan manual saat serah terima shift"
+                        >
+                          {u.bolehPilihShiftTujuan ? (
+                            <>
+                              <Lock className="w-3.5 h-3.5" /> Cabut Shift Tujuan
+                            </>
+                          ) : (
+                            <>
+                              <Unlock className="w-3.5 h-3.5" /> Izinkan Shift Tujuan
                             </>
                           )}
                         </Button>
@@ -481,6 +546,21 @@ export function ManajemenAkunClient({
             />
             Akun aktif (dapat login)
           </label>
+
+          {/* Izin Shift Tujuan manual — hanya berlaku untuk akun Petugas (user). */}
+          {form.role === "user" && (
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={form.bolehPilihShiftTujuan}
+                onChange={(e) =>
+                  setForm({ ...form, bolehPilihShiftTujuan: e.target.checked })
+                }
+                className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+              />
+              Boleh pilih Shift Tujuan manual saat serah terima (Shift 12 Jam)
+            </label>
+          )}
 
           {/* Upload foto & TTD */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

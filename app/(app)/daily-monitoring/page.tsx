@@ -36,7 +36,7 @@ export default async function DailyMonitoringPage() {
       }),
       prisma.user.findUnique({
         where: { id: session.sub },
-        select: { ttdUrl: true },
+        select: { ttdUrl: true, bolehPilihShiftTujuan: true },
       }),
       isShift12JamAktif(),
     ]);
@@ -62,6 +62,7 @@ export default async function DailyMonitoringPage() {
         currentUserId={session.sub}
         currentUserHasTtd={Boolean(me?.ttdUrl)}
         shift12JamAktifHariIni={shift12JamAktifHariIni}
+        bolehPilihShiftTujuan={Boolean(me?.bolehPilihShiftTujuan)}
       />
     </div>
   );
