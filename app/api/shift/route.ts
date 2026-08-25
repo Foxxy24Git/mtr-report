@@ -88,21 +88,38 @@ export async function POST(req: Request) {
     },
   });
 
-  // Tiket yang SUDAH dibuka petugas ini sebelum Supervisi dipilih/diganti
-  // (mis. dibuka duluan, Supervisi baru dipilih belakangan) ikut disamakan —
-  // supaya Supervisi yang dipilih bisa langsung menambah kegiatan tanpa
-  // menunggu tiket itu di-handover. Pola sama seperti reassignment supervisiId
-  // saat serah terima shift (app/api/shift/handover/route.ts).
-  if (supervisiId) {
-    await prisma.ticket.updateMany({
-      where: {
-        ownerUserId: session.sub,
-        shiftKode: shift as ShiftKode,
-        status: TicketStatus.proses,
-      },
-      data: { supervisiId },
-    });
-  }
+  // Tiket proses milik petugas ini ikut disamakan ke shift & Supervisi yang
+  // baru dipilih — mencakup DUA kasus:
+  // 1. Tiket yang sudah ada di shift baru sebelum Supervisi dipilih/diganti
+  //    (mis. dibuka duluan, Supervisi baru dipilih belakangan). Pola sama
+  //    seperti reassignment supervisiId saat serah terima shift
+  //    (app/api/shift/handover/route.ts).
+  // 2. Tiket yang MASIH tersimpan di shift LAMA saat petugas berganti shift
+  //    tanpa serah terima formal (mis. Super Admin mengaktifkan shift 12 jam
+  //    di hari kerja — lib/shiftOverride.ts — dan petugas pindah dari Shift
+  //    Sore ke Shift Lembur Malam sendiri). Tanpa migrasi shiftKode ini,
+  //    tiket tsb hilang dari "Tiket Open per Shift" (lib/dashboardQueries.ts)
+  //    & Daily Monitoring, yang memfilter shiftKode = shift aktif sesi
+  //    (lib/ticketQueries.ts).
+  const shiftLama = user?.currentShift ?? null;
+  const shiftKodesToSync = Array.from(
+    new Set(
+      !lanjutan && shiftLama && shiftLama !== shift
+        ? [shift, shiftLama]
+        : [shift]
+    )
+  ) as ShiftKode[];
+  await prisma.ticket.updateMany({
+    where: {
+      ownerUserId: session.sub,
+      shiftKode: { in: shiftKodesToSync },
+      status: TicketStatus.proses,
+    },
+    data: {
+      shiftKode: shift as ShiftKode,
+      ...(supervisiId ? { supervisiId } : {}),
+    },
+  });
 
   const token = await signSession({
     sub: session.sub,

@@ -4,7 +4,8 @@ import { ShiftKode, TicketStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { signSession, COOKIE_NAME, SESSION_MAX_AGE, isSecureCookie } from "@/lib/jwt";
-import { ALL_SHIFTS, nextShift, type ShiftCode } from "@/lib/shift";
+import { ALL_SHIFTS, nextShift, validShiftsForDate, type ShiftCode } from "@/lib/shift";
+import { isShift12JamAktif } from "@/lib/shiftOverride";
 import { getShiftLabel } from "@/lib/shiftReport";
 import { findMissingSuhuServerItems, parseTanggal, todayKeyWIB } from "@/lib/suhuServer";
 import { notifyReportPending } from "@/lib/telegramScheduler";
@@ -53,6 +54,12 @@ export async function POST(req: Request) {
   // Petugas penerima shift (WAJIB, PRD revisi §1/§2) → kolom to_user.
   const receiverUserId =
     typeof body.receiverUserId === "string" ? body.receiverUserId : "";
+  // Shift tujuan manual (opsional) — dikirim klien HANYA saat Shift 12 Jam
+  // Override aktif hari ini (lib/shiftOverride.ts) dan petugas memilih tujuan
+  // selain siklus normal, mis. penerima akan ambil lembur 12 jam alih-alih
+  // shift 8 jam berikutnya. Kosong → tetap otomatis via nextShift() di bawah.
+  const toShiftInput =
+    typeof body.toShift === "string" ? body.toShift.trim() : "";
   if (!pimpinanInfraId || !pimpinanDivisiId || !supervisiId || !receiverUserId) {
     return NextResponse.json(
       {
@@ -109,10 +116,25 @@ export async function POST(req: Request) {
       { status: 400 }
     );
   }
-  // Tanpa argumen `now`: tujuan dihitung dari waktu server saat serah terima
-  // terjadi. Penting untuk shift C & E yang melewati tengah malam — tujuannya
-  // bergantung hari (WIB) yang baru dimulai, lihat lib/shift.ts.
-  const toShift = nextShift(fromShift as ShiftCode);
+  // Tujuan otomatis (siklus normal A→B→C atau D→E). Penting untuk shift C & E
+  // yang melewati tengah malam — tujuannya bergantung hari (WIB) yang baru
+  // dimulai, lihat lib/shift.ts. Memakai `now` yang sama dengan pengecekan
+  // override di bawah, supaya keduanya konsisten dalam satu request.
+  const now = new Date();
+  let toShift = nextShift(fromShift as ShiftCode, now);
+  if (toShiftInput) {
+    // Tujuan manual HANYA boleh salah satu shift yang sah untuk tanggal ini
+    // (validShiftsForDate sudah override-aware) — mencegah, mis. memilih D/E
+    // saat Shift 12 Jam belum diaktifkan Super Admin.
+    const shift12JamAktif = await isShift12JamAktif(now);
+    if (!validShiftsForDate(now, shift12JamAktif).includes(toShiftInput as ShiftCode)) {
+      return NextResponse.json(
+        { error: "Shift tujuan tidak tersedia untuk tanggal ini." },
+        { status: 400 }
+      );
+    }
+    toShift = toShiftInput as ShiftCode;
+  }
 
   // Scoped ke shift asal: HANYA tiket shift ini yang diserahterimakan. Tanpa
   // `shiftKode`, serah terima satu petugas ikut menyapu tiket proses milik

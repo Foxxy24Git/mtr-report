@@ -1,6 +1,7 @@
 import { requireSession } from "@/lib/session";
 import { listTickets } from "@/lib/ticketQueries";
 import { ALL_SHIFTS } from "@/lib/shift";
+import { isShift12JamAktif } from "@/lib/shiftOverride";
 import { prisma } from "@/lib/prisma";
 import { DailyMonitoringClient } from "@/components/daily-monitoring/DailyMonitoringClient";
 
@@ -9,34 +10,36 @@ export const dynamic = "force-dynamic";
 export default async function DailyMonitoringPage() {
   const session = await requireSession();
   // Pimpinan, supervisi & petugas penerima untuk modal serah terima (PRD revisi §1/§2).
-  const [items, leaders, supervisiUsers, petugasUsers, me] = await Promise.all([
-    listTickets({
-      currentUserId: session.sub,
-      dailyMonitoring: true,
-      currentShift: session.shift,
-      shiftStartedAt: session.shiftStartedAt,
-    }),
-    prisma.leader.findMany({
-      where: { isAktif: true },
-      orderBy: { nama: "asc" },
-      select: { id: true, nama: true, kategori: true, tipe: true, namaPjs: true },
-    }),
-    prisma.user.findMany({
-      where: { role: "supervisi" },
-      orderBy: { nama: "asc" },
-      select: { id: true, nama: true },
-    }),
-    // Petugas penerima shift: role=user (mtr1–mtr5), klien mengecualikan diri sendiri.
-    prisma.user.findMany({
-      where: { role: "user" },
-      orderBy: { username: "asc" },
-      select: { id: true, nama: true },
-    }),
-    prisma.user.findUnique({
-      where: { id: session.sub },
-      select: { ttdUrl: true },
-    }),
-  ]);
+  const [items, leaders, supervisiUsers, petugasUsers, me, shift12JamAktifHariIni] =
+    await Promise.all([
+      listTickets({
+        currentUserId: session.sub,
+        dailyMonitoring: true,
+        currentShift: session.shift,
+        shiftStartedAt: session.shiftStartedAt,
+      }),
+      prisma.leader.findMany({
+        where: { isAktif: true },
+        orderBy: { nama: "asc" },
+        select: { id: true, nama: true, kategori: true, tipe: true, namaPjs: true },
+      }),
+      prisma.user.findMany({
+        where: { role: "supervisi" },
+        orderBy: { nama: "asc" },
+        select: { id: true, nama: true },
+      }),
+      // Petugas penerima shift: role=user (mtr1–mtr5), klien mengecualikan diri sendiri.
+      prisma.user.findMany({
+        where: { role: "user" },
+        orderBy: { username: "asc" },
+        select: { id: true, nama: true },
+      }),
+      prisma.user.findUnique({
+        where: { id: session.sub },
+        select: { ttdUrl: true },
+      }),
+      isShift12JamAktif(),
+    ]);
 
   return (
     <div>
@@ -58,6 +61,7 @@ export default async function DailyMonitoringPage() {
         petugasUsers={petugasUsers}
         currentUserId={session.sub}
         currentUserHasTtd={Boolean(me?.ttdUrl)}
+        shift12JamAktifHariIni={shift12JamAktifHariIni}
       />
     </div>
   );

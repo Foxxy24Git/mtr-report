@@ -16,7 +16,7 @@ import {
   Td,
 } from "@/components/ui/Table";
 import { fmtDateTime } from "@/lib/format";
-import { nextShift, type ShiftCode } from "@/lib/shift";
+import { nextShift, validShiftsForDate, type ShiftCode } from "@/lib/shift";
 import { shiftPakaiSupervisiNext } from "@/lib/shiftReportApproval";
 import { SHIFT_LABELS, SHIFT_NAMES } from "@/lib/constants";
 import type { TicketListItem } from "@/lib/ticketQueries";
@@ -49,6 +49,8 @@ interface Props {
   petugasUsers: SupervisiOption[];
   currentUserId: string;
   currentUserHasTtd: boolean;
+  /** True bila Super Admin sudah mengaktifkan mode shift 12 jam untuk hari ini. */
+  shift12JamAktifHariIni: boolean;
 }
 
 const SELECT_CLS =
@@ -64,6 +66,7 @@ export function DailyMonitoringClient({
   petugasUsers,
   currentUserId,
   currentUserHasTtd,
+  shift12JamAktifHariIni,
 }: Props) {
   const router = useRouter();
   const [items, setItems] = useState<TicketListItem[]>(initialItems);
@@ -79,7 +82,22 @@ export function DailyMonitoringClient({
   // Di-refresh tiap modal dibuka agar label tetap sama dengan yang dieksekusi
   // backend walau halaman dibiarkan terbuka melewati tengah malam WIB.
   const [hoNow, setHoNow] = useState(() => new Date());
-  const toShift = hasShift ? nextShift(currentShift as ShiftCode, hoNow) : null;
+  const autoToShift = hasShift ? nextShift(currentShift as ShiftCode, hoNow) : null;
+  // Shift tujuan lain yang boleh dipilih manual — hanya relevan saat Shift 12
+  // Jam Override aktif (lib/shiftOverride.ts): sistem tidak bisa menebak sendiri
+  // apakah petugas penerima akan bekerja 8 jam normal atau ambil lembur 12 jam,
+  // jadi tujuan otomatis (nextShift) tetap jadi default tapi bisa ditimpa.
+  const toShiftOptions = useMemo(
+    () =>
+      hasShift && shift12JamAktifHariIni
+        ? validShiftsForDate(hoNow, true).filter((s) => s !== currentShift)
+        : [],
+    [hasShift, shift12JamAktifHariIni, hoNow, currentShift]
+  );
+  const [hoToShiftPick, setHoToShiftPick] = useState<ShiftCode | "">("");
+  const toShift = hasShift
+    ? ((hoToShiftPick || autoToShift) as ShiftCode | null)
+    : null;
   const [hoOpen, setHoOpen] = useState(false);
   // Langkah modal: "confirm" = peringatan pastikan data benar, "select" = pemilihan supervisi & pimpinan.
   const [hoStep, setHoStep] = useState<"confirm" | "select">("confirm");
@@ -118,6 +136,7 @@ export function DailyMonitoringClient({
     setHoSupervisi("");
     setHoSupervisiNext("");
     setHoReceiver("");
+    setHoToShiftPick("");
   }
 
   const loadTickets = useCallback(async () => {
@@ -176,6 +195,7 @@ export function DailyMonitoringClient({
           supervisiId: hoSupervisi,
           supervisiNextId: hoSupervisiNext || null,
           receiverUserId: hoReceiver,
+          toShift: hoToShiftPick || undefined,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -388,6 +408,33 @@ export function DailyMonitoringClient({
         </div>
 
         <div className="mt-4 space-y-3">
+          {toShiftOptions.length > 0 && (
+            <div>
+              <Select
+                label="Shift Tujuan"
+                value={hoToShiftPick}
+                onChange={(e) =>
+                  setHoToShiftPick(e.target.value as ShiftCode | "")
+                }
+              >
+                <option value="">
+                  {autoToShift
+                    ? `Otomatis — ${SHIFT_NAMES[autoToShift] ?? `Shift ${autoToShift}`}`
+                    : "Otomatis"}
+                </option>
+                {toShiftOptions.map((s) => (
+                  <option key={s} value={s}>
+                    {SHIFT_NAMES[s] ?? `Shift ${s}`}
+                  </option>
+                ))}
+              </Select>
+              <p className="mt-1 text-xs text-gray-500">
+                Shift 12 jam sedang aktif hari ini — pilih tujuan lembur di
+                sini kalau petugas penerima akan ambil shift 12 jam, bukan
+                shift 8 jam normal.
+              </p>
+            </div>
+          )}
           <Select
             label="Pimpinan Bag. Infrastruktur"
             required
