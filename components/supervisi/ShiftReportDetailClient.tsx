@@ -6,10 +6,14 @@ import Link from "next/link";
 import {
   ArrowLeft,
   ShieldCheck,
+  ShieldAlert,
   Loader2,
   ChevronDown,
   ChevronRight,
   Inbox,
+  Flag,
+  Check,
+  X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import {
@@ -20,6 +24,7 @@ import {
   Th,
   Td,
 } from "@/components/ui/Table";
+import { cn } from "@/lib/cn";
 import { fmtDate, fmtDateTime, fmtTime } from "@/lib/format";
 import { computeSla, formatSlaPersen } from "@/lib/sla";
 import { SHIFT_LABELS } from "@/lib/constants";
@@ -55,15 +60,19 @@ export function ShiftReportDetailClient({
   const approved = report.label === "Sudah Diapprove";
   const utamaSudah = Boolean(report.approvedAt);
   const nextSudah = Boolean(report.supervisiNextApprovedAt);
-  // Tombol approve muncul selama masih ada peran viewer yang belum approve.
+  const adaRevisiTertunda = report.pendingRevisionCount > 0;
+  // Tombol approve muncul selama masih ada peran viewer yang belum approve —
+  // DAN selama tidak ada kegiatan yang masih menunggu revisi petugas (fitur
+  // Revisi Supervisi, lihat banner di bawah daftar tiket).
   const bisaApprove =
-    peran === "keduanya"
+    !adaRevisiTertunda &&
+    (peran === "keduanya"
       ? !utamaSudah || !nextSudah
       : peran === "selanjutnya"
         ? !nextSudah
         : peran === "utama"
           ? !utamaSudah
-          : false;
+          : false);
   const labelTombol =
     peran === "keduanya"
       ? "Setujui (Supervisi & Supervisi Selanjutnya)"
@@ -206,6 +215,8 @@ export function ShiftReportDetailClient({
                 <Th>Jenis Gangguan</Th>
                 <Th>Sumber Penyebab</Th>
                 <Th>Metode Penanganan</Th>
+                <Th>Vendor</Th>
+                <Th>No Tiket Vendor</Th>
                 <Th>Lama Penanganan</Th>
                 <Th>SLA</Th>
               </TableRow>
@@ -214,12 +225,24 @@ export function ShiftReportDetailClient({
               {[...report.tickets]
                 .sort((a, b) => Number(b.isLanjutan) - Number(a.isLanjutan))
                 .map((t) => (
-                  <TicketRow key={t.id} ticket={t} />
+                  <TicketRow key={t.id} ticket={t} canFlag={!approved} />
                 ))}
             </TableBody>
           </Table>
         )}
       </div>
+
+      {!approved && adaRevisiTertunda && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <ShieldAlert className="h-4 w-4 shrink-0 mt-0.5" />
+          <span>
+            <b>{report.pendingRevisionCount}</b> kegiatan masih menunggu revisi
+            petugas — buka kronologi tiket di bawah untuk melihat &amp;
+            memverifikasi. Laporan ini tidak bisa disetujui sampai semuanya
+            selesai.
+          </span>
+        </div>
+      )}
 
       {/* Approve */}
       {bisaApprove && (
@@ -268,7 +291,15 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 }
 
 /** Baris tiket dengan accordion kronologi (lazy-load via /api/tickets/[id]). */
-function TicketRow({ ticket }: { ticket: ShiftReportDetailTicket }) {
+function TicketRow({
+  ticket,
+  canFlag,
+}: {
+  ticket: ShiftReportDetailTicket;
+  /** True bila laporan belum di-approve — hanya saat itu boleh menandai revisi baru. */
+  canFlag: boolean;
+}) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [activities, setActivities] = useState<TicketActivityItem[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -278,19 +309,30 @@ function TicketRow({ ticket }: { ticket: ShiftReportDetailTicket }) {
     ticket.waktuSelesai ? new Date(ticket.waktuSelesai) : null
   );
 
+  async function loadActivities() {
+    const res = await fetch(`/api/tickets/${ticket.id}`);
+    const data = await res.json().catch(() => ({}));
+    setActivities(data.item?.activities ?? []);
+  }
+
   async function toggle() {
     const next = !open;
     setOpen(next);
     if (next && activities === null) {
       setLoading(true);
       try {
-        const res = await fetch(`/api/tickets/${ticket.id}`);
-        const data = await res.json().catch(() => ({}));
-        setActivities(data.item?.activities ?? []);
+        await loadActivities();
       } finally {
         setLoading(false);
       }
     }
+  }
+
+  /** Dipanggil setelah tandai/verifikasi revisi berhasil — segarkan baris ini
+   * dan status laporan (pendingRevisionCount) di komponen induk. */
+  async function onRevisiChanged() {
+    await loadActivities();
+    router.refresh();
   }
 
   return (
@@ -330,6 +372,20 @@ function TicketRow({ ticket }: { ticket: ShiftReportDetailTicket }) {
         <Td className="text-gray-600">{ticket.jenisGangguan ?? "—"}</Td>
         <Td className="text-gray-600">{ticket.sumberPenyebab ?? "—"}</Td>
         <Td className="text-gray-600">{ticket.metodePenanganan ?? "—"}</Td>
+        <Td className="max-w-[10rem]">
+          {ticket.vendor?.trim() ? (
+            <span className="block truncate text-gray-700">{ticket.vendor}</span>
+          ) : (
+            <span className="text-gray-400">—</span>
+          )}
+        </Td>
+        <Td className="whitespace-nowrap font-mono text-xs">
+          {ticket.noTiketVendor?.trim() ? (
+            <span className="text-gray-700">{ticket.noTiketVendor}</span>
+          ) : (
+            <span className="font-sans text-gray-400">—</span>
+          )}
+        </Td>
         <Td className="whitespace-nowrap text-xs">
           {sla.lamaHHMM ? (
             <span className="font-medium text-gray-700">{sla.lamaHHMM}</span>
@@ -343,7 +399,7 @@ function TicketRow({ ticket }: { ticket: ShiftReportDetailTicket }) {
       </TableRow>
       {open && (
         <TableRow>
-          <Td colSpan={9} className="bg-surface-subtle/40">
+          <Td colSpan={11} className="bg-surface-subtle/40">
             {loading ? (
               <p className="flex items-center gap-2 text-xs text-gray-500 py-2">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" /> Memuat kronologi…
@@ -351,21 +407,13 @@ function TicketRow({ ticket }: { ticket: ShiftReportDetailTicket }) {
             ) : activities && activities.length > 0 ? (
               <ol className="space-y-1.5 py-1">
                 {activities.map((a) => (
-                  <li key={a.id} className="flex gap-2 text-xs">
-                    <span className="shrink-0 font-mono text-gray-400">
-                      {a.isTindakLanjutFlag ? "—" : fmtTime(a.waktu)}
-                    </span>
-                    <span
-                      className={
-                        a.isTindakLanjutFlag
-                          ? "font-semibold text-gray-700"
-                          : "text-gray-700"
-                      }
-                    >
-                      {a.teks}
-                      <span className="ml-1 text-gray-400">({a.userNama})</span>
-                    </span>
-                  </li>
+                  <ActivityLine
+                    key={a.id}
+                    ticketId={ticket.id}
+                    activity={a}
+                    canFlag={canFlag}
+                    onChanged={onRevisiChanged}
+                  />
                 ))}
               </ol>
             ) : (
@@ -377,5 +425,244 @@ function TicketRow({ ticket }: { ticket: ShiftReportDetailTicket }) {
         </TableRow>
       )}
     </>
+  );
+}
+
+/**
+ * Satu baris kronologi + kontrol revisi Supervisi:
+ * - Belum ditandai → tombol "Tandai revisi" (butuh alasan).
+ * - menunggu_petugas → banner alasan, menunggu petugas memperbaiki.
+ * - menunggu_verifikasi → banner + tombol Terima / Masih salah (revisi lagi).
+ */
+function ActivityLine({
+  ticketId,
+  activity,
+  canFlag,
+  onChanged,
+}: {
+  ticketId: string;
+  activity: TicketActivityItem;
+  canFlag: boolean;
+  onChanged: () => void | Promise<void>;
+}) {
+  const [flagOpen, setFlagOpen] = useState(false);
+  const [flagCatatan, setFlagCatatan] = useState("");
+  const [flagBusy, setFlagBusy] = useState(false);
+  const [flagErr, setFlagErr] = useState("");
+
+  const [tolakOpen, setTolakOpen] = useState(false);
+  const [tolakCatatan, setTolakCatatan] = useState("");
+  const [verifyBusy, setVerifyBusy] = useState(false);
+  const [verifyErr, setVerifyErr] = useState("");
+
+  const revisi = activity.revisi;
+  const bisaDitandai =
+    canFlag &&
+    !activity.isTindakLanjutFlag &&
+    !activity.isSupervisiEntry &&
+    (!revisi || revisi.status === "selesai");
+
+  async function submitFlag() {
+    setFlagErr("");
+    if (!flagCatatan.trim()) {
+      setFlagErr("Alasan revisi wajib diisi.");
+      return;
+    }
+    setFlagBusy(true);
+    try {
+      const res = await fetch(
+        `/api/tickets/${ticketId}/activities/${activity.id}/revisi`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ catatan: flagCatatan.trim() }),
+        }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setFlagErr(data.error ?? "Gagal menandai revisi.");
+        return;
+      }
+      setFlagOpen(false);
+      setFlagCatatan("");
+      await onChanged();
+    } finally {
+      setFlagBusy(false);
+    }
+  }
+
+  async function verify(action: "terima" | "tolak") {
+    if (!revisi) return;
+    setVerifyErr("");
+    if (action === "tolak" && !tolakCatatan.trim()) {
+      setVerifyErr("Alasan wajib diisi saat menolak revisi.");
+      return;
+    }
+    setVerifyBusy(true);
+    try {
+      const res = await fetch(`/api/revisi/${revisi.id}/verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action,
+          catatan: action === "tolak" ? tolakCatatan.trim() : undefined,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setVerifyErr(data.error ?? "Gagal memverifikasi revisi.");
+        return;
+      }
+      setTolakOpen(false);
+      setTolakCatatan("");
+      await onChanged();
+    } finally {
+      setVerifyBusy(false);
+    }
+  }
+
+  return (
+    <li className="flex flex-col gap-1 text-xs border-b border-gray-100/70 last:border-0 pb-1.5">
+      <div className="flex gap-2">
+        <span className="shrink-0 font-mono text-gray-400">
+          {activity.isTindakLanjutFlag ? "—" : fmtTime(activity.waktu)}
+        </span>
+        <span
+          className={
+            activity.isTindakLanjutFlag
+              ? "font-semibold text-gray-700"
+              : "text-gray-700"
+          }
+        >
+          {activity.teks}
+          <span className="ml-1 text-gray-400">({activity.userNama})</span>
+        </span>
+        {bisaDitandai && !flagOpen && (
+          <button
+            type="button"
+            onClick={() => setFlagOpen(true)}
+            className="ml-auto shrink-0 inline-flex items-center gap-1 text-gray-400 hover:text-red-600 transition-colors"
+          >
+            <Flag className="h-3 w-3" /> Tandai revisi
+          </button>
+        )}
+      </div>
+
+      {revisi && revisi.status !== "selesai" && (
+        <div
+          className={cn(
+            "ml-6 rounded-md border px-2.5 py-1.5",
+            revisi.status === "menunggu_petugas"
+              ? "border-amber-200 bg-amber-50"
+              : "border-sky-200 bg-sky-50"
+          )}
+        >
+          <p
+            className={
+              revisi.status === "menunggu_petugas"
+                ? "text-amber-800"
+                : "text-sky-800"
+            }
+          >
+            <b>
+              {revisi.status === "menunggu_petugas"
+                ? "Menunggu revisi petugas"
+                : "Menunggu verifikasi Anda"}
+            </b>
+            {revisi.catatan ? ` — ${revisi.catatan}` : ""}
+          </p>
+          {revisi.status === "menunggu_verifikasi" && (
+            <div className="mt-1.5 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={verifyBusy}
+                onClick={() => verify("terima")}
+                className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2 py-1 text-white text-[11px] font-medium hover:bg-emerald-700 disabled:opacity-60"
+              >
+                <Check className="h-3 w-3" /> Terima
+              </button>
+              {!tolakOpen ? (
+                <button
+                  type="button"
+                  disabled={verifyBusy}
+                  onClick={() => setTolakOpen(true)}
+                  className="inline-flex items-center gap-1 rounded-md border border-red-300 px-2 py-1 text-red-700 text-[11px] font-medium hover:bg-red-50 disabled:opacity-60"
+                >
+                  <X className="h-3 w-3" /> Masih salah, revisi lagi
+                </button>
+              ) : (
+                <div className="w-full mt-1 flex flex-col gap-1">
+                  <textarea
+                    rows={2}
+                    value={tolakCatatan}
+                    onChange={(e) => setTolakCatatan(e.target.value)}
+                    placeholder="Jelaskan apa yang masih salah…"
+                    className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-red-300 focus:border-red-500"
+                  />
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTolakOpen(false);
+                        setTolakCatatan("");
+                        setVerifyErr("");
+                      }}
+                      className="text-[11px] text-gray-500 hover:text-gray-700"
+                    >
+                      Batal
+                    </button>
+                    <button
+                      type="button"
+                      disabled={verifyBusy}
+                      onClick={() => verify("tolak")}
+                      className="inline-flex items-center gap-1 rounded-md bg-red-600 px-2 py-1 text-white text-[11px] font-medium hover:bg-red-700 disabled:opacity-60"
+                    >
+                      Kirim
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          {verifyErr && (
+            <p className="mt-1 text-[11px] text-red-600">{verifyErr}</p>
+          )}
+        </div>
+      )}
+
+      {flagOpen && (
+        <div className="ml-6 flex flex-col gap-1 rounded-md border border-gray-200 bg-white px-2.5 py-1.5">
+          <textarea
+            rows={2}
+            value={flagCatatan}
+            onChange={(e) => setFlagCatatan(e.target.value)}
+            placeholder="Jelaskan bagian mana yang salah/typo…"
+            className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-red-300 focus:border-red-500"
+          />
+          {flagErr && <p className="text-[11px] text-red-600">{flagErr}</p>}
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setFlagOpen(false);
+                setFlagCatatan("");
+                setFlagErr("");
+              }}
+              className="text-[11px] text-gray-500 hover:text-gray-700"
+            >
+              Batal
+            </button>
+            <button
+              type="button"
+              disabled={flagBusy}
+              onClick={submitFlag}
+              className="inline-flex items-center gap-1 rounded-md bg-red-600 px-2 py-1 text-white text-[11px] font-medium hover:bg-red-700 disabled:opacity-60"
+            >
+              <Flag className="h-3 w-3" /> Tandai Revisi
+            </button>
+          </div>
+        </div>
+      )}
+    </li>
   );
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
+import { notifyRevisiDisubmit } from "@/lib/activityRevision";
 
 type Params = { params: Promise<{ id: string; activityId: string }> };
 
@@ -11,6 +12,10 @@ type Params = { params: Promise<{ id: string; activityId: string }> };
  * superadmin boleh memperbaiki teks & waktu. Setiap edit menyimpan snapshot
  * nilai lama ke ticket_activity_revisions dan menandai editedAt/editedById
  * sehingga jejak audit tetap terjaga (PRD §4.B.3).
+ *
+ * Bila baris ini sedang punya permintaan revisi berstatus menunggu_petugas
+ * (fitur "Revisi Supervisi"), edit ini SEKALIGUS jadi jawabannya: status
+ * berpindah ke menunggu_verifikasi & Supervisi yang meminta diberi notif.
  */
 export async function PATCH(req: Request, { params }: Params) {
   const session = await getSession();
@@ -28,6 +33,14 @@ export async function PATCH(req: Request, { params }: Params) {
 
   const activity = await prisma.ticketActivity.findUnique({
     where: { id: activityId },
+    include: {
+      ticket: { select: { noTiket: true } },
+      revisionRequests: {
+        where: { status: "menunggu_petugas" },
+        select: { id: true, createdById: true },
+        take: 1,
+      },
+    },
   });
   if (!activity || activity.ticketId !== id) {
     return NextResponse.json({ error: "Entri kegiatan tidak ditemukan." }, { status: 404 });
@@ -65,6 +78,8 @@ export async function PATCH(req: Request, { params }: Params) {
     return NextResponse.json({ item: { id: activity.id } });
   }
 
+  const openRevision = activity.revisionRequests[0] ?? null;
+
   await prisma.$transaction([
     prisma.ticketActivityRevision.create({
       data: {
@@ -78,7 +93,36 @@ export async function PATCH(req: Request, { params }: Params) {
       where: { id: activity.id },
       data: { teks, waktu, editedAt: new Date(), editedById: session.sub },
     }),
+    ...(openRevision
+      ? [
+          prisma.activityRevisionRequest.update({
+            where: { id: openRevision.id },
+            data: { status: "menunggu_verifikasi" as const },
+          }),
+          prisma.activityRevisionEvent.create({
+            data: {
+              requestId: openRevision.id,
+              type: "direvisi_petugas" as const,
+              byUserId: session.sub,
+            },
+          }),
+        ]
+      : []),
   ]);
+
+  if (openRevision) {
+    try {
+      await notifyRevisiDisubmit({
+        activityId: activity.id,
+        ticketId: activity.ticketId,
+        noTiket: activity.ticket.noTiket,
+        recipientUserId: openRevision.createdById,
+        petugasNama: session.nama,
+      });
+    } catch (err) {
+      console.error("[revisi] Gagal kirim notif disubmit:", err);
+    }
+  }
 
   return NextResponse.json({ item: { id: activity.id } });
 }

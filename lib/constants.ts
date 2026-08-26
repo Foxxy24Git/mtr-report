@@ -15,6 +15,7 @@ import {
   ListTree,
   StickyNote,
   Truck,
+  Wrench,
   type LucideIcon,
 } from "lucide-react";
 import type { Role } from "@/lib/roles";
@@ -58,6 +59,13 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/catatan-supervisi",
     icon: StickyNote,
     description: "Catatan dari supervisi atas laporan shift Anda",
+    roles: ["user"],
+  },
+  {
+    label: "Revisi",
+    href: "/revisi",
+    icon: Wrench,
+    description: "Kegiatan yang diminta Supervisi untuk diperbaiki",
     roles: ["user"],
   },
   {

@@ -172,6 +172,20 @@ export function TicketDetailClient({
     setEditActErr("");
   }
 
+  /**
+   * Datang dari menu Revisi (`?revisi=<activityId>`) — buka langsung modal
+   * edit entri yang dimaksud supaya petugas tidak perlu mencarinya manual.
+   */
+  useEffect(() => {
+    const targetId = new URLSearchParams(window.location.search).get("revisi");
+    if (!targetId) return;
+    const target = ticket.activities.find((a) => a.id === targetId);
+    if (target && canEditActivity(target)) {
+      openEditActivity(target);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ticket.id]);
+
   async function submitEditActivity(e: React.FormEvent) {
     e.preventDefault();
     if (!editAct) return;
@@ -726,19 +740,50 @@ export function TicketDetailClient({
                           <Pencil className="w-3 h-3" /> diedit
                         </span>
                       )}
+                      {a.revisi?.status === "menunggu_petugas" && (
+                        <Badge variant="danger">Diminta Revisi</Badge>
+                      )}
+                      {a.revisi?.status === "menunggu_verifikasi" && (
+                        <Badge variant="info">Menunggu Verifikasi Supervisi</Badge>
+                      )}
                       {canEditActivity(a) && (
                         <button
                           type="button"
                           onClick={() => openEditActivity(a)}
-                          className="ml-auto inline-flex items-center gap-1 text-gray-400 hover:text-primary transition-colors sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100"
+                          className={cn(
+                            "ml-auto inline-flex items-center gap-1 transition-colors focus:opacity-100",
+                            a.revisi?.status === "menunggu_petugas"
+                              ? "text-red-600 hover:text-red-700 font-medium"
+                              : "text-gray-400 hover:text-primary sm:opacity-0 sm:group-hover:opacity-100"
+                          )}
                         >
-                          <Pencil className="w-3.5 h-3.5" /> Edit
+                          <Pencil className="w-3.5 h-3.5" />{" "}
+                          {a.revisi?.status === "menunggu_petugas"
+                            ? "Perbaiki Sekarang"
+                            : "Edit"}
                         </button>
                       )}
                     </div>
                     <p className="mt-1 text-sm text-gray-800 whitespace-pre-wrap">
                       {a.teks}
                     </p>
+                    {a.revisi && a.revisi.status !== "selesai" && (
+                      <div
+                        className={cn(
+                          "mt-1.5 rounded-md border px-2.5 py-1.5 text-xs",
+                          a.revisi.status === "menunggu_petugas"
+                            ? "border-red-200 bg-red-50 text-red-800"
+                            : "border-sky-200 bg-sky-50 text-sky-800"
+                        )}
+                      >
+                        <b>
+                          {a.revisi.status === "menunggu_petugas"
+                            ? "Supervisi minta direvisi"
+                            : "Menunggu verifikasi Supervisi"}
+                        </b>
+                        {a.revisi.catatan ? `: ${a.revisi.catatan}` : ""}
+                      </div>
+                    )}
                   </motion.li>
                 )
               )}

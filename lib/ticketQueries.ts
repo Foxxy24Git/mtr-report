@@ -386,6 +386,12 @@ export interface TicketActivityItem {
   userNama: string;
   editedAt: Date | null;
   editedByNama: string | null;
+  /** Permintaan revisi TERBARU pada baris ini (null bila tak pernah ditandai). */
+  revisi: {
+    id: string;
+    status: "menunggu_petugas" | "menunggu_verifikasi" | "selesai";
+    catatan: string | null;
+  } | null;
 }
 
 export interface TicketDetail {
@@ -445,6 +451,22 @@ export async function getTicketDetail(id: string): Promise<TicketDetail | null> 
         include: {
           user: { select: { nama: true } },
           editor: { select: { nama: true } },
+          revisionRequests: {
+            orderBy: { createdAt: "desc" },
+            take: 1,
+            include: {
+              // Alasan yang ditampilkan = catatan terakhir yang PUNYA teks
+              // (event "diminta"/"ditolak_lagi"), bukan sekadar event
+              // terbaru — event "direvisi_petugas" tidak membawa catatan,
+              // jadi tanpa filter ini alasan asli akan hilang begitu
+              // petugas submit perbaikan (status jadi menunggu_verifikasi).
+              events: {
+                where: { catatan: { not: null } },
+                orderBy: { at: "desc" },
+                take: 1,
+              },
+            },
+          },
         },
       },
     },
@@ -502,6 +524,13 @@ export async function getTicketDetail(id: string): Promise<TicketDetail | null> 
       userNama: a.user.nama,
       editedAt: a.editedAt,
       editedByNama: a.editor?.nama ?? null,
+      revisi: a.revisionRequests[0]
+        ? {
+            id: a.revisionRequests[0].id,
+            status: a.revisionRequests[0].status,
+            catatan: a.revisionRequests[0].events[0]?.catatan ?? null,
+          }
+        : null,
     })),
   };
 }

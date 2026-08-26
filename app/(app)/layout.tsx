@@ -4,21 +4,24 @@ import { PageTransition } from "@/components/layout/PageTransition";
 import { requireSession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { getLogoUrl } from "@/lib/appSettings";
+import { countOpenRevisionsForUser } from "@/lib/activityRevision";
 import type { ReactNode } from "react";
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const session = await requireSession();
-  const [me, logoUrl] = await Promise.all([
+  const [me, logoUrl, revisiCount] = await Promise.all([
     prisma.user.findUnique({
       where: { id: session.sub },
       select: { fotoProfilUrl: true },
     }),
     getLogoUrl(),
+    session.role === "user" ? countOpenRevisionsForUser(session.sub) : Promise.resolve(0),
   ]);
+  const badges = session.role === "user" ? { "/revisi": revisiCount } : undefined;
 
   return (
     <div className="min-h-screen bg-surface-muted">
-      <Sidebar role={session.role} logoUrl={logoUrl} />
+      <Sidebar role={session.role} logoUrl={logoUrl} badges={badges} />
       <Topbar
         user={{
           nama: session.nama,

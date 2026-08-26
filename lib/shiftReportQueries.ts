@@ -223,6 +223,8 @@ export interface ShiftReportDetailTicket {
   jenisGangguan: string | null;
   sumberPenyebab: string | null;
   metodePenanganan: string | null;
+  vendor: string | null;
+  noTiketVendor: string | null;
 }
 
 export interface ShiftReportDetail {
@@ -248,6 +250,27 @@ export interface ShiftReportDetail {
   catatanSupervisiNext: string | null;
   label: LabelApproval;
   tickets: ShiftReportDetailTicket[];
+  /** Jumlah permintaan revisi kegiatan yang belum `selesai` pada laporan ini. */
+  pendingRevisionCount: number;
+}
+
+/**
+ * Jumlah ActivityRevisionRequest yang belum `selesai` pada tiket-tiket
+ * laporan shift `shiftKode` yang ditutup pada `tanggal` — kriteria SAMA
+ * dengan query tiket {@link getShiftReportDetail} (openShiftKode + hari WIB
+ * `waktuOpen`), supaya konsisten dipakai untuk mengunci tombol approve.
+ */
+export async function countPendingRevisions(
+  shiftKode: ShiftKode,
+  tanggal: Date
+): Promise<number> {
+  const { start, end } = wibDayRange(tanggal);
+  return prisma.activityRevisionRequest.count({
+    where: {
+      status: { not: "selesai" },
+      ticket: { openShiftKode: shiftKode, waktuOpen: { gte: start, lt: end } },
+    },
+  });
 }
 
 export async function getShiftReportDetail(
@@ -292,6 +315,8 @@ export async function getShiftReportDetail(
     },
   });
 
+  const pendingRevisionCount = await countPendingRevisions(r.shiftKode, r.tanggal);
+
   return {
     id: r.id,
     tanggal: r.tanggal,
@@ -327,7 +352,10 @@ export async function getShiftReportDetail(
       jenisGangguan: t.jenisGangguan,
       sumberPenyebab: t.sumberPenyebab,
       metodePenanganan: t.metodePenanganan,
+      vendor: t.vendor,
+      noTiketVendor: t.noTiketVendor,
     })),
+    pendingRevisionCount,
   };
 }
 

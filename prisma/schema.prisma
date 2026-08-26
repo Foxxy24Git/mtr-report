@@ -65,6 +65,23 @@ enum ShiftKode {
 enum NotificationType {
   supervisi_update_kegiatan
   petugas_open_tiket
+  revisi_diminta
+  revisi_disubmit
+}
+
+// Status permintaan revisi satu baris kegiatan (fitur revisi supervisi).
+enum RevisiStatus {
+  menunggu_petugas
+  menunggu_verifikasi
+  selesai
+}
+
+// Jenis event pada thread sebuah permintaan revisi (jejak bolak-balik).
+enum RevisiEventType {
+  diminta
+  direvisi_petugas
+  ditolak_lagi
+  diterima
 }
 
 enum ServerFase {
@@ -75,56 +92,59 @@ enum ServerFase {
 // ----------------------------- Models -----------------------------
 
 model User {
-  id                 String     @id @default(cuid())
-  username           String     @unique
-  nama               String
-  role               Role       @default(user)
-  passwordHash       String     @map("password_hash")
-  fotoProfilUrl      String?    @map("foto_profil_url")
-  ttdUrl             String?    @map("ttd_url")
+  id                    String     @id @default(cuid())
+  username              String     @unique
+  nama                  String
+  role                  Role       @default(user)
+  passwordHash          String     @map("password_hash")
+  fotoProfilUrl         String?    @map("foto_profil_url")
+  ttdUrl                String?    @map("ttd_url")
   // Integrasi Telegram (Fase 2): chat ID tujuan notif bot — hanya diisi Super
   // Admin untuk akun Supervisi. telegramNomor = catatan nomor HP/WA (opsional).
-  telegramChatId     String?    @map("telegram_chat_id")
-  telegramNomor      String?    @map("telegram_nomor")
+  telegramChatId        String?    @map("telegram_chat_id")
+  telegramNomor         String?    @map("telegram_nomor")
   // Soft delete (PRD §3 Super Admin): akun nonaktif tidak bisa login.
-  isAktif            Boolean    @default(true) @map("is_aktif")
+  isAktif               Boolean    @default(true) @map("is_aktif")
   // Izin memilih "Shift Tujuan" manual saat Serah Terima Shift ketika Shift 12
   // Jam Override aktif (default nonaktif — hanya dibutuhkan kasus tertentu,
   // Super Admin yang mengaktifkan per-petugas dari Manajemen Akun).
-  bolehPilihShiftTujuan Boolean @default(false) @map("boleh_pilih_shift_tujuan")
+  bolehPilihShiftTujuan Boolean    @default(false) @map("boleh_pilih_shift_tujuan")
   // Jejak login & shift aktif untuk tabel Member di Dashboard Super Admin.
-  lastLogin          DateTime?  @map("last_login")
-  currentShift       ShiftKode? @map("current_shift")
-  shiftStartedAt     DateTime?  @map("shift_started_at")
+  lastLogin             DateTime?  @map("last_login")
+  currentShift          ShiftKode? @map("current_shift")
+  shiftStartedAt        DateTime?  @map("shift_started_at")
   // Supervisi yang dipilih petugas bareng shift di Dashboard (fitur baru) —
   // dipakai mengisi Ticket.supervisiId otomatis sejak tiket dibuka, bukan
   // cuma sejak serah terima/tutup shift.
-  currentSupervisiId String?    @map("current_supervisi_id")
-  createdAt          DateTime   @default(now()) @map("created_at")
+  currentSupervisiId    String?    @map("current_supervisi_id")
+  createdAt             DateTime   @default(now()) @map("created_at")
 
   currentSupervisi    User?  @relation("UserCurrentSupervisi", fields: [currentSupervisiId], references: [id])
   currentSupervisiFor User[] @relation("UserCurrentSupervisi")
 
   notifications             Notification[]
-  ticketsOwned              Ticket[]         @relation("TicketOwner")
-  ticketsApproved           Ticket[]         @relation("TicketApprover")
-  ticketsSupervisi          Ticket[]         @relation("TicketSupervisi")
+  ticketsOwned              Ticket[]                  @relation("TicketOwner")
+  ticketsApproved           Ticket[]                  @relation("TicketApprover")
+  ticketsSupervisi          Ticket[]                  @relation("TicketSupervisi")
   activities                TicketActivity[]
-  activitiesEdited          TicketActivity[] @relation("ActivityEditor")
-  handoversFrom             ShiftHandover[]  @relation("HandoverFrom")
-  handoversTo               ShiftHandover[]  @relation("HandoverTo")
-  handoversSupervisi        ShiftHandover[]  @relation("HandoverSupervisi")
-  handoversSupervisiNext    ShiftHandover[]  @relation("HandoverSupervisiNext")
+  activitiesEdited          TicketActivity[]          @relation("ActivityEditor")
+  handoversFrom             ShiftHandover[]           @relation("HandoverFrom")
+  handoversTo               ShiftHandover[]           @relation("HandoverTo")
+  handoversSupervisi        ShiftHandover[]           @relation("HandoverSupervisi")
+  handoversSupervisiNext    ShiftHandover[]           @relation("HandoverSupervisiNext")
   acTempLogs                AcTempLog[]
   serverLogs                ServerLog[]
   appSettings               AppSetting[]
   shiftOverridesCreated     ShiftOverride[]
-  shiftReportsOwned         ShiftReport[]    @relation("ShiftReportOwner")
-  shiftReportsReceived      ShiftReport[]    @relation("ShiftReportReceiver")
-  shiftReportsSupervisi     ShiftReport[]    @relation("ShiftReportSupervisi")
-  shiftReportsSupervisiNext ShiftReport[]    @relation("ShiftReportSupervisiNext")
-  shiftReportsApproved      ShiftReport[]    @relation("ShiftReportApprover")
-  shiftReportsNextApproved  ShiftReport[]    @relation("ShiftReportSupervisiNextApprover")
+  shiftReportsOwned         ShiftReport[]             @relation("ShiftReportOwner")
+  shiftReportsReceived      ShiftReport[]             @relation("ShiftReportReceiver")
+  shiftReportsSupervisi     ShiftReport[]             @relation("ShiftReportSupervisi")
+  shiftReportsSupervisiNext ShiftReport[]             @relation("ShiftReportSupervisiNext")
+  shiftReportsApproved      ShiftReport[]             @relation("ShiftReportApprover")
+  shiftReportsNextApproved  ShiftReport[]             @relation("ShiftReportSupervisiNextApprover")
+  revisionRequestsCreated   ActivityRevisionRequest[] @relation("RevisiCreatedBy")
+  revisionRequestsResolved  ActivityRevisionRequest[] @relation("RevisiResolvedBy")
+  revisionEvents            ActivityRevisionEvent[]
 
   @@map("users")
 }
@@ -250,15 +270,16 @@ model Ticket {
   keterangan          String?
   createdAt           DateTime        @default(now()) @map("created_at")
 
-  atm            AtmMaster?       @relation(fields: [atmId], references: [id])
-  owner          User             @relation("TicketOwner", fields: [ownerUserId], references: [id])
-  approver       User?            @relation("TicketApprover", fields: [approvedById], references: [id])
-  pimpinanInfra  Leader?          @relation("TicketPimpinanInfra", fields: [pimpinanInfraId], references: [id])
-  pimpinanDivisi Leader?          @relation("TicketPimpinanDivisi", fields: [pimpinanDivisiId], references: [id])
-  supervisi      User?            @relation("TicketSupervisi", fields: [supervisiId], references: [id])
-  activities     TicketActivity[]
-  handovers      ShiftHandover[]
-  notifications  Notification[]
+  atm              AtmMaster?                @relation(fields: [atmId], references: [id])
+  owner            User                      @relation("TicketOwner", fields: [ownerUserId], references: [id])
+  approver         User?                     @relation("TicketApprover", fields: [approvedById], references: [id])
+  pimpinanInfra    Leader?                   @relation("TicketPimpinanInfra", fields: [pimpinanInfraId], references: [id])
+  pimpinanDivisi   Leader?                   @relation("TicketPimpinanDivisi", fields: [pimpinanDivisiId], references: [id])
+  supervisi        User?                     @relation("TicketSupervisi", fields: [supervisiId], references: [id])
+  activities       TicketActivity[]
+  handovers        ShiftHandover[]
+  notifications    Notification[]
+  revisionRequests ActivityRevisionRequest[]
 
   @@index([status])
   @@index([kategori])
@@ -281,11 +302,12 @@ model TicketActivity {
   editedAt           DateTime? @map("edited_at")
   editedById         String?   @map("edited_by")
 
-  ticket        Ticket                   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  user          User                     @relation(fields: [userId], references: [id])
-  editor        User?                    @relation("ActivityEditor", fields: [editedById], references: [id])
-  revisions     TicketActivityRevision[]
-  notifications Notification[]
+  ticket           Ticket                    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user             User                      @relation(fields: [userId], references: [id])
+  editor           User?                     @relation("ActivityEditor", fields: [editedById], references: [id])
+  revisions        TicketActivityRevision[]
+  notifications    Notification[]
+  revisionRequests ActivityRevisionRequest[]
 
   @@index([ticketId])
   @@map("ticket_activities")
@@ -304,6 +326,49 @@ model TicketActivityRevision {
 
   @@index([activityId])
   @@map("ticket_activity_revisions")
+}
+
+// Permintaan revisi Supervisi atas satu baris kegiatan (typo/salah catat).
+// Satu baris kegiatan hanya boleh punya SATU request yang belum `selesai`
+// pada satu waktu (dijaga di level aplikasi, bukan constraint DB) — status
+// bolak-balik menunggu_petugas <-> menunggu_verifikasi lewat baris yang SAMA,
+// jejak tiap putaran dicatat di `ActivityRevisionEvent`.
+model ActivityRevisionRequest {
+  id           String       @id @default(cuid())
+  activityId   String       @map("activity_id")
+  ticketId     String       @map("ticket_id")
+  status       RevisiStatus @default(menunggu_petugas)
+  createdById  String       @map("created_by")
+  createdAt    DateTime     @default(now()) @map("created_at")
+  resolvedById String?      @map("resolved_by")
+  resolvedAt   DateTime?    @map("resolved_at")
+
+  activity   TicketActivity          @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  ticket     Ticket                  @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  createdBy  User                    @relation("RevisiCreatedBy", fields: [createdById], references: [id])
+  resolvedBy User?                   @relation("RevisiResolvedBy", fields: [resolvedById], references: [id])
+  events     ActivityRevisionEvent[]
+
+  @@index([activityId])
+  @@index([ticketId, status])
+  @@map("activity_revision_requests")
+}
+
+// Satu titik pada thread percakapan sebuah permintaan revisi (diminta →
+// direvisi petugas → diterima, atau ditolak lagi dengan catatan baru).
+model ActivityRevisionEvent {
+  id        String          @id @default(cuid())
+  requestId String          @map("request_id")
+  type      RevisiEventType
+  byUserId  String          @map("by_user")
+  catatan   String?
+  at        DateTime        @default(now())
+
+  request ActivityRevisionRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  byUser  User                    @relation(fields: [byUserId], references: [id])
+
+  @@index([requestId])
+  @@map("activity_revision_events")
 }
 
 // Serah terima shift bersifat batch (level global), bukan per-tiket.

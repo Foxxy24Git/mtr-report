@@ -48,20 +48,39 @@ function scopeWhere(
   session: SessionPayload
 ): Prisma.NotificationWhereInput | null {
   if (session.role === "user") {
-    if (!session.shiftStartedAt) return null;
-    const startedAt = new Date(session.shiftStartedAt);
-    if (Number.isNaN(startedAt.getTime())) return null;
+    // revisi_diminta sengaja TIDAK digate oleh shiftStartedAt seperti
+    // supervisi_update_kegiatan — permintaan revisi harus tetap terlihat
+    // walau petugas belum/sudah tidak punya sesi shift aktif (perbaikan
+    // bersifat retroaktif, lihat menu Revisi). Makanya baris ini TIDAK early
+    // return null saat shiftStartedAt kosong — beda dari sebelum fitur ini.
+    const startedAt = session.shiftStartedAt ? new Date(session.shiftStartedAt) : null;
+    const startedAtValid =
+      startedAt && !Number.isNaN(startedAt.getTime()) ? startedAt : null;
     return {
       recipientUserId: session.sub,
-      type: "supervisi_update_kegiatan",
-      createdAt: { gte: startedAt },
+      OR: [
+        ...(startedAtValid
+          ? [
+              {
+                type: "supervisi_update_kegiatan" as const,
+                createdAt: { gte: startedAtValid },
+              },
+            ]
+          : []),
+        { type: "revisi_diminta" as const },
+      ],
     };
   }
   if (session.role === "supervisi") {
     return {
       recipientUserId: session.sub,
-      type: "petugas_open_tiket",
-      ticket: { is: { owner: { is: { currentSupervisiId: session.sub } } } },
+      OR: [
+        {
+          type: "petugas_open_tiket",
+          ticket: { is: { owner: { is: { currentSupervisiId: session.sub } } } },
+        },
+        { type: "revisi_disubmit" },
+      ],
     };
   }
   return null;

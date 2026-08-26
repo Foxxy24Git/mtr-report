@@ -7,6 +7,7 @@ import {
   susunPatchApproval,
 } from "@/lib/shiftReportApproval";
 import { notifyReportPending } from "@/lib/telegramScheduler";
+import { countPendingRevisions } from "@/lib/shiftReportQueries";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -51,6 +52,22 @@ export async function POST(req: Request, { params }: Params) {
     return NextResponse.json(
       { error: "Laporan ini bukan tanggung jawab supervisi Anda." },
       { status: 403 }
+    );
+  }
+
+  // Selama masih ada kegiatan yang ditandai revisi & belum selesai, laporan
+  // ini tidak boleh di-approve — dicek ulang di server (bukan cuma UI) karena
+  // ini yang bikin "menolak approve" jadi nyata, bukan sekadar tombol.
+  const pendingRevisionCount = await countPendingRevisions(
+    report.shiftKode,
+    report.tanggal
+  );
+  if (pendingRevisionCount > 0) {
+    return NextResponse.json(
+      {
+        error: `Masih ada ${pendingRevisionCount} kegiatan yang menunggu revisi petugas. Selesaikan dulu sebelum menyetujui laporan ini.`,
+      },
+      { status: 409 }
     );
   }
 

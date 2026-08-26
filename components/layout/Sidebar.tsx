@@ -7,7 +7,16 @@ import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
 import { AppLogo } from "@/components/layout/AppLogo";
 
-export function Sidebar({ role, logoUrl }: { role: Role; logoUrl?: string | null }) {
+export function Sidebar({
+  role,
+  logoUrl,
+  badges,
+}: {
+  role: Role;
+  logoUrl?: string | null;
+  /** Jumlah item aktif per href, mis. { "/revisi": 3 } — tampil sebagai badge. */
+  badges?: Record<string, number>;
+}) {
   const pathname = usePathname();
   const items = NAV_ITEMS.filter((item) => !item.roles || item.roles.includes(role));
 
@@ -86,6 +95,11 @@ export function Sidebar({ role, logoUrl }: { role: Role; logoUrl?: string | null
                     )}
                   />
                   <span className="relative z-10">{item.label}</span>
+                  {Boolean(badges?.[item.href]) && (
+                    <span className="relative z-10 ml-auto min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-semibold leading-none">
+                      {badges![item.href] > 9 ? "9+" : badges![item.href]}
+                    </span>
+                  )}
                 </Link>
               </li>
             );
