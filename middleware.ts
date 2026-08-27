@@ -33,7 +33,9 @@ export const config = {
   // login), asset statis Next, dan file publik. POST/DELETE logo tetap diamankan
   // di handler-nya (cek Super Admin). uploads/logo dikecualikan karena berkas
   // logo hasil unggahan juga tampil di halaman login (belum ada sesi).
+  // api/n8n dikecualikan karena dipanggil server-to-server dari n8n (tanpa
+  // sesi login) — diamankan sendiri di tiap handler via header x-webhook-secret.
   matcher: [
-    "/((?!api/auth|api/settings/logo|_next/static|_next/image|favicon.ico|logo-bank-nagari.svg|uploads/logo).*)",
+    "/((?!api/auth|api/settings/logo|api/n8n|_next/static|_next/image|favicon.ico|logo-bank-nagari.svg|uploads/logo).*)",
   ],
 };
