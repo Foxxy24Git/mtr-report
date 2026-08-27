@@ -30,6 +30,7 @@ export default async function ManajemenAkunPage({ searchParams }: SearchParams) 
       ttdUrl: true,
       telegramChatId: true,
       telegramNomor: true,
+      waNomor: true,
       isAktif: true,
       bolehPilihShiftTujuan: true,
     },

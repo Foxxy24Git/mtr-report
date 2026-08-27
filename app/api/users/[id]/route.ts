@@ -3,6 +3,7 @@ import { Prisma, Role } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { hashPassword } from "@/lib/password";
+import { normalizeWaNomor } from "@/lib/waNomor";
 
 function cleanStr(v: unknown): string {
   return typeof v === "string" ? v.trim() : "";
@@ -113,6 +114,10 @@ export async function PATCH(req: Request, { params }: Params) {
     const nomor = cleanStr(body.telegramNomor);
     data.telegramNomor = nomor || null;
   }
+  if (body?.waNomor !== undefined) {
+    const nomor = normalizeWaNomor(cleanStr(body.waNomor));
+    data.waNomor = nomor || null;
+  }
 
   // Password (reset) — opsional.
   if (body?.password) {
@@ -139,6 +144,7 @@ export async function PATCH(req: Request, { params }: Params) {
         ttdUrl: true,
         telegramChatId: true,
         telegramNomor: true,
+        waNomor: true,
         isAktif: true,
         bolehPilihShiftTujuan: true,
       },

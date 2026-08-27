@@ -103,6 +103,9 @@ model User {
   // Admin untuk akun Supervisi. telegramNomor = catatan nomor HP/WA (opsional).
   telegramChatId        String?    @map("telegram_chat_id")
   telegramNomor         String?    @map("telegram_nomor")
+  // Nomor WhatsApp Supervisi (format 62xxxxxxxxxx, tanpa + / 0 di depan) —
+  // dipakai untuk tag "@nomor" saat notif WA tiket baru dibuka (lib/n8nNotif.ts).
+  waNomor               String?    @map("wa_nomor")
   // Soft delete (PRD §3 Super Admin): akun nonaktif tidak bisa login.
   isAktif               Boolean    @default(true) @map("is_aktif")
   // Izin memilih "Shift Tujuan" manual saat Serah Terima Shift ketika Shift 12

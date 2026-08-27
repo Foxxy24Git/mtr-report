@@ -5,6 +5,7 @@ import { getSession } from "@/lib/session";
 import { generateUniqueNoTiket } from "@/lib/noTiket";
 import { listTickets } from "@/lib/ticketQueries";
 import { buildTicketOpenedMessage } from "@/lib/notifications";
+import { notifyTicketOpened } from "@/lib/n8nNotif";
 
 const KATEGORI = Object.values(TicketKategori) as string[];
 const SHIFTS = Object.values(ShiftKode) as string[];
@@ -269,6 +270,23 @@ export async function POST(req: Request) {
     });
 
     return t;
+  });
+
+  // Notif WhatsApp grup kantor via n8n — di luar transaksi (I/O eksternal),
+  // tidak pernah throw (lib/n8nNotif.ts), jadi aman langsung di-await.
+  const supervisi = await prisma.user.findUnique({
+    where: { id: session.supervisiId },
+    select: { nama: true, waNomor: true },
+  });
+  await notifyTicketOpened({
+    noTiket: ticket.noTiket,
+    kategori,
+    kodeAtm: atm.kodeAtm,
+    namaAtm: atm.namaAtm,
+    jenisGangguan,
+    sumberPenyebab,
+    supervisiNama: supervisi?.nama ?? "-",
+    supervisiWaNomor: supervisi?.waNomor ?? null,
   });
 
   return NextResponse.json(

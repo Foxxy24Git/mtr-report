@@ -39,6 +39,7 @@ export interface AkunRow {
   ttdUrl: string | null;
   telegramChatId: string | null;
   telegramNomor: string | null;
+  waNomor: string | null;
   isAktif: boolean;
   /** Izin pilih Shift Tujuan manual saat serah terima (Shift 12 Jam Override) — hanya relevan untuk role user. */
   bolehPilihShiftTujuan: boolean;
@@ -64,6 +65,7 @@ interface FormState {
   bolehPilihShiftTujuan: boolean;
   telegramNomor: string;
   telegramChatId: string;
+  waNomor: string;
 }
 
 const EMPTY: FormState = {
@@ -75,6 +77,7 @@ const EMPTY: FormState = {
   bolehPilihShiftTujuan: false,
   telegramNomor: "",
   telegramChatId: "",
+  waNomor: "",
 };
 
 interface Props {
@@ -127,6 +130,7 @@ export function ManajemenAkunClient({
       bolehPilihShiftTujuan: u.bolehPilihShiftTujuan,
       telegramNomor: u.telegramNomor ?? "",
       telegramChatId: u.telegramChatId ?? "",
+      waNomor: u.waNomor ?? "",
     });
     setFotoFile(null);
     setTtdFile(null);
@@ -198,6 +202,7 @@ export function ManajemenAkunClient({
               ? {
                   telegramChatId: form.telegramChatId,
                   telegramNomor: form.telegramNomor,
+                  waNomor: form.waNomor,
                 }
               : {}),
             ...(form.password ? { password: form.password } : {}),
@@ -244,6 +249,7 @@ export function ManajemenAkunClient({
               ttdUrl: imgs.ttdUrl ?? null,
               telegramChatId: null,
               telegramNomor: null,
+              waNomor: null,
             } as AkunRow,
             ...prev,
           ].sort((a, b) => a.username.localeCompare(b.username))
@@ -623,6 +629,14 @@ export function ManajemenAkunClient({
                     setForm({ ...form, telegramChatId: e.target.value })
                   }
                   hint="Dipakai bot untuk mengirim notif."
+                />
+                <Input
+                  label="Nomor WhatsApp"
+                  value={form.waNomor}
+                  onChange={(e) =>
+                    setForm({ ...form, waNomor: e.target.value })
+                  }
+                  hint="Wajib diisi supaya bisa di-tag di notif WA grup saat tiket baru dibuka. Format bebas (08xx atau 62xx), otomatis dirapikan saat disimpan."
                 />
               </div>
               <div className="flex items-center gap-3">
