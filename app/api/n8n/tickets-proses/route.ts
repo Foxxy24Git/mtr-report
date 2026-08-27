@@ -32,7 +32,8 @@ export async function GET(req: Request) {
   }
 
   const baris = tickets.map(
-    (t) => `${t.noTiket} | ${t.atm?.kodeAtm ?? "-"} - ${t.atm?.namaAtm ?? "-"}`
+    (t, i) =>
+      `${i + 1}. ${t.noTiket} | ${t.atm?.kodeAtm ?? "-"} - ${t.atm?.namaAtm ?? "-"}`
   );
   const text = `🗂 *DAFTAR TIKET PROSES* (${tickets.length})\n\n${baris.join("\n")}`;
 
