@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
 import {
   Loader2,
@@ -13,6 +20,8 @@ import {
   AlertTriangle,
   Gauge,
   X,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import {
@@ -23,11 +32,15 @@ import {
   Th,
   Td,
 } from "@/components/ui/Table";
-import { fmtDateTime, fmtDateKey } from "@/lib/format";
+import { fmtDateTime, fmtDateKey, fmtTime } from "@/lib/format";
 import { computeSla, menitToHHMM, formatSlaPersen } from "@/lib/sla";
 import { SHIFT_NAMES } from "@/lib/constants";
 import type { ShiftCode } from "@/lib/shift";
-import type { WeeklyTicketItem, AtmHistory } from "@/lib/ticketQueries";
+import type {
+  WeeklyTicketItem,
+  AtmHistory,
+  TicketActivityItem,
+} from "@/lib/ticketQueries";
 
 interface PicUser {
   id: string;
@@ -60,6 +73,13 @@ type RangePreset = "7d" | "1m" | "3m" | "year" | "custom";
 
 const atmLabel = (o: AtmOption) => `${o.kodeAtm} — ${o.namaAtm}`;
 
+export function toggleExpandedTicketId(
+  currentId: string | null,
+  ticketId: string
+): string | null {
+  return currentId === ticketId ? null : ticketId;
+}
+
 export function WeeklyMonitoringClient({
   initialItems,
   initialTotal,
@@ -74,6 +94,13 @@ export function WeeklyMonitoringClient({
   const [items, setItems] = useState<WeeklyTicketItem[]>(initialItems);
   const [total, setTotal] = useState(initialTotal);
   const [loading, setLoading] = useState(false);
+  const [expandedTicketId, setExpandedTicketId] = useState<string | null>(null);
+  const [activitiesByTicketId, setActivitiesByTicketId] = useState<
+    Record<string, TicketActivityItem[]>
+  >({});
+  const [loadingActivityId, setLoadingActivityId] = useState<string | null>(
+    null
+  );
 
   const [kategori, setKategori] = useState("");
   const [status, setStatus] = useState("");
@@ -137,6 +164,26 @@ export function WeeklyMonitoringClient({
     const handle = setTimeout(loadTickets, 250);
     return () => clearTimeout(handle);
   }, [loadTickets]);
+
+  async function toggleTicketActivities(ticketId: string) {
+    const nextId = toggleExpandedTicketId(expandedTicketId, ticketId);
+    setExpandedTicketId(nextId);
+    if (!nextId || activitiesByTicketId[ticketId] !== undefined) return;
+
+    setLoadingActivityId(ticketId);
+    try {
+      const res = await fetch(`/api/tickets/${ticketId}`);
+      const data = await res.json().catch(() => ({}));
+      setActivitiesByTicketId((current) => ({
+        ...current,
+        [ticketId]: res.ok ? data.item?.activities ?? [] : [],
+      }));
+    } finally {
+      setLoadingActivityId((current) =>
+        current === ticketId ? null : current
+      );
+    }
+  }
 
   // Ringkasan riwayat ATM (PRD §4.7) saat satu ATM dipilih di filter.
   const [atmHistory, setAtmHistory] = useState<AtmHistory | null>(null);
@@ -492,79 +539,103 @@ export function WeeklyMonitoringClient({
                 new Date(t.waktuOpen),
                 t.waktuSelesai ? new Date(t.waktuSelesai) : null
               );
+              const expanded = expandedTicketId === t.id;
               return (
-                <TableRow
-                  key={t.id}
-                  className="cursor-pointer"
-                  onClick={() => router.push(`/weekly-monitoring/${t.id}`)}
-                >
-                  <Td className="whitespace-nowrap">
-                    <span className="font-mono font-semibold text-primary">
-                      <Highlight text={t.noTiket} term={search} />
-                    </span>
-                  </Td>
-                  <Td>
-                    <Badge variant={t.kategori === "atm" ? "info" : "neutral"}>
-                      {t.kategori === "atm" ? "ATM" : "Jaringan"}
-                    </Badge>
-                  </Td>
-                  <Td className="font-mono font-medium text-gray-900">
-                    <Highlight text={t.kodeAtm} term={search} />
-                    <div className="text-xs font-sans font-normal text-gray-500 max-w-[14rem] truncate">
-                      <Highlight text={t.namaAtm} term={search} />
-                    </div>
-                  </Td>
-                  <Td className="whitespace-nowrap text-xs">
-                    {fmtDateTime(t.waktuOpen)}
-                  </Td>
-                  <Td className="whitespace-nowrap">{t.ownerNama}</Td>
-                  <Td className="whitespace-nowrap text-xs text-gray-600">
-                    {SHIFT_NAMES[t.shiftKode] ?? `Shift ${t.shiftKode}`}
-                  </Td>
-                  <Td>
-                    <Badge variant={t.status === "selesai" ? "success" : "warning"}>
-                      {t.status === "selesai" ? "Selesai" : "Proses"}
-                    </Badge>
-                  </Td>
-                  <Td className="whitespace-nowrap text-xs">
-                    {sla.lamaHHMM ? (
-                      <span className="font-medium text-gray-700">
-                        {sla.lamaHHMM}
+                <Fragment key={t.id}>
+                  <TableRow
+                    className="cursor-pointer"
+                    onClick={() => router.push(`/weekly-monitoring/${t.id}`)}
+                  >
+                    <Td className="whitespace-nowrap">
+                      <span className="block font-mono font-semibold text-primary">
+                        <Highlight text={t.noTiket} term={search} />
                       </span>
-                    ) : (
-                      <span className="text-amber-600">Berjalan</span>
-                    )}
-                  </Td>
-                  <Td>
-                    <Badge
-                      variant={
-                        t.supervisiStatus === "approved" ? "success" : "neutral"
-                      }
-                    >
-                      {t.supervisiStatus === "approved"
-                        ? `Diapprove oleh ${t.supervisiNama ?? "Supervisi"}`
-                        : "Menunggu Approval"}
-                    </Badge>
-                  </Td>
-                  <Td className="max-w-[10rem]">
-                    {t.vendor?.trim() ? (
-                      <span className="block truncate text-gray-700">
-                        <Highlight text={t.vendor} term={search} />
-                      </span>
-                    ) : (
-                      <span className="text-gray-400">—</span>
-                    )}
-                  </Td>
-                  <Td className="whitespace-nowrap font-mono text-xs">
-                    {t.noTiketVendor?.trim() ? (
-                      <span className="text-gray-700">
-                        <Highlight text={t.noTiketVendor} term={search} />
-                      </span>
-                    ) : (
-                      <span className="font-sans text-gray-400">—</span>
-                    )}
-                  </Td>
-                </TableRow>
+                      <WeeklyActivityToggle
+                        expanded={expanded}
+                        onToggle={() => void toggleTicketActivities(t.id)}
+                      />
+                    </Td>
+                    <Td>
+                      <Badge
+                        variant={t.kategori === "atm" ? "info" : "neutral"}
+                      >
+                        {t.kategori === "atm" ? "ATM" : "Jaringan"}
+                      </Badge>
+                    </Td>
+                    <Td className="font-mono font-medium text-gray-900">
+                      <Highlight text={t.kodeAtm} term={search} />
+                      <div className="text-xs font-sans font-normal text-gray-500 max-w-[14rem] truncate">
+                        <Highlight text={t.namaAtm} term={search} />
+                      </div>
+                    </Td>
+                    <Td className="whitespace-nowrap text-xs">
+                      {fmtDateTime(t.waktuOpen)}
+                    </Td>
+                    <Td className="whitespace-nowrap">{t.ownerNama}</Td>
+                    <Td className="whitespace-nowrap text-xs text-gray-600">
+                      {SHIFT_NAMES[t.shiftKode] ?? `Shift ${t.shiftKode}`}
+                    </Td>
+                    <Td>
+                      <Badge
+                        variant={
+                          t.status === "selesai" ? "success" : "warning"
+                        }
+                      >
+                        {t.status === "selesai" ? "Selesai" : "Proses"}
+                      </Badge>
+                    </Td>
+                    <Td className="whitespace-nowrap text-xs">
+                      {sla.lamaHHMM ? (
+                        <span className="font-medium text-gray-700">
+                          {sla.lamaHHMM}
+                        </span>
+                      ) : (
+                        <span className="text-amber-600">Berjalan</span>
+                      )}
+                    </Td>
+                    <Td>
+                      <Badge
+                        variant={
+                          t.supervisiStatus === "approved"
+                            ? "success"
+                            : "neutral"
+                        }
+                      >
+                        {t.supervisiStatus === "approved"
+                          ? `Diapprove oleh ${t.supervisiNama ?? "Supervisi"}`
+                          : "Menunggu Approval"}
+                      </Badge>
+                    </Td>
+                    <Td className="max-w-[10rem]">
+                      {t.vendor?.trim() ? (
+                        <span className="block truncate text-gray-700">
+                          <Highlight text={t.vendor} term={search} />
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
+                    </Td>
+                    <Td className="whitespace-nowrap font-mono text-xs">
+                      {t.noTiketVendor?.trim() ? (
+                        <span className="text-gray-700">
+                          <Highlight text={t.noTiketVendor} term={search} />
+                        </span>
+                      ) : (
+                        <span className="font-sans text-gray-400">—</span>
+                      )}
+                    </Td>
+                  </TableRow>
+                  {expanded && (
+                    <TableRow>
+                      <Td colSpan={11} className="bg-surface-subtle/40">
+                        <WeeklyActivityPanel
+                          loading={loadingActivityId === t.id}
+                          activities={activitiesByTicketId[t.id] ?? null}
+                        />
+                      </Td>
+                    </TableRow>
+                  )}
+                </Fragment>
               );
             })
           )}
@@ -603,6 +674,83 @@ function Highlight({ text, term }: { text: string; term: string }) {
     lowerRest = lowerRest.slice(i + q.length);
   }
   return <>{parts}</>;
+}
+
+export function WeeklyActivityPanel({
+  loading,
+  activities,
+}: {
+  loading: boolean;
+  activities: TicketActivityItem[] | null;
+}) {
+  return (
+    <div className="py-1" aria-live="polite">
+      <p className="mb-2 text-xs font-semibold text-gray-600">
+        Kegiatan Penanganan Gangguan
+      </p>
+      {loading ? (
+        <p className="flex items-center gap-2 py-2 text-xs text-gray-500">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" /> Memuat kronologi…
+        </p>
+      ) : activities && activities.length > 0 ? (
+        <ol className="space-y-1.5">
+          {activities.map((activity) => (
+            <li
+              key={activity.id}
+              className="flex gap-2 border-b border-gray-100/70 pb-1.5 text-xs last:border-0"
+            >
+              <span className="shrink-0 font-mono text-gray-400">
+                {activity.isTindakLanjutFlag ? "—" : fmtTime(activity.waktu)}
+              </span>
+              <span
+                className={
+                  activity.isTindakLanjutFlag
+                    ? "font-semibold text-gray-700"
+                    : "text-gray-700"
+                }
+              >
+                {activity.teks}
+                <span className="ml-1 text-gray-400">
+                  ({activity.userNama})
+                </span>
+              </span>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p className="py-2 text-xs text-gray-400">
+          Belum ada kegiatan penanganan.
+        </p>
+      )}
+    </div>
+  );
+}
+
+export function WeeklyActivityToggle({
+  expanded,
+  onToggle,
+}: {
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-expanded={expanded}
+      onClick={(event) => {
+        event.stopPropagation();
+        onToggle();
+      }}
+      className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-primary hover:text-primary-dark focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+    >
+      {expanded ? (
+        <ChevronDown className="h-3.5 w-3.5" />
+      ) : (
+        <ChevronRight className="h-3.5 w-3.5" />
+      )}
+      Lihat Gangguan
+    </button>
+  );
 }
 
 function PresetButton({

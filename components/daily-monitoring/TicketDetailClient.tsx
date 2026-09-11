@@ -38,6 +38,7 @@ interface Props {
     jenis_gangguan: string[];
     sumber_penyebab: string[];
     jenis_penanganan: string[];
+    vendor: string[];
   };
   role: "superadmin" | "user" | "supervisi";
   currentUserId: string;
@@ -66,6 +67,29 @@ interface AtmHit {
 function withCurrent(opsi: string[], value: string | null): string[] {
   if (value && !opsi.includes(value)) return [value, ...opsi];
   return opsi;
+}
+
+interface VendorSelectProps {
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+}
+
+export function VendorSelect({ value, options, onChange }: VendorSelectProps) {
+  return (
+    <Select
+      label="Vendor"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    >
+      <option value="">Default</option>
+      {withCurrent(options, value).map((vendor) => (
+        <option key={vendor} value={vendor}>
+          {vendor}
+        </option>
+      ))}
+    </Select>
+  );
 }
 
 export function TicketDetailClient({
@@ -1041,11 +1065,11 @@ export function TicketDetailClient({
             )}
           </Select>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Input
-              label="Vendor"
+            <VendorSelect
               value={editForm.vendor}
-              onChange={(e) =>
-                setEditForm({ ...editForm, vendor: e.target.value })
+              options={opsi.vendor}
+              onChange={(vendor) =>
+                setEditForm({ ...editForm, vendor })
               }
             />
             <Input
