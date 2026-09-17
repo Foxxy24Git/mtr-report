@@ -4,6 +4,7 @@ import {
   getSlaDrilldownTickets,
   parseSlaBasis,
   parseSlaFilters,
+  type SlaBasis,
   type SlaDrilldownMode,
 } from "@/lib/slaMonitoring";
 import {
@@ -16,9 +17,20 @@ import {
 } from "@/components/ui/Table";
 import { Badge } from "@/components/ui/Badge";
 import { fmtDateTime } from "@/lib/format";
+import { menitToHHMM } from "@/lib/sla";
 import { ChevronLeft } from "lucide-react";
 
 export const dynamic = "force-dynamic";
+
+// Sama persis dengan slaTone() di components/monitoring-sla/MonitoringSlaClient.tsx
+// — dipertahankan konsisten di kedua tempat (dashboard & drill-down ini),
+// diduplikasi (bukan di-share) karena satu server component, satu client.
+function slaTone(frac: number): string {
+  const p = frac * 100;
+  if (p > 99) return "text-green-600";
+  if (p >= 95) return "text-amber-600";
+  return "text-red-600";
+}
 
 const VALID_MODES: SlaDrilldownMode[] = [
   "sla-terendah",
@@ -43,6 +55,35 @@ function BackLink() {
   );
 }
 
+// Toggle Internal/Eksternal khusus halaman ini — link biasa (bukan
+// onClick/router.push) karena halaman ini server component. Klik = navigasi
+// ulang ke URL yang sama dengan query param `basis` diganti, param lain
+// (dari/sampai/kategori/mode/atmId/nilai/label) tetap dipertahankan.
+// Styling disamakan dgn PresetButton di MonitoringSlaClient.tsx.
+function BasisToggle({ sp, basis }: { sp: URLSearchParams; basis: SlaBasis }) {
+  const hrefFor = (b: SlaBasis) => {
+    const next = new URLSearchParams(sp);
+    next.set("basis", b);
+    return `/monitoring-sla/tiket?${next.toString()}`;
+  };
+  const cls = (active: boolean) =>
+    `rounded-md border px-2.5 py-1 text-xs transition-colors ${
+      active
+        ? "border-primary bg-primary text-white"
+        : "border-gray-300 bg-white text-gray-600 hover:border-primary/50 hover:text-primary"
+    }`;
+  return (
+    <div className="flex items-center gap-1">
+      <Link href={hrefFor("internal")} className={cls(basis === "internal")}>
+        SLA Internal
+      </Link>
+      <Link href={hrefFor("eksternal")} className={cls(basis === "eksternal")}>
+        SLA Eksternal
+      </Link>
+    </div>
+  );
+}
+
 export default async function SlaDrilldownPage({ searchParams }: Props) {
   await requireSession(); // Akses semua role (user, supervisi, superadmin).
 
@@ -60,7 +101,9 @@ export default async function SlaDrilldownPage({ searchParams }: Props) {
   const atmId = sp.get("atmId") ?? undefined;
   const nilai = sp.get("nilai") ?? undefined;
   const label = sp.get("label") || "Daftar Tiket";
-  const parsedBasis = mode === "sla-terendah" ? parseSlaBasis(sp) : null;
+  // Basis (Internal/Eksternal) sekarang berlaku di SEMUA mode, bukan cuma
+  // "sla-terendah" — lihat toggle BasisToggle di bawah.
+  const parsedBasis = parseSlaBasis(sp);
 
   const error = !parsedFilter.ok
     ? parsedFilter.error
@@ -70,7 +113,7 @@ export default async function SlaDrilldownPage({ searchParams }: Props) {
         ? "Parameter atmId wajib untuk mode ini."
         : (mode === "jenis" || mode === "sumber") && !nilai
           ? "Parameter nilai wajib untuk mode ini."
-          : parsedBasis && !parsedBasis.ok
+          : !parsedBasis.ok
             ? parsedBasis.error
             : null;
 
@@ -85,7 +128,7 @@ export default async function SlaDrilldownPage({ searchParams }: Props) {
     );
   }
 
-  const basis = parsedBasis && parsedBasis.ok ? parsedBasis.basis : undefined;
+  const basis: SlaBasis = parsedBasis.ok ? parsedBasis.basis : "internal";
 
   const items = await getSlaDrilldownTickets({
     ...parsedFilter.filter,
@@ -106,15 +149,14 @@ export default async function SlaDrilldownPage({ searchParams }: Props) {
     <div>
       <BackLink />
 
-      <div className="mb-6 mt-3">
+      <div className="mb-6 mt-3 space-y-2">
         <h1 className="page-title">{label}</h1>
         <p className="page-subtitle">
           {parsedFilter.filter.dari} s.d. {parsedFilter.filter.sampai} ·{" "}
-          {kategoriLabel} · {items.length.toLocaleString("id-ID")} tiket
-          {mode === "sla-terendah" && (
-            <> · (basis: {basis === "eksternal" ? "Eksternal" : "Internal"})</>
-          )}
+          {kategoriLabel} · {items.length.toLocaleString("id-ID")} tiket ·
+          (basis: {basis === "eksternal" ? "Eksternal" : "Internal"})
         </p>
+        <BasisToggle sp={sp} basis={basis} />
       </div>
 
       <Table>
@@ -126,6 +168,8 @@ export default async function SlaDrilldownPage({ searchParams }: Props) {
             <Th>Status</Th>
             <Th>Waktu Open</Th>
             <Th>Waktu Selesai</Th>
+            <Th className="text-right">Durasi</Th>
+            <Th className="text-right">SLA%</Th>
             <Th>Jenis Gangguan</Th>
             <Th>Sumber Penyebab</Th>
             <Th>No Tiket Vendor</Th>
@@ -134,7 +178,7 @@ export default async function SlaDrilldownPage({ searchParams }: Props) {
         <TableBody>
           {items.length === 0 ? (
             <TableRow>
-              <Td colSpan={9} className="py-8 text-center text-gray-400">
+              <Td colSpan={11} className="py-8 text-center text-gray-400">
                 Tidak ada tiket yang cocok — data mungkin berubah sejak
                 halaman SLA terakhir dimuat, coba muat ulang Monitoring SLA.
               </Td>
@@ -166,6 +210,20 @@ export default async function SlaDrilldownPage({ searchParams }: Props) {
                 </Td>
                 <Td className="whitespace-nowrap text-gray-600">
                   {t.waktuSelesai ? fmtDateTime(t.waktuSelesai) : "-"}
+                </Td>
+                <Td className="whitespace-nowrap text-right font-mono text-xs text-gray-600">
+                  {t.status !== "selesai"
+                    ? "Masih berjalan"
+                    : t.durasiMenit !== null
+                      ? menitToHHMM(t.durasiMenit)
+                      : "Tidak ada laporan vendor"}
+                </Td>
+                <Td
+                  className={`text-right font-semibold ${
+                    t.slaPersen !== null ? slaTone(t.slaPersen) : "text-gray-400"
+                  }`}
+                >
+                  {t.slaPersenLabel}
                 </Td>
                 <Td className="text-gray-600">{t.jenisGangguan ?? "-"}</Td>
                 <Td className="text-gray-600">{t.sumberPenyebab ?? "-"}</Td>

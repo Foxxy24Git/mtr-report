@@ -763,6 +763,32 @@ export interface SlaDrilldownTicketRow {
   jenisGangguan: string | null;
   sumberPenyebab: string | null;
   noTiketVendor: string | null;
+  /**
+   * Durasi (menit) tiket ini, dihitung dengan `filter.basis` yang dipilih
+   * (Internal dari waktuOpen, Eksternal dari waktuLaporVendor) — berlaku
+   * untuk SEMUA mode, bukan cuma "sla-terendah". `null` kalau tiket masih
+   * "proses" (belum final), ATAU kalau basis="eksternal" tapi tiket ini
+   * tidak lolos adaBasisEksternal (tidak dikecualikan dari daftar seperti
+   * mode "sla-terendah" — tetap tampil, cuma durasinya N/A).
+   * Untuk mode "sla-terendah" spesifik: jumlah durasiMenit semua baris di
+   * halaman ini HARUS PERSIS SAMA dengan totalDowntimeMenit baris asal yang
+   * diklik (baris yang N/A sudah dikecualikan lebih dulu dari daftar, lihat
+   * `filtered` di getSlaDrilldownTickets).
+   */
+  durasiMenit: number | null;
+  /**
+   * SLA% tiket ini — FORMULA SAMA PERSIS dengan kartu ringkasan & tabel "SLA
+   * Terendah" di dashboard: (totalMenitPeriode - downtime) / totalMenitPeriode,
+   * memakai `totalMenitPeriode` SATU PERIODE PENUH (bukan durasi tiket ini
+   * sendiri) sebagai penyebut. Karena itu, angkanya akan sangat dekat 100%
+   * per tiket (wajar — 1 tiket cuma memakan sebagian kecil dari total menit
+   * sebulan) TAPI bagian yang "hilang" (100% - slaPersen) antar tiket
+   * bersifat aditif: dijumlahkan semua tiket pada ATM yang sama akan
+   * merekonstruksi persis SLA% agregat yang ditampilkan di baris asal yang
+   * diklik. `null` kalau tiket masih "proses" (durasiMenit juga null).
+   */
+  slaPersen: number | null; // 0..1
+  slaPersenLabel: string; // "99.86%" atau "-" kalau masih proses
 }
 
 /**
@@ -774,6 +800,11 @@ export interface SlaDrilldownTicketRow {
  *   adaBasisEksternal() per tiket (sama fungsi yang dipakai getLowestSla).
  * - "paling-bermasalah": sama seperti getMostTrouble — semua status.
  * - "jenis"/"sumber": sama seperti countByField — semua status.
+ * `filter.basis` (Internal/Eksternal) memengaruhi DUA hal yang TERPISAH:
+ * - Baris mana yang MASUK daftar: HANYA untuk mode "sla-terendah" (tiket
+ *   yang tidak lolos adaBasisEksternal dikecualikan saat eksternal, biar
+ *   jumlah baris cocok dengan getLowestSla). Mode lain tidak difilter.
+ * - Nilai durasiMenit/slaPersen per baris: berlaku di SEMUA mode.
  * Validasi kelengkapan atmId/nilai per mode TIDAK dilakukan di sini —
  * itu tanggung jawab pemanggil (page), fungsi ini percaya inputnya benar.
  */
@@ -803,17 +834,34 @@ export async function getSlaDrilldownTickets(
       ? rows.filter((t) => adaBasisEksternal(t as unknown as TicketRow))
       : rows;
 
-  return filtered.map((t) => ({
-    id: t.id,
-    noTiket: t.noTiket,
-    kodeAtm: t.atm?.kodeAtm ?? "-",
-    namaAtm: t.atm?.namaAtm ?? "Tanpa ATM/Lokasi",
-    kategori: t.kategori,
-    status: t.status,
-    waktuOpen: t.waktuOpen,
-    waktuSelesai: t.waktuSelesai,
-    jenisGangguan: t.jenisGangguan,
-    sumberPenyebab: t.sumberPenyebab,
-    noTiketVendor: t.noTiketVendor,
-  }));
+  // Basis pilihan berlaku untuk SEMUA mode sekarang (bukan cuma sla-terendah)
+  // — user bisa pilih Internal/Eksternal di halaman drill-down manapun.
+  const durasiBasis: SlaBasis = filter.basis ?? "internal";
+
+  return filtered.map((t) => {
+    const durasiMenit =
+      t.status === "selesai"
+        ? downtimeMenit(t as unknown as TicketRow, durasiBasis)
+        : null;
+    const slaPersen =
+      durasiMenit !== null
+        ? clamp01((range.totalMenitPeriode - durasiMenit) / range.totalMenitPeriode)
+        : null;
+    return {
+      id: t.id,
+      noTiket: t.noTiket,
+      kodeAtm: t.atm?.kodeAtm ?? "-",
+      namaAtm: t.atm?.namaAtm ?? "Tanpa ATM/Lokasi",
+      kategori: t.kategori,
+      status: t.status,
+      waktuOpen: t.waktuOpen,
+      waktuSelesai: t.waktuSelesai,
+      jenisGangguan: t.jenisGangguan,
+      sumberPenyebab: t.sumberPenyebab,
+      noTiketVendor: t.noTiketVendor,
+      durasiMenit,
+      slaPersen,
+      slaPersenLabel: slaPersen !== null ? formatSlaPersen(slaPersen) : "-",
+    };
+  });
 }

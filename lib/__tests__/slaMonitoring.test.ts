@@ -289,9 +289,11 @@ describe("basis eksternal — pengecualian per-tiket, bukan per-ATM", () => {
 
 // --- getSlaDrilldownTickets ---------------------------------------------------
 // Satu ATM, dua tiket: satu vendor-tracked yang lolos adaBasisEksternal, satu
-// tidak. Jumlah baris drill-down HARUS selalu cocok dengan angka yang diklik
-// di dashboard (basis-aware utk mode sla-terendah, basis-independent utk mode
-// paling-bermasalah).
+// tidak. Jumlah BARIS drill-down HARUS selalu cocok dengan angka yang diklik
+// di dashboard (basis-aware utk mode sla-terendah — tiket N/A dikecualikan;
+// basis-independent utk mode paling-bermasalah/jenis/sumber — semua tiket
+// tetap tampil apa pun basisnya). Nilai DURASI/SLA% per baris ikut basis
+// pilihan di SEMUA mode (toggle di halaman drill-down, ditambahkan belakangan).
 const DRILL_ATM = { kodeAtm: "D1", namaAtm: "ATM Drilldown Uji" };
 
 const ROWS_DRILLDOWN = [
@@ -330,7 +332,7 @@ describe("getSlaDrilldownTickets", () => {
 
   const baseFilter = { dari: "2026-08-01", sampai: "2026-08-01", kategori: "semua" as const };
 
-  it("mode sla-terendah, basis eksternal: hanya tiket yang lolos adaBasisEksternal", async () => {
+  it("mode sla-terendah, basis eksternal: hanya tiket yang lolos adaBasisEksternal, durasi dari waktuLaporVendor", async () => {
     const { getSlaDrilldownTickets } = await import("../slaMonitoring");
     const res = await getSlaDrilldownTickets({
       ...baseFilter,
@@ -340,9 +342,15 @@ describe("getSlaDrilldownTickets", () => {
     });
     expect(res).toHaveLength(1);
     expect(res[0].noTiket).toBe("TD-0002");
+    // 04:00 - 03:15 (waktuLaporVendor) = 45 menit, BUKAN 60 (dari waktuOpen).
+    expect(res[0].durasiMenit).toBe(45);
+    // SLA% formula SAMA seperti getLowestSla: (totalMenitPeriode - durasi) /
+    // totalMenitPeriode. Periode 1 hari = 1440 menit → (1440-45)/1440.
+    expect(res[0].slaPersen).toBeCloseTo(1395 / 1440, 6);
+    expect(res[0].slaPersenLabel).toMatch(/%$/);
   });
 
-  it("mode sla-terendah, basis internal (default): semua tiket selesai ATM itu", async () => {
+  it("mode sla-terendah, basis internal (default): semua tiket selesai ATM itu, durasi dari waktuOpen", async () => {
     const { getSlaDrilldownTickets } = await import("../slaMonitoring");
     const res = await getSlaDrilldownTickets({
       ...baseFilter,
@@ -350,9 +358,23 @@ describe("getSlaDrilldownTickets", () => {
       atmId: "atm-d1",
     });
     expect(res).toHaveLength(2);
+    // Jumlah durasiMenit di sini HARUS sama dengan totalDowntimeMenit yang
+    // dihasilkan getLowestSla basis internal untuk ATM yang sama (60+60=120).
+    expect(res.find((t) => t.noTiket === "TD-0001")!.durasiMenit).toBe(60);
+    expect(res.find((t) => t.noTiket === "TD-0002")!.durasiMenit).toBe(60);
+    // (1440-60)/1440 masing-masing tiket — beda dari 96.875% di test basis
+    // eksternal di atas, karena durasinya beda (60 menit, bukan 45 menit).
+    expect(res.find((t) => t.noTiket === "TD-0001")!.slaPersen).toBeCloseTo(
+      1380 / 1440,
+      6
+    );
+    expect(res.find((t) => t.noTiket === "TD-0002")!.slaPersen).toBeCloseTo(
+      1380 / 1440,
+      6
+    );
   });
 
-  it("mode paling-bermasalah: selalu 2 baris terlepas dari basis yang dikirim", async () => {
+  it("mode paling-bermasalah: JUMLAH baris basis-independent (selalu 2), TAPI durasi/SLA% ikut basis yang dipilih", async () => {
     const { getSlaDrilldownTickets } = await import("../slaMonitoring");
     const resEksternal = await getSlaDrilldownTickets({
       ...baseFilter,
@@ -365,7 +387,43 @@ describe("getSlaDrilldownTickets", () => {
       mode: "paling-bermasalah",
       atmId: "atm-d1",
     });
+    // Jumlah baris TIDAK berubah oleh basis (beda dari mode sla-terendah) —
+    // paling-bermasalah tetap menampilkan SEMUA tiket ATM itu apa pun basisnya.
     expect(resEksternal).toHaveLength(2);
     expect(resInternal).toHaveLength(2);
+
+    // basis eksternal: TD-0001 (tanpa waktuLaporVendor) → durasi N/A (null),
+    // BUKAN dikecualikan dari daftar seperti mode sla-terendah. TD-0002 durasi
+    // dari waktuLaporVendor (45 menit, bukan 60).
+    expect(resEksternal.find((t) => t.noTiket === "TD-0001")!.durasiMenit).toBeNull();
+    expect(resEksternal.find((t) => t.noTiket === "TD-0002")!.durasiMenit).toBe(45);
+
+    // basis internal (default): kedua tiket pakai durasi dari waktuOpen (60).
+    expect(resInternal.find((t) => t.noTiket === "TD-0001")!.durasiMenit).toBe(60);
+    expect(resInternal.find((t) => t.noTiket === "TD-0002")!.durasiMenit).toBe(60);
+  });
+
+  it("tiket masih 'proses' (belum ada waktuSelesai): durasiMenit null, bukan 0", async () => {
+    const rowsProses = [
+      {
+        ...ROWS_DRILLDOWN[1],
+        id: "t-d3",
+        noTiket: "TD-0003",
+        status: "proses",
+        waktuSelesai: null,
+      },
+    ];
+    mockRows = rowsProses;
+    const { getSlaDrilldownTickets } = await import("../slaMonitoring");
+    const res = await getSlaDrilldownTickets({
+      ...baseFilter,
+      mode: "paling-bermasalah",
+      atmId: "atm-d1",
+    });
+    expect(res).toHaveLength(1);
+    expect(res[0].status).toBe("proses");
+    expect(res[0].durasiMenit).toBeNull();
+    expect(res[0].slaPersen).toBeNull();
+    expect(res[0].slaPersenLabel).toBe("-");
   });
 });
