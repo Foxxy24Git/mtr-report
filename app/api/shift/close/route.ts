@@ -122,7 +122,19 @@ export async function POST(req: Request) {
     select: { id: true },
   });
 
-  const report = await prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
+    // Jaga atomik: sama seperti app/api/shift/handover/route.ts — lihat
+    // penjelasan lengkap di sana. Cookie sesi bisa basi bila petugas login
+    // di >1 browser/tab dan shift ini sudah ditutup/diserahterimakan lebih
+    // dulu lewat sesi lain.
+    const guarded = await tx.user.updateMany({
+      where: { id: session.sub, currentShift: fromShift as ShiftKode },
+      data: { currentShift: null, shiftStartedAt: null, currentSupervisiId: null },
+    });
+    if (guarded.count === 0) {
+      return { ok: false as const };
+    }
+
     const handover = await tx.shiftHandover.create({
       data: {
         fromUserId: session.sub,
@@ -169,16 +181,19 @@ export async function POST(req: Request) {
       },
     });
 
-    // Sesi shift benar-benar berakhir: kosongkan penandanya di DB, bukan hanya
-    // di cookie. Inilah yang mencegah login berikutnya memulihkan shift yang
-    // sudah ditutup (lihat resumableShiftSession di lib/shift.ts).
-    await tx.user.update({
-      where: { id: session.sub },
-      data: { currentShift: null, shiftStartedAt: null, currentSupervisiId: null },
-    });
-
-    return shiftReport;
+    return { ok: true as const, shiftReport };
   });
+
+  if (!result.ok) {
+    return NextResponse.json(
+      {
+        error:
+          "Shift ini sudah ditutup/diserahterimakan dari sesi lain. Muat ulang halaman untuk menyinkronkan status shift Anda.",
+      },
+      { status: 409 }
+    );
+  }
+  const report = result.shiftReport;
 
   // Fase 4: notif langsung ke supervisi terpilih (di-gate jadwal WIB; di luar
   // jadwal scheduler yang akan mengirim). Tidak boleh menggagalkan tutup laporan.
