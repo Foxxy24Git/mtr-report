@@ -143,7 +143,14 @@ const prismaFake = {
   },
   shiftHandover: { create: async () => ({ id: "handover-1" }) },
   shiftReport: { create: async () => ({ id: "report-1" }) },
-  user: { update: async () => ({}) },
+  user: {
+    update: async () => ({}),
+    // Guard atomik (lihat app/api/shift/handover/route.ts): skenario di file
+    // ini semua merepresentasikan shift sesi yang masih aktif & cocok di DB,
+    // jadi cukup "selalu menang" (count 1) — staleness diuji khusus di
+    // shiftHandoverStaleSession.test.ts.
+    updateMany: async () => ({ count: 1 }),
+  },
   // `tx: unknown` (bukan `typeof prismaFake`) agar tidak melingkar ke dirinya
   // sendiri — route memakai tx dengan API yang sama seperti prisma.
   $transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(prismaFake),

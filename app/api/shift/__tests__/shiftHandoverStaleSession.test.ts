@@ -1,19 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 /**
- * Regresi: "Serah Terima Shift ke Shift Berikutnya" harus bisa diarahkan ke
- * shift 12 jam (D/E) saat Super Admin mengaktifkan Shift 12 Jam Override
- * (lib/shiftOverride.ts) untuk tanggal itu — sistem tidak bisa menebak sendiri
- * apakah petugas penerima akan kerja 8 jam normal atau ambil lembur 12 jam,
- * jadi tujuan tetap otomatis (nextShift) KECUALI klien mengirim `toShift`
- * eksplisit (dipilih manual di modal, hanya muncul saat override aktif).
- *
- * Bug asal: server selalu memakai nextShift(fromShift) yang buta terhadap
- * ShiftOverride — dari shift A (Pagi) tujuannya SELALU "B" (Sore), tidak
- * pernah bisa ke D/E, walau hari itu override 12 jam sedang aktif. Akibatnya
- * tiket yang diserahterimakan tersimpan di shiftKode yang tidak sesuai
- * dengan shift aktif petugas penerima yang sesungguhnya (mis. Shift Lembur
- * Malam), dan hilang dari Daily Monitoring miliknya.
+ * Regresi: petugas yang login di >1 browser/tab bisa memicu serah terima
+ * DUA KALI untuk shift yang sama — cookie sesi di browser kedua masih
+ * membawa `shift` lama walau shift itu sudah diserahterimakan lebih dulu
+ * lewat browser pertama (currentShift di DB sudah dikosongkan). Server
+ * sebelumnya hanya percaya `session.shift` dari cookie tanpa mencocokkan ke
+ * currentShift di DB, sehingga permintaan kedua ini lolos dan membuat
+ * ShiftHandover + ShiftReport duplikat (baris dobel di halaman Supervisi).
  */
 
 interface FakeTicket {
@@ -25,14 +19,20 @@ interface FakeTicket {
   supervisiId: string | null;
 }
 
+interface FakeUser {
+  id: string;
+  currentShift: "A" | "B" | "C" | "D" | "E" | null;
+}
+
 const SHIFT_START = new Date("2026-08-25T00:00:00Z");
 // Selasa 12:00 WIB — hari kerja, dalam window Shift A (Pagi).
 const WAKTU_HANDOVER = new Date("2026-08-25T05:00:00Z");
 
 let tickets: FakeTicket[] = [];
+let users: FakeUser[] = [];
 let activities: { ticketId: string; isTindakLanjutFlag: boolean }[] = [];
-let shiftOverrideAktif = false;
-let callerBolehPilihShiftTujuan = true;
+let handoversCreated = 0;
+let shiftReportsCreated = 0;
 
 function matchTicket(t: FakeTicket, where: Record<string, unknown>): boolean {
   for (const [key, val] of Object.entries(where)) {
@@ -103,20 +103,32 @@ const prismaFake = {
         cipHost: "Normal",
       })),
   },
-  shiftOverride: {
-    findUnique: async () =>
-      shiftOverrideAktif ? { id: "override-1" } : null,
+  shiftHandover: {
+    create: async () => {
+      handoversCreated += 1;
+      return { id: `handover-${handoversCreated}` };
+    },
   },
-  shiftHandover: { create: async () => ({ id: "handover-1" }) },
-  shiftReport: { create: async () => ({ id: "report-1" }) },
+  shiftReport: {
+    create: async () => {
+      shiftReportsCreated += 1;
+      return { id: `report-${shiftReportsCreated}` };
+    },
+  },
   user: {
-    findUnique: async () => ({ bolehPilihShiftTujuan: callerBolehPilihShiftTujuan }),
-    update: async () => ({}),
-    // Guard atomik (lihat app/api/shift/handover/route.ts): skenario di file
-    // ini semua merepresentasikan shift sesi yang masih aktif & cocok di DB,
-    // jadi cukup "selalu menang" (count 1) — staleness diuji khusus di
-    // shiftHandoverStaleSession.test.ts.
-    updateMany: async () => ({ count: 1 }),
+    updateMany: async ({
+      where,
+      data,
+    }: {
+      where: Record<string, unknown>;
+      data: Record<string, unknown>;
+    }) => {
+      const hit = users.filter(
+        (u) => u.id === where.id && u.currentShift === where.currentShift
+      );
+      for (const u of hit) Object.assign(u, data);
+      return { count: hit.length };
+    },
   },
   $transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(prismaFake),
 };
@@ -162,8 +174,8 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(WAKTU_HANDOVER);
   activities = [];
-  shiftOverrideAktif = false;
-  callerBolehPilihShiftTujuan = true;
+  handoversCreated = 0;
+  shiftReportsCreated = 0;
   tickets = [
     {
       id: "t-a1",
@@ -174,52 +186,42 @@ beforeEach(() => {
       supervisiId: null,
     },
   ];
+  users = [{ id: "user-a", currentShift: "A" }];
 });
 
 afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("POST /api/shift/handover — toShift manual (Shift 12 Jam Override)", () => {
-  it("tanpa toShift di body → tetap otomatis (nextShift), tidak berubah dari sebelumnya", async () => {
+describe("POST /api/shift/handover — sesi shift basi (cookie dari browser/tab lain)", () => {
+  it("currentShift di DB masih cocok dgn cookie → sukses seperti biasa (baseline)", async () => {
     const { POST } = await import("../handover/route");
     const res = await POST(req());
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ toShift: "B" });
-    expect(tickets.find((t) => t.id === "t-a1")!.shiftKode).toBe("B");
+    expect(shiftReportsCreated).toBe(1);
+    expect(handoversCreated).toBe(1);
+    expect(users[0].currentShift).toBeNull();
   });
 
-  it("toShift='E' dikirim & override 12 jam AKTIF hari itu → dipakai apa adanya", async () => {
-    shiftOverrideAktif = true;
+  it("currentShift di DB SUDAH null (shift ini sudah diserahterimakan dari sesi lain) → ditolak 409, tidak ada handover/report/tiket baru", async () => {
+    users = [{ id: "user-a", currentShift: null }];
     const { POST } = await import("../handover/route");
-    const res = await POST(req({ ...BODY, toShift: "E" }));
-    expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ toShift: "E" });
-    expect(tickets.find((t) => t.id === "t-a1")!.shiftKode).toBe("E");
-  });
-
-  it("toShift='D' dikirim tapi override TIDAK aktif → ditolak 400, tidak ada perubahan", async () => {
-    shiftOverrideAktif = false;
-    const { POST } = await import("../handover/route");
-    const res = await POST(req({ ...BODY, toShift: "D" }));
-    expect(res.status).toBe(400);
+    const res = await POST(req());
+    expect(res.status).toBe(409);
     const body = await res.json();
-    expect(body.error).toContain("tidak tersedia");
-    // Tiket & aktivitas tidak boleh berubah sama sekali — request ditolak
-    // sebelum transaksi handover dimulai.
-    expect(tickets.find((t) => t.id === "t-a1")!.shiftKode).toBe("A");
+    expect(body.error).toContain("sesi lain");
+    expect(handoversCreated).toBe(0);
+    expect(shiftReportsCreated).toBe(0);
     expect(activities.length).toBe(0);
+    expect(tickets.find((t) => t.id === "t-a1")!.shiftKode).toBe("A");
   });
 
-  it("toShift dikirim tapi akun TIDAK diizinkan Super Admin → ditolak 403, tidak ada perubahan", async () => {
-    shiftOverrideAktif = true;
-    callerBolehPilihShiftTujuan = false;
+  it("currentShift di DB berubah ke shift LAIN (mis. sudah pilih shift baru) → ditolak 409, tidak ada handover/report baru", async () => {
+    users = [{ id: "user-a", currentShift: "B" }];
     const { POST } = await import("../handover/route");
-    const res = await POST(req({ ...BODY, toShift: "E" }));
-    expect(res.status).toBe(403);
-    const body = await res.json();
-    expect(body.error).toContain("izin");
-    expect(tickets.find((t) => t.id === "t-a1")!.shiftKode).toBe("A");
-    expect(activities.length).toBe(0);
+    const res = await POST(req());
+    expect(res.status).toBe(409);
+    expect(handoversCreated).toBe(0);
+    expect(shiftReportsCreated).toBe(0);
   });
 });
