@@ -131,6 +131,7 @@ model User {
   ticketsSupervisi          Ticket[]                  @relation("TicketSupervisi")
   activities                TicketActivity[]
   activitiesEdited          TicketActivity[]          @relation("ActivityEditor")
+  slaEpisodesDibuat         TicketSlaEpisode[]
   handoversFrom             ShiftHandover[]           @relation("HandoverFrom")
   handoversTo               ShiftHandover[]           @relation("HandoverTo")
   handoversSupervisi        ShiftHandover[]           @relation("HandoverSupervisi")
@@ -283,6 +284,7 @@ model Ticket {
   handovers        ShiftHandover[]
   notifications    Notification[]
   revisionRequests ActivityRevisionRequest[]
+  slaEpisodes      TicketSlaEpisode[]
 
   @@index([status])
   @@index([kategori])
@@ -329,6 +331,32 @@ model TicketActivityRevision {
 
   @@index([activityId])
   @@map("ticket_activity_revisions")
+}
+
+enum SlaEpisodeBasis {
+  internal
+  eksternal
+}
+
+// Riwayat perpindahan basis SLA Eksternal<->Internal pada satu tiket
+// (mis. PIC vendor tidak bisa dihubungi sementara). Append-only — tidak ada
+// endpoint edit/hapus. TIDAK ADA kolom "selesai": akhir satu episode =
+// mulai-nya episode berikutnya (atau waktuSelesai tiket kalau ini episode
+// terakhir). Lihat lib/slaMonitoring.ts (downtimeMenit/basisSaatIni).
+model TicketSlaEpisode {
+  id           String          @id @default(cuid())
+  ticketId     String          @map("ticket_id")
+  basis        SlaEpisodeBasis
+  mulai        DateTime        @default(now())
+  catatan      String?
+  dibuatOlehId String          @map("dibuat_oleh_id")
+  createdAt    DateTime        @default(now()) @map("created_at")
+
+  ticket     Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  dibuatOleh User   @relation(fields: [dibuatOlehId], references: [id])
+
+  @@index([ticketId])
+  @@map("ticket_sla_episodes")
 }
 
 // Permintaan revisi Supervisi atas satu baris kegiatan (typo/salah catat).
