@@ -6,6 +6,7 @@ import {
   ticketShiftReportKey,
 } from "@/lib/shiftReportQueries";
 import { ShiftKode, TicketKategori, TicketStatus } from "@prisma/client";
+import { basisSaatIni } from "@/lib/slaMonitoring";
 
 const KATEGORI = Object.values(TicketKategori) as string[];
 const SHIFTS = Object.values(ShiftKode) as string[];
@@ -394,6 +395,14 @@ export interface TicketActivityItem {
   } | null;
 }
 
+export interface SlaEpisodeItem {
+  id: string;
+  basis: "internal" | "eksternal";
+  mulai: Date;
+  catatan: string | null;
+  dibuatOlehNama: string;
+}
+
 export interface TicketDetail {
   id: string;
   noTiket: string;
@@ -406,6 +415,14 @@ export interface TicketDetail {
   waktuSelesai: Date | null;
   waktuResponInternal: Date | null;
   waktuLaporVendor: Date | null;
+  /** Riwayat stop/start SLA Eksternal, urut waktu (lama ke baru). */
+  slaEpisodes: SlaEpisodeItem[];
+  /**
+   * Basis SLA yang sedang berjalan SAAT INI. `null` = tiket belum pernah
+   * lapor vendor (seluruh bagian UI stop/start disembunyikan untuk kasus
+   * ini — lihat TicketDetailClient.tsx).
+   */
+  statusSlaSaatIni: "internal" | "eksternal" | null;
   cpTipe: string | null;
   cpNama: string | null;
   cpTelp: string | null;
@@ -469,6 +486,10 @@ export async function getTicketDetail(id: string): Promise<TicketDetail | null> 
           },
         },
       },
+      slaEpisodes: {
+        orderBy: { mulai: "asc" },
+        include: { dibuatOleh: { select: { nama: true } } },
+      },
     },
   });
   if (!t) return null;
@@ -485,6 +506,16 @@ export async function getTicketDetail(id: string): Promise<TicketDetail | null> 
     waktuSelesai: t.waktuSelesai,
     waktuResponInternal: t.waktuResponInternal,
     waktuLaporVendor: t.waktuLaporVendor,
+    slaEpisodes: t.slaEpisodes.map((e) => ({
+      id: e.id,
+      basis: e.basis,
+      mulai: e.mulai,
+      catatan: e.catatan,
+      dibuatOlehNama: e.dibuatOleh.nama,
+    })),
+    statusSlaSaatIni: t.waktuLaporVendor
+      ? basisSaatIni(t.slaEpisodes[t.slaEpisodes.length - 1] ?? null)
+      : null,
     cpTipe: t.cpTipe,
     cpNama: t.cpNama,
     cpTelp: t.cpTelp,
