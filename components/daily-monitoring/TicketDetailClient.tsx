@@ -686,7 +686,7 @@ export function TicketDetailClient({
               <Field label="Keterangan" value={ticket.keterangan} />
             </dl>
 
-            {ticket.statusSlaSaatIni && (
+            {ticket.statusSlaSaatIni && !isSelesai && (
               <div className="mt-3 pt-3 border-t border-gray-100 space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <Badge

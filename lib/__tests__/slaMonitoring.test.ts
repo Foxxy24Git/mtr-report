@@ -86,8 +86,22 @@ vi.mock("../prisma", () => ({
       // Default slaEpisodes: [] utk fixture lama yang belum punya field ini —
       // ...r di belakang supaya fixture yang SUDAH set slaEpisodes sendiri
       // (mis. ROWS_MULTI_EPISODE) tetap menang (override default).
-      findMany: async () =>
-        mockRows.map((r) => ({ slaEpisodes: [], ...(r as object) })),
+      //
+      // Memproyeksikan tiap baris ke KEY TERATAS yang ada di `select` (kalau
+      // dikirim) — meniru Prisma sungguhan. Tanpa ini, sebuah `select` yang
+      // "lupa" satu field (mis. problemSelect sempat lupa waktuLaporVendor)
+      // tidak akan pernah ketahuan lewat test, karena mock lama selalu
+      // mengembalikan baris penuh apa pun select-nya.
+      findMany: async (args?: { select?: Record<string, unknown> }) => {
+        const rows = mockRows.map((r) => ({ slaEpisodes: [], ...(r as object) }));
+        if (!args?.select) return rows;
+        const keys = Object.keys(args.select);
+        return rows.map((r) => {
+          const projected: Record<string, unknown> = {};
+          for (const key of keys) projected[key] = (r as Record<string, unknown>)[key];
+          return projected;
+        });
+      },
     },
   },
 }));
@@ -551,5 +565,65 @@ describe("downtimeMenit — multi-episode (stop/start berkali-kali)", () => {
     );
     expect(res.items).toHaveLength(1);
     expect(res.items[0].totalDowntimeMenit).toBe(110);
+  });
+});
+
+// --- Episode tercatat SETELAH waktuSelesai (waktuSelesai dikoreksi mundur) --
+// Skenario nyata: petugas Stop jam 12:05 (insiden masih dianggap berjalan,
+// menunggu vendor), tapi tiket lalu ditutup dengan Waktu Close DIKOREKSI ke
+// 11:00 (gangguan sebenarnya sudah beres sebelum sempat di-Stop). Breakpoint
+// "Stop" di 12:05 jadi berada SETELAH waktuSelesai — durasi tiket TETAP
+// harus 08:00→11:00 = 180 menit, TIDAK BOLEH ada menit yang "bocor" ke
+// segmen sebelumnya hanya karena breakpoint berikutnya jatuh lewat waktuSelesai.
+const ATM_BACKDATED = {
+  id: "atm-bd",
+  kodeAtm: "BD1",
+  namaAtm: "ATM Backdated Close",
+  cabang: null,
+  alamat: null,
+  vendorAtm: null,
+  vendorJaringan: null,
+};
+
+const ROWS_EPISODE_SETELAH_SELESAI = [
+  {
+    id: "t-bd",
+    atmId: "atm-bd",
+    kategori: "atm",
+    status: "selesai",
+    waktuOpen: new Date("2026-09-01T08:00:00+07:00"),
+    waktuSelesai: new Date("2026-09-01T11:00:00+07:00"), // dikoreksi mundur
+    noTiketVendor: "VDR-BD",
+    waktuLaporVendor: new Date("2026-09-01T08:20:00+07:00"),
+    slaEpisodes: [
+      // Stop jam 12:05 — SETELAH waktuSelesai (11:00) yang dikoreksi.
+      { basis: "internal", mulai: new Date("2026-09-01T12:05:00+07:00") },
+    ],
+    atm: ATM_BACKDATED,
+  },
+];
+
+describe("downtimeMenit — episode tercatat setelah waktuSelesai (Waktu Close dikoreksi mundur)", () => {
+  withRows(ROWS_EPISODE_SETELAH_SELESAI);
+
+  it("total internal+eksternal TETAP = durasi penuh (180), bukan lebih — episode setelah waktuSelesai tidak menyumbang & tidak membocorkan menit ke segmen sebelumnya", async () => {
+    const { getLowestSla } = await import("../slaMonitoring");
+    const resInternal = await getLowestSla({
+      dari: "2026-09-01",
+      sampai: "2026-09-01",
+      kategori: "semua",
+    });
+    const resEksternal = await getLowestSla(
+      { dari: "2026-09-01", sampai: "2026-09-01", kategori: "semua" },
+      "eksternal"
+    );
+    // 08:00-08:20 internal (20) + 08:20-11:00 eksternal (160) = 180 total.
+    // Episode "Stop" di 12:05 (setelah waktuSelesai) tidak menyumbang apa pun.
+    expect(resInternal.items[0].totalDowntimeMenit).toBe(20);
+    expect(resEksternal.items[0].totalDowntimeMenit).toBe(160);
+    expect(
+      resInternal.items[0].totalDowntimeMenit +
+        resEksternal.items[0].totalDowntimeMenit
+    ).toBe(180);
   });
 });

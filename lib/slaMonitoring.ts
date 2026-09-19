@@ -238,6 +238,15 @@ export function basisSaatIni(
  * menghasilkan angka IDENTIK dengan sebelum fitur stop/start ada (regresi
  * aman) — hanya 2 segmen: [waktuOpen,waktuLaporVendor)=internal,
  * [waktuLaporVendor,waktuSelesai)=eksternal.
+ *
+ * Setiap segmen di-clamp ke waktuSelesai, dan breakpoint yang jatuh PADA
+ * atau SETELAH waktuSelesai dilewati (tidak membuka segmen baru sama
+ * sekali). Ini menjaga tiket yang "Waktu Close"-nya dikoreksi MUNDUR
+ * setelah sempat di-Stop/Start (episode tercatat > waktuSelesai baru) tetap
+ * menjumlah persis ke durasi penuh — tanpa clamp, menit antara breakpoint
+ * yang lewat waktuSelesai itu dengan breakpoint SEBELUMNYA akan "bocor"
+ * dihitung penuh ke segmen sebelumnya, padahal insidennya sudah ditutup
+ * sebelum breakpoint itu terjadi.
  */
 function hitungMenitPerBasis(
   t: TicketRow
@@ -249,6 +258,7 @@ function hitungMenitPerBasis(
       eksternal: 0,
     };
   }
+  const selesai = t.waktuSelesai!;
   const breakpoints: { at: Date; basis: SlaBasis }[] = [
     { at: t.waktuOpen, basis: "internal" },
     { at: t.waktuLaporVendor!, basis: "eksternal" },
@@ -258,7 +268,9 @@ function hitungMenitPerBasis(
   let eksternal = 0;
   for (let i = 0; i < breakpoints.length; i++) {
     const mulai = breakpoints[i].at;
-    const akhir = breakpoints[i + 1]?.at ?? t.waktuSelesai;
+    if (mulai.getTime() >= selesai.getTime()) continue;
+    const next = breakpoints[i + 1]?.at ?? selesai;
+    const akhir = next.getTime() > selesai.getTime() ? selesai : next;
     const menit = computeSla(mulai, akhir).lamaMenit ?? 0;
     if (breakpoints[i].basis === "internal") internal += menit;
     else eksternal += menit;
