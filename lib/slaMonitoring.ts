@@ -212,18 +212,29 @@ function adaBasisEksternal(t: TicketRow): boolean {
 }
 
 /**
- * Downtime (menit) satu tiket, tergantung basis SLA:
- * - internal: dari waktuOpen (formula lama, PRD §7) — TIDAK terpengaruh
- *   aturan N/A eksternal.
- * - eksternal: dari waktuLaporVendor (Lampiran IV PKS Artajasa). Tiket yang
- *   tidak lolos `adaBasisEksternal()` → `null` = N/A, dikecualikan dari
- *   grouping, BUKAN dihitung sebagai downtime 0/100%.
+ * Downtime (menit) satu tiket, tergantung basis SLA. Internal & Eksternal
+ * bersifat SEKUENSIAL/KOMPLEMENTER — bukan dua ukuran penuh yang tumpang
+ * tindih — karena tanggung jawab SLA "berpindah" dari internal ke vendor
+ * persis pada saat No Tiket Vendor tercatat sah:
+ * - internal: dari waktuOpen SAMPAI titik serah terima ke vendor
+ *   (waktuLaporVendor, kalau `adaBasisEksternal()` true) — berhenti di situ,
+ *   TIDAK lanjut sampai waktuSelesai. Kalau tiket tidak pernah diserahkan ke
+ *   vendor (adaBasisEksternal false), internal tetap dihitung penuh sampai
+ *   waktuSelesai seperti biasa (tidak ada serah terima yang terjadi).
+ * - eksternal: dari waktuLaporVendor (Lampiran IV PKS Artajasa) sampai
+ *   waktuSelesai. Tiket yang tidak lolos `adaBasisEksternal()` → `null` =
+ *   N/A, dikecualikan dari grouping, BUKAN dihitung sebagai downtime 0/100%.
+ * Jadi utk tiket yang diserahkan ke vendor: internal + eksternal = total
+ * durasi tiket (waktuOpen → waktuSelesai), dipecah persis di titik serah terima.
  */
 function downtimeMenit(t: TicketRow, basis: SlaBasis): number | null {
   if (basis === "eksternal" && !adaBasisEksternal(t)) return null;
   if (t.status !== "selesai") return 0;
-  const mulai = basis === "eksternal" ? t.waktuLaporVendor! : t.waktuOpen;
-  return computeSla(mulai, t.waktuSelesai).lamaMenit ?? 0;
+  if (basis === "eksternal") {
+    return computeSla(t.waktuLaporVendor!, t.waktuSelesai).lamaMenit ?? 0;
+  }
+  const akhirInternal = adaBasisEksternal(t) ? t.waktuLaporVendor! : t.waktuSelesai;
+  return computeSla(t.waktuOpen, akhirInternal).lamaMenit ?? 0;
 }
 
 function clamp01(n: number): number {
@@ -765,11 +776,14 @@ export interface SlaDrilldownTicketRow {
   noTiketVendor: string | null;
   /**
    * Durasi (menit) tiket ini, dihitung dengan `filter.basis` yang dipilih
-   * (Internal dari waktuOpen, Eksternal dari waktuLaporVendor) — berlaku
-   * untuk SEMUA mode, bukan cuma "sla-terendah". `null` kalau tiket masih
-   * "proses" (belum final), ATAU kalau basis="eksternal" tapi tiket ini
-   * tidak lolos adaBasisEksternal (tidak dikecualikan dari daftar seperti
-   * mode "sla-terendah" — tetap tampil, cuma durasinya N/A).
+   * lewat `downtimeMenit()` (lihat definisinya) — berlaku untuk SEMUA mode,
+   * bukan cuma "sla-terendah". Internal & eksternal itu SEKUENSIAL: Internal
+   * dari waktuOpen sampai titik serah terima vendor (kalau ada) — BUKAN
+   * sampai waktuSelesai kalau tiket sempat diserahkan ke vendor; Eksternal
+   * dari titik serah terima itu sampai waktuSelesai. `null` kalau tiket
+   * masih "proses" (belum final), ATAU kalau basis="eksternal" tapi tiket
+   * ini tidak lolos adaBasisEksternal (tidak dikecualikan dari daftar
+   * seperti mode "sla-terendah" — tetap tampil, cuma durasinya N/A).
    * Untuk mode "sla-terendah" spesifik: jumlah durasiMenit semua baris di
    * halaman ini HARUS PERSIS SAMA dengan totalDowntimeMenit baris asal yang
    * diklik (baris yang N/A sudah dikecualikan lebih dulu dari daftar, lihat
