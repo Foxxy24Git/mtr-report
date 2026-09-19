@@ -301,6 +301,13 @@ export function TicketDetailClient({
   const [delBusy, setDelBusy] = useState(false);
   const [actionErr, setActionErr] = useState("");
 
+  // --- Modal stop/start SLA Eksternal ---
+  const [stopSlaOpen, setStopSlaOpen] = useState(false);
+  const [stopSlaBusy, setStopSlaBusy] = useState(false);
+  const [stopSlaCatatan, setStopSlaCatatan] = useState("");
+  const [startSlaOpen, setStartSlaOpen] = useState(false);
+  const [startSlaBusy, setStartSlaBusy] = useState(false);
+
   async function reload() {
     const res = await fetch(`/api/tickets/${ticket.id}`);
     if (res.ok) {
@@ -471,6 +478,47 @@ export function TicketDetailClient({
     }
   }
 
+  async function confirmStopSla() {
+    setActionErr("");
+    setStopSlaBusy(true);
+    try {
+      const res = await fetch(`/api/tickets/${ticket.id}/sla-eksternal/stop`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ catatan: stopSlaCatatan || undefined }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setActionErr(data.error ?? "Gagal menghentikan SLA Eksternal.");
+        return;
+      }
+      setStopSlaOpen(false);
+      setStopSlaCatatan("");
+      await reload();
+    } finally {
+      setStopSlaBusy(false);
+    }
+  }
+
+  async function confirmStartSla() {
+    setActionErr("");
+    setStartSlaBusy(true);
+    try {
+      const res = await fetch(`/api/tickets/${ticket.id}/sla-eksternal/start`, {
+        method: "POST",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setActionErr(data.error ?? "Gagal melanjutkan SLA Eksternal.");
+        return;
+      }
+      setStartSlaOpen(false);
+      await reload();
+    } finally {
+      setStartSlaBusy(false);
+    }
+  }
+
   async function confirmDelete() {
     setActionErr("");
     setDelBusy(true);
@@ -637,6 +685,58 @@ export function TicketDetailClient({
               />
               <Field label="Keterangan" value={ticket.keterangan} />
             </dl>
+
+            {ticket.statusSlaSaatIni && (
+              <div className="mt-3 pt-3 border-t border-gray-100 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <Badge
+                    variant={
+                      ticket.statusSlaSaatIni === "eksternal" ? "success" : "warning"
+                    }
+                  >
+                    {ticket.statusSlaSaatIni === "eksternal"
+                      ? "SLA Eksternal — Berjalan"
+                      : "SLA Internal — Dihentikan Sementara"}
+                  </Badge>
+                  {canMutate &&
+                    !isSelesai &&
+                    (ticket.statusSlaSaatIni === "eksternal" ? (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => {
+                          setActionErr("");
+                          setStopSlaOpen(true);
+                        }}
+                      >
+                        Stop SLA Eksternal
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => {
+                          setActionErr("");
+                          setStartSlaOpen(true);
+                        }}
+                      >
+                        Start SLA Eksternal
+                      </Button>
+                    ))}
+                </div>
+                {ticket.slaEpisodes.length > 0 && (
+                  <ul className="text-xs text-gray-500 space-y-1">
+                    {ticket.slaEpisodes.map((e) => (
+                      <li key={e.id}>
+                        {e.basis === "internal" ? "Internal" : "Eksternal"} sejak{" "}
+                        {fmtDateTime(e.mulai)} — {e.dibuatOlehNama}
+                        {e.catatan ? ` (${e.catatan})` : ""}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
           </Card>
 
           <Card>
@@ -1261,6 +1361,72 @@ export function TicketDetailClient({
           </Button>
           <Button loading={reopenBusy} onClick={confirmReopen}>
             <RotateCcw className="w-4 h-4" /> Ya, Buka Kembali
+          </Button>
+        </div>
+      </Modal>
+
+      {/* ---- Modal stop SLA Eksternal ---- */}
+      <Modal
+        open={stopSlaOpen}
+        onClose={() => setStopSlaOpen(false)}
+        title="Hentikan Sementara SLA Eksternal?"
+        size="sm"
+      >
+        <p className="text-sm text-gray-600">
+          Hitungan SLA akan kembali ke <span className="font-semibold">Internal</span> mulai
+          sekarang (mis. karena PIC vendor tidak bisa dihubungi/eksekusi). Bisa
+          dilanjutkan lagi kapan pun lewat tombol &ldquo;Start SLA
+          Eksternal&rdquo;.
+        </p>
+        <div className="mt-4">
+          <label className="block text-xs font-medium text-gray-600 mb-1">
+            Catatan (opsional)
+          </label>
+          <textarea
+            rows={2}
+            value={stopSlaCatatan}
+            onChange={(e) => setStopSlaCatatan(e.target.value)}
+            placeholder="mis. PIC vendor tidak bisa dihubungi…"
+            className="w-full px-3 py-2 text-sm rounded-md border border-gray-300 bg-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors"
+          />
+        </div>
+        {actionErr && (
+          <p className="mt-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+            {actionErr}
+          </p>
+        )}
+        <div className="flex justify-end gap-2 pt-4">
+          <Button variant="secondary" onClick={() => setStopSlaOpen(false)}>
+            Batal
+          </Button>
+          <Button loading={stopSlaBusy} onClick={confirmStopSla}>
+            Ya, Hentikan Sementara
+          </Button>
+        </div>
+      </Modal>
+
+      {/* ---- Modal start (lanjutkan) SLA Eksternal ---- */}
+      <Modal
+        open={startSlaOpen}
+        onClose={() => setStartSlaOpen(false)}
+        title="Lanjutkan SLA Eksternal?"
+        size="sm"
+      >
+        <p className="text-sm text-gray-600">
+          Hitungan SLA akan kembali ke <span className="font-semibold">Eksternal</span>{" "}
+          mulai sekarang, memakai No Tiket Vendor yang sama seperti sebelumnya.
+        </p>
+        {actionErr && (
+          <p className="mt-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+            {actionErr}
+          </p>
+        )}
+        <div className="flex justify-end gap-2 pt-4">
+          <Button variant="secondary" onClick={() => setStartSlaOpen(false)}>
+            Batal
+          </Button>
+          <Button loading={startSlaBusy} onClick={confirmStartSla}>
+            Ya, Lanjutkan
           </Button>
         </div>
       </Modal>
