@@ -81,7 +81,15 @@ const FIXTURE_ROWS = [
 let mockRows: unknown[] = FIXTURE_ROWS;
 
 vi.mock("../prisma", () => ({
-  prisma: { ticket: { findMany: async () => mockRows } },
+  prisma: {
+    ticket: {
+      // Default slaEpisodes: [] utk fixture lama yang belum punya field ini —
+      // ...r di belakang supaya fixture yang SUDAH set slaEpisodes sendiri
+      // (mis. ROWS_MULTI_EPISODE) tetap menang (override default).
+      findMany: async () =>
+        mockRows.map((r) => ({ slaEpisodes: [], ...(r as object) })),
+    },
+  },
 }));
 
 /** Pakai fixture lain untuk satu blok describe, lalu kembalikan ke default. */
@@ -452,5 +460,96 @@ describe("getSlaDrilldownTickets", () => {
     expect(res[0].durasiMenit).toBeNull();
     expect(res[0].slaPersen).toBeNull();
     expect(res[0].slaPersenLabel).toBe("-");
+  });
+});
+
+describe("basisSaatIni", () => {
+  it("tanpa episode sama sekali → eksternal (keadaan sejak waktuLaporVendor pertama)", async () => {
+    const { basisSaatIni } = await import("../slaMonitoring");
+    expect(basisSaatIni(null)).toBe("eksternal");
+  });
+  it("episode terakhir basis internal → internal", async () => {
+    const { basisSaatIni } = await import("../slaMonitoring");
+    expect(basisSaatIni({ basis: "internal" })).toBe("internal");
+  });
+  it("episode terakhir basis eksternal → eksternal", async () => {
+    const { basisSaatIni } = await import("../slaMonitoring");
+    expect(basisSaatIni({ basis: "eksternal" })).toBe("eksternal");
+  });
+});
+
+// --- Multi-episode: stop/start berkali-kali pada satu tiket ------------------
+// t-multi: waktuOpen 08:00 → waktuLaporVendor 08:20 → stop#1 09:00 →
+// start#1 09:30 → stop#2 11:00 → (tidak start lagi) → waktuSelesai 12:00.
+// Segmen: [08:00-08:20]=internal 20 | [08:20-09:00]=eksternal 40 |
+// [09:00-09:30]=internal 30 | [09:30-11:00]=eksternal 90 |
+// [11:00-12:00]=internal 60 (episode terakhir, jalan sampai waktuSelesai).
+// Total internal = 20+30+60 = 110. Total eksternal = 40+90 = 130. Jumlah = 240
+// (= 08:00→12:00, PERSIS durasi penuh tiket — tidak ada menit yang hilang).
+const ATM_MULTI = {
+  id: "atm-multi",
+  kodeAtm: "AM1",
+  namaAtm: "ATM Multi Episode",
+  cabang: null,
+  alamat: null,
+  vendorAtm: null,
+  vendorJaringan: null,
+};
+
+const ROWS_MULTI_EPISODE = [
+  {
+    id: "t-multi",
+    atmId: "atm-multi",
+    kategori: "atm",
+    status: "selesai",
+    waktuOpen: new Date("2026-09-01T08:00:00+07:00"),
+    waktuSelesai: new Date("2026-09-01T12:00:00+07:00"),
+    noTiketVendor: "VDR-MULTI",
+    waktuLaporVendor: new Date("2026-09-01T08:20:00+07:00"),
+    slaEpisodes: [
+      { basis: "internal", mulai: new Date("2026-09-01T09:00:00+07:00") },
+      { basis: "eksternal", mulai: new Date("2026-09-01T09:30:00+07:00") },
+      { basis: "internal", mulai: new Date("2026-09-01T11:00:00+07:00") },
+    ],
+    atm: ATM_MULTI,
+  },
+];
+
+describe("downtimeMenit — multi-episode (stop/start berkali-kali)", () => {
+  withRows(ROWS_MULTI_EPISODE);
+
+  it("internal + eksternal = durasi penuh tiket, dipecah di tiap titik stop/start", async () => {
+    const { getLowestSla } = await import("../slaMonitoring");
+    const resInternal = await getLowestSla({
+      dari: "2026-09-01",
+      sampai: "2026-09-01",
+      kategori: "semua",
+    });
+    const resEksternal = await getLowestSla(
+      { dari: "2026-09-01", sampai: "2026-09-01", kategori: "semua" },
+      "eksternal"
+    );
+    expect(resInternal.items[0].totalDowntimeMenit).toBe(110);
+    expect(resEksternal.items[0].totalDowntimeMenit).toBe(130);
+    expect(
+      resInternal.items[0].totalDowntimeMenit +
+        resEksternal.items[0].totalDowntimeMenit
+    ).toBe(240);
+  });
+
+  // getLowestSla di atas membuktikan mesin hitungnya benar. Test ini
+  // membuktikan KONSUMEN LAIN (bukan cuma getLowestSla) benar-benar ikut
+  // memakai angka yang sama — terutama getProblemReport, yang select-nya
+  // (problemSelect) SEBELUM Task ini diam-diam TIDAK menyeleksi
+  // waktuLaporVendor sama sekali (lihat Step 6), jadi tanpa test ini bug
+  // semacam itu bisa lolos lagi tanpa ketahuan.
+  it("getProblemReport (Excel 'Permasalahan') ikut basis internal sekuensial multi-episode — bukti fix problemSelect", async () => {
+    const { getProblemReport } = await import("../slaMonitoring");
+    const res = await getProblemReport(
+      { dari: "2026-09-01", sampai: "2026-09-01", kategori: "semua" },
+      "frekuensi"
+    );
+    expect(res.items).toHaveLength(1);
+    expect(res.items[0].totalDowntimeMenit).toBe(110);
   });
 });

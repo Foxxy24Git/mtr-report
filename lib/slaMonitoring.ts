@@ -155,6 +155,10 @@ const ticketSelect = {
   waktuSelesai: true,
   noTiketVendor: true,
   waktuLaporVendor: true,
+  slaEpisodes: {
+    select: { basis: true, mulai: true },
+    orderBy: { mulai: "asc" },
+  },
   atm: {
     select: {
       kodeAtm: true,
@@ -212,29 +216,67 @@ function adaBasisEksternal(t: TicketRow): boolean {
 }
 
 /**
- * Downtime (menit) satu tiket, tergantung basis SLA. Internal & Eksternal
- * bersifat SEKUENSIAL/KOMPLEMENTER — bukan dua ukuran penuh yang tumpang
- * tindih — karena tanggung jawab SLA "berpindah" dari internal ke vendor
- * persis pada saat No Tiket Vendor tercatat sah:
- * - internal: dari waktuOpen SAMPAI titik serah terima ke vendor
- *   (waktuLaporVendor, kalau `adaBasisEksternal()` true) — berhenti di situ,
- *   TIDAK lanjut sampai waktuSelesai. Kalau tiket tidak pernah diserahkan ke
- *   vendor (adaBasisEksternal false), internal tetap dihitung penuh sampai
- *   waktuSelesai seperti biasa (tidak ada serah terima yang terjadi).
- * - eksternal: dari waktuLaporVendor (Lampiran IV PKS Artajasa) sampai
- *   waktuSelesai. Tiket yang tidak lolos `adaBasisEksternal()` → `null` =
- *   N/A, dikecualikan dari grouping, BUKAN dihitung sebagai downtime 0/100%.
- * Jadi utk tiket yang diserahkan ke vendor: internal + eksternal = total
- * durasi tiket (waktuOpen → waktuSelesai), dipecah persis di titik serah terima.
+ * Basis SLA yang sedang berjalan SAAT INI untuk satu tiket, berdasarkan
+ * episode `TicketSlaEpisode` PALING TERAKHIR (null = belum pernah stop
+ * sama sekali). SATU-SATUNYA tempat state machine ini didefinisikan —
+ * dipakai endpoint stop/start (lib Task 4) & tampilan status di UI
+ * (Task 3/5). Cuma valid dipanggil untuk tiket yang `waktuLaporVendor`-nya
+ * sudah terisi — pemanggil wajib cek itu duluan (fungsi ini tidak tahu
+ * apakah tiket pernah lapor vendor sama sekali).
+ */
+export function basisSaatIni(
+  latestEpisode: { basis: SlaBasis } | null
+): SlaBasis {
+  return latestEpisode ? latestEpisode.basis : "eksternal";
+}
+
+/**
+ * Total menit per basis (internal/eksternal) untuk satu tiket, menyusuri
+ * garis waktu penuh: waktuOpen (internal) → waktuLaporVendor (eksternal,
+ * kalau ada & sah) → tiap TicketSlaEpisode berurutan (basis berganti-ganti
+ * sesuai stop/start) → waktuSelesai. Tiket TANPA episode sama sekali
+ * menghasilkan angka IDENTIK dengan sebelum fitur stop/start ada (regresi
+ * aman) — hanya 2 segmen: [waktuOpen,waktuLaporVendor)=internal,
+ * [waktuLaporVendor,waktuSelesai)=eksternal.
+ */
+function hitungMenitPerBasis(
+  t: TicketRow
+): { internal: number; eksternal: number } {
+  if (t.status !== "selesai") return { internal: 0, eksternal: 0 };
+  if (!adaBasisEksternal(t)) {
+    return {
+      internal: computeSla(t.waktuOpen, t.waktuSelesai).lamaMenit ?? 0,
+      eksternal: 0,
+    };
+  }
+  const breakpoints: { at: Date; basis: SlaBasis }[] = [
+    { at: t.waktuOpen, basis: "internal" },
+    { at: t.waktuLaporVendor!, basis: "eksternal" },
+    ...t.slaEpisodes.map((e) => ({ at: e.mulai, basis: e.basis as SlaBasis })),
+  ];
+  let internal = 0;
+  let eksternal = 0;
+  for (let i = 0; i < breakpoints.length; i++) {
+    const mulai = breakpoints[i].at;
+    const akhir = breakpoints[i + 1]?.at ?? t.waktuSelesai;
+    const menit = computeSla(mulai, akhir).lamaMenit ?? 0;
+    if (breakpoints[i].basis === "internal") internal += menit;
+    else eksternal += menit;
+  }
+  return { internal, eksternal };
+}
+
+/**
+ * Downtime (menit) satu tiket untuk basis SLA yang diminta. Internal &
+ * Eksternal bersifat SEKUENSIAL/KOMPLEMENTER (lihat `hitungMenitPerBasis`)
+ * — tanggung jawab SLA berpindah bolak-balik persis di titik
+ * waktuLaporVendor / tiap `TicketSlaEpisode`. Tiket yang tidak lolos
+ * `adaBasisEksternal()` → `null` = N/A untuk basis eksternal, dikecualikan
+ * dari grouping, BUKAN dihitung sebagai downtime 0/100%.
  */
 function downtimeMenit(t: TicketRow, basis: SlaBasis): number | null {
   if (basis === "eksternal" && !adaBasisEksternal(t)) return null;
-  if (t.status !== "selesai") return 0;
-  if (basis === "eksternal") {
-    return computeSla(t.waktuLaporVendor!, t.waktuSelesai).lamaMenit ?? 0;
-  }
-  const akhirInternal = adaBasisEksternal(t) ? t.waktuLaporVendor! : t.waktuSelesai;
-  return computeSla(t.waktuOpen, akhirInternal).lamaMenit ?? 0;
+  return hitungMenitPerBasis(t)[basis];
 }
 
 function clamp01(n: number): number {
@@ -513,8 +555,13 @@ const problemSelect = {
   status: true,
   waktuOpen: true,
   waktuSelesai: true,
+  waktuLaporVendor: true,
   jenisGangguan: true,
   sumberPenyebab: true,
+  slaEpisodes: {
+    select: { basis: true, mulai: true },
+    orderBy: { mulai: "asc" },
+  },
   atm: {
     select: {
       kodeAtm: true,
@@ -759,6 +806,10 @@ const drilldownSelect = {
   sumberPenyebab: true,
   noTiketVendor: true,
   waktuLaporVendor: true,
+  slaEpisodes: {
+    select: { basis: true, mulai: true },
+    orderBy: { mulai: "asc" },
+  },
   atm: { select: { kodeAtm: true, namaAtm: true } },
 } satisfies Prisma.TicketSelect;
 
